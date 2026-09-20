@@ -1,19 +1,14 @@
+import ComposableArchitecture
 import SwiftUI
 
 struct AlbumDetailView: View {
-    let albumID: Int
+    let store: StoreOf<AlbumDetailFeature>
+    let appStore: StoreOf<AppFeature>
 
-    @State private var album: AlbumDetail?
-    @State private var tracks: [Track] = []
-    @State private var otherAlbums: [AlbumSummary] = []
-    @State private var isSubscribed = false
-    @State private var isLoading = true
-    @State private var errorMessage: String?
     @State private var showFullDescription = false
-
-    @EnvironmentObject private var player: PlayerService
-    @EnvironmentObject private var account: AccountStore
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+
+    private var account: AccountFeature.State { appStore.account }
 
     private var isCompact: Bool {
         #if os(iOS)
@@ -26,7 +21,7 @@ struct AlbumDetailView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: isCompact ? 16 : 20) {
-                if let album {
+                if let album = store.album {
                     if isCompact {
                         compactHeader(album)
                             .padding(.horizontal, 16)
@@ -38,13 +33,20 @@ struct AlbumDetailView: View {
                     }
 
                     TrackListView(
-                        tracks: tracks,
-                        source: .album(albumID),
-                        context: .album(id: albumID, name: album.name)
+                        tracks: store.tracks,
+                        style: .albumTrack,
+                        onPlay: { tracks, startAt in
+                            store.send(.delegate(.play(
+                                tracks: tracks,
+                                source: .album(store.albumID),
+                                startAt: startAt,
+                                context: .album(id: store.albumID, name: album.name))))
+                        },
+                        appStore: appStore
                     )
                     .padding(.horizontal, isCompact ? 6 : Theme.Layout.contentInset - 10)
 
-                    if !otherAlbums.isEmpty {
+                    if !store.otherAlbums.isEmpty {
                         SectionHeader(title: "该歌手的其他专辑")
                             .padding(.horizontal, isCompact ? 16 : Theme.Layout.contentInset)
                             .padding(.top, 12)
@@ -52,8 +54,10 @@ struct AlbumDetailView: View {
                         ScrollView(.horizontal, showsIndicators: false) {
                             HStack(spacing: 16) {
                                 Spacer().frame(width: (isCompact ? 16 : Theme.Layout.contentInset) - 16)
-                                ForEach(otherAlbums) { item in
-                                    NavigationLink(value: Destination.album(item.id)) {
+                                ForEach(store.otherAlbums) { item in
+                                    Button {
+                                        appStore.send(.openDestination(.album(item.id)))
+                                    } label: {
                                         CoverCardBody(
                                             coverURL: item.picUrl?.resizedImageURL(384),
                                             title: item.name,
@@ -66,11 +70,11 @@ struct AlbumDetailView: View {
                             }
                         }
                     }
-                } else if isLoading {
+                } else if case .loading = store.loadState {
                     loadingHeader
-                } else if let errorMessage {
-                    ErrorStateView(message: errorMessage) {
-                        Task { await load() }
+                } else if case let .error(message) = store.loadState {
+                    ErrorStateView(message: message) {
+                        store.send(.reload)
                     }
                     .frame(minHeight: 400)
                 }
@@ -79,33 +83,12 @@ struct AlbumDetailView: View {
             }
         }
         #if os(macOS)
-        .navigationTitle(album?.name ?? String(localized: "专辑"))
+        .navigationTitle(store.album?.name ?? String(localized: "专辑"))
         #else
         .navigationBarTitleDisplayMode(.inline)
         #endif
-        .task(id: albumID) {
-            await load()
-        }
-    }
-
-    private func load() async {
-        isLoading = true
-        errorMessage = nil
-        do {
-            let response = try await NeteaseAPI.album(id: albumID)
-            album = response.album
-            tracks = response.songs
-            isLoading = false
-            if let dynamic = try? await NeteaseAPI.albumDynamic(id: albumID) {
-                isSubscribed = dynamic.isSub ?? false
-            }
-            if let artistID = response.album.artist?.id,
-               let albums = try? await NeteaseAPI.artistAlbums(id: artistID, limit: 12) {
-                otherAlbums = albums.hotAlbums.filter { $0.id != albumID }
-            }
-        } catch {
-            isLoading = false
-            errorMessage = error.localizedDescription
+        .task(id: store.albumID) {
+            store.send(.onAppear)
         }
     }
 
@@ -125,7 +108,9 @@ struct AlbumDetailView: View {
                         .lineLimit(3)
 
                     if let artist = album.artist {
-                        NavigationLink(value: Destination.artist(artist.id)) {
+                        Button {
+                            appStore.send(.openDestination(.artist(artist.id)))
+                        } label: {
                             Text(artist.name)
                                 .font(.system(size: 13, weight: .medium))
                                 .foregroundStyle(Theme.accent)
@@ -134,7 +119,7 @@ struct AlbumDetailView: View {
                         .buttonStyle(.plain)
                     }
 
-                    Text("\(tracks.count) 首 · \(Formatters.date(fromMS: album.publishTime))")
+                    Text("\(store.tracks.count) 首 · \(Formatters.date(fromMS: album.publishTime))")
                         .font(.system(size: 11))
                         .foregroundStyle(.secondary)
                 }
@@ -178,12 +163,11 @@ struct AlbumDetailView: View {
             // Compact Action Bar
             HStack(spacing: 10) {
                 Button {
-                    player.play(tracks: tracks, source: .album(albumID),
-                                context: .album(id: albumID, name: album.name))
+                    store.send(.playAll)
                 } label: {
                     HStack(spacing: 6) {
                         Image(systemName: "play.fill")
-                        Text("播放全部 (\(tracks.count))")
+                        Text("播放全部 (\(store.tracks.count))")
                     }
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(.white)
@@ -196,11 +180,11 @@ struct AlbumDetailView: View {
 
                 if account.isLoggedIn {
                     Button {
-                        toggleSubscribe()
+                        store.send(.toggleSubscribe)
                     } label: {
-                        Image(systemName: isSubscribed ? "checkmark" : "plus")
+                        Image(systemName: store.isSubscribed ? "checkmark" : "plus")
                             .font(.system(size: 14, weight: .semibold))
-                            .foregroundStyle(isSubscribed ? Theme.accent : .primary)
+                            .foregroundStyle(store.isSubscribed ? Theme.accent : .primary)
                             .frame(width: 38, height: 38)
                             .background(.primary.opacity(0.06), in: Circle())
                     }
@@ -229,7 +213,9 @@ struct AlbumDetailView: View {
                     .lineLimit(2)
 
                 if let artist = album.artist {
-                    NavigationLink(value: Destination.artist(artist.id)) {
+                    Button {
+                        appStore.send(.openDestination(.artist(artist.id)))
+                    } label: {
                         Text(artist.name)
                             .font(.system(size: 14, weight: .medium))
                             .foregroundStyle(Theme.accent)
@@ -237,7 +223,7 @@ struct AlbumDetailView: View {
                     .buttonStyle(.plain)
                 }
 
-                Text("\(tracks.count) 首 · \(totalDuration) · \(Formatters.date(fromMS: album.publishTime))")
+                Text("\(store.tracks.count) 首 · \(totalDuration) · \(Formatters.date(fromMS: album.publishTime))")
                     .font(.system(size: 11.5))
                     .foregroundStyle(.tertiary)
 
@@ -267,8 +253,7 @@ struct AlbumDetailView: View {
 
                 HStack(spacing: 10) {
                     Button {
-                        player.play(tracks: tracks, source: .album(albumID),
-                                context: .album(id: albumID, name: album.name))
+                        store.send(.playAll)
                     } label: {
                         Label("播放", systemImage: "play.fill")
                             .font(.system(size: 13, weight: .semibold))
@@ -282,10 +267,10 @@ struct AlbumDetailView: View {
 
                     if account.isLoggedIn {
                         Button {
-                            toggleSubscribe()
+                            store.send(.toggleSubscribe)
                         } label: {
-                            Label(isSubscribed ? String(localized: "已收藏") : String(localized: "收藏"),
-                                  systemImage: isSubscribed ? "checkmark" : "plus")
+                            Label(store.isSubscribed ? String(localized: "已收藏") : String(localized: "收藏"),
+                                  systemImage: store.isSubscribed ? "checkmark" : "plus")
                                 .font(.system(size: 13, weight: .medium))
                                 .padding(.horizontal, 14)
                                 .padding(.vertical, 8)
@@ -301,20 +286,8 @@ struct AlbumDetailView: View {
     }
 
     private var totalDuration: String {
-        let totalMS = tracks.reduce(into: 0) { $0 += $1.durationMS }
+        let totalMS = store.tracks.reduce(into: 0) { $0 += $1.durationMS }
         return Formatters.longDuration(TimeInterval(totalMS) / 1000)
-    }
-
-    private func toggleSubscribe() {
-        Task {
-            do {
-                try await NeteaseAPI.subscribeAlbum(id: albumID, subscribe: !isSubscribed)
-                isSubscribed.toggle()
-                ToastCenter.shared.show(isSubscribed ? String(localized: "已收藏专辑") : String(localized: "已取消收藏"))
-            } catch {
-                ToastCenter.shared.show(error.localizedDescription)
-            }
-        }
     }
 
     private var loadingHeader: some View {

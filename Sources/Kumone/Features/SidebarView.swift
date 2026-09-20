@@ -1,10 +1,9 @@
+import ComposableArchitecture
 import SwiftUI
 
 struct SidebarView: View {
-    @Binding var selection: SidebarItem
-    @Binding var showLogin: Bool
+    let store: StoreOf<AppFeature>
 
-    @EnvironmentObject private var account: AccountStore
     @State private var showNewPlaylist = false
     @State private var newPlaylistName = ""
     @State private var avatarImage: PlatformImage?
@@ -14,6 +13,8 @@ struct SidebarView: View {
     // quality and other options unreachable (#67/#59). Surface it in the footer.
     @State private var showSettings = false
 #endif
+
+    private var account: AccountFeature.State { store.account }
 
     var body: some View {
         List {
@@ -88,10 +89,10 @@ struct SidebarView: View {
                 Task {
                     do {
                         try await NeteaseAPI.createPlaylist(name: name, isPrivate: false)
-                        await account.refreshLibrary()
-                        ToastCenter.shared.show(String(localized: "歌单已创建"))
+                        store.send(.account(.refreshLibrary))
+                        store.send(.toasts(.presented(String(localized: "歌单已创建"))))
                     } catch {
-                        ToastCenter.shared.show(error.localizedDescription)
+                        store.send(.toasts(.presented(error.localizedDescription)))
                     }
                 }
             }
@@ -101,16 +102,16 @@ struct SidebarView: View {
 
     private func row(_ item: SidebarItem, title: LocalizedStringKey, icon: String) -> some View {
         SidebarRow(
-            title: title, icon: icon, isSelected: selection == item,
-            action: { selection = item }
+            title: title, icon: icon, isSelected: store.selection == item,
+            action: { store.send(.selectionChanged(item)) }
         )
     }
 
     private func playlistRow(_ playlist: PlaylistSummary) -> some View {
         SidebarPlaylistRow(
             playlist: playlist,
-            isSelected: selection == .playlist(playlist.id),
-            action: { selection = .playlist(playlist.id) }
+            isSelected: store.selection == .playlist(playlist.id),
+            action: { store.send(.selectionChanged(.playlist(playlist.id))) }
         )
         .contextMenu {
             Button("播放") {
@@ -125,14 +126,14 @@ struct SidebarView: View {
                 Button("删除歌单", role: .destructive) {
                     Task {
                         try? await NeteaseAPI.deletePlaylist(id: playlist.id)
-                        await account.refreshLibrary()
+                        store.send(.account(.refreshLibrary))
                     }
                 }
             } else {
                 Button("取消收藏") {
                     Task {
                         try? await NeteaseAPI.subscribePlaylist(id: playlist.id, subscribe: false)
-                        await account.refreshLibrary()
+                        store.send(.account(.refreshLibrary))
                     }
                 }
             }
@@ -147,7 +148,7 @@ struct SidebarView: View {
                 tracks = full.songs
             }
         }
-        PlayerService.shared.play(tracks: tracks, source: .playlist(detail.playlist.id))
+        store.send(.player(.play(tracks: tracks, source: .playlist(detail.playlist.id), startAt: nil, context: nil)))
     }
 
     @ViewBuilder
@@ -162,7 +163,7 @@ struct SidebarView: View {
                 // The desktop toolbar doesn't surface search/settings on iPad, so
                 // put reliable entries in the always-visible footer (#59/#67).
                 Button {
-                    selection = .search
+                    store.send(.selectionChanged(.search))
                 } label: {
                     Image(systemName: "magnifyingglass")
                         .font(.system(size: 17))
@@ -192,7 +193,7 @@ struct SidebarView: View {
 #if os(iOS)
         .sheet(isPresented: $showSettings) {
             NavigationStack {
-                SettingsView()
+                SettingsView(store: store.scope(state: \.settings, action: \.settings))
                     .navigationTitle("设置")
                     .navigationBarTitleDisplayMode(.inline)
                     .toolbar {
@@ -208,12 +209,12 @@ struct SidebarView: View {
     @ViewBuilder
     private var accountEntry: some View {
         if let profile = account.profile {
-            AccountChip(profile: profile, avatarImage: avatarImage)
+            AccountChip(profile: profile, avatarImage: avatarImage, store: store)
                 .padding(.horizontal, 10)
                 .padding(.vertical, 6)
         } else {
             Button {
-                showLogin = true
+                store.send(.presentLogin)
             } label: {
                 HStack(spacing: 8) {
                     Image(systemName: "person.crop.circle")
@@ -237,8 +238,8 @@ struct SidebarView: View {
 private struct AccountChip: View {
     let profile: UserProfile
     let avatarImage: PlatformImage?
+    let store: StoreOf<AppFeature>
 
-    @EnvironmentObject private var account: AccountStore
     @State private var showPopover = false
     @State private var isHovering = false
 
@@ -318,7 +319,7 @@ private struct AccountChip: View {
             Divider().opacity(0.4)
             Button {
                 showPopover = false
-                Task { await account.logout() }
+                store.send(.account(.logout))
             } label: {
                 Text("退出登录")
                     .font(.system(size: 12.5, weight: .medium))

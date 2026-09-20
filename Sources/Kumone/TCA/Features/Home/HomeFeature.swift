@@ -42,6 +42,19 @@ struct HomeFeature {
         /// Forces a reload (pull to refresh, or a login state change).
         case reload
         case loaded(Sections)
+        /// Fetches a playlist's tracks and hands them to the player.
+        case playPlaylist(Int)
+        /// Fetches an album's tracks and hands them to the player.
+        case playAlbum(AlbumSummary)
+        case startHeartbeat
+        case delegate(Delegate)
+    }
+
+    enum Delegate: Equatable {
+        case play(tracks: [Track], source: PlaySource, context: PlayContext?)
+        /// 心动模式: needs the account's liked list and a seed track, so the
+        /// parent (which sees both features) runs it.
+        case startHeartbeat
     }
 
     /// Everything a load gathered, delivered in one piece so the "both empty
@@ -94,6 +107,35 @@ struct HomeFeature {
                     ? .error(String(localized: "网络连接失败"))
                     : .loaded
                 return .none
+
+            case .delegate:
+                return .none
+
+            case let .playPlaylist(id):
+                return .run { [netease] send in
+                    guard let detail = try? await netease.playlistDetail(id: id) else { return }
+                    var tracks = detail.playlist.tracks
+                    if tracks.isEmpty {
+                        let ids = detail.playlist.trackIds.map(\.id)
+                        tracks = (try? await netease.songDetails(ids: Array(ids.prefix(500))))?.songs ?? []
+                    }
+                    await send(.delegate(.play(
+                        tracks: tracks,
+                        source: .playlist(id),
+                        context: .playlist(id: id, name: detail.playlist.name))))
+                }
+
+            case let .playAlbum(album):
+                return .run { [netease] send in
+                    guard let detail = try? await netease.album(id: album.id) else { return }
+                    await send(.delegate(.play(
+                        tracks: detail.songs,
+                        source: .album(album.id),
+                        context: .album(id: album.id, name: album.name))))
+                }
+
+            case .startHeartbeat:
+                return .send(.delegate(.startHeartbeat))
             }
         }
     }

@@ -124,6 +124,7 @@ final class ArtistDetailFeatureTests: XCTestCase {
         await store.receive(.delegate(.play(
             tracks: [Self.makeSong(1), Self.makeSong(2)],
             source: .artist(7),
+            startAt: nil,
             context: .artist(id: 7, name: "歌手")
         )))
     }

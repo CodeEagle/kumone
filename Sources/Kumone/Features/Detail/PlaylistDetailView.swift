@@ -1,97 +1,19 @@
+import ComposableArchitecture
 import SwiftUI
 
-@MainActor
-final class PlaylistDetailViewModel: ObservableObject {
-    let playlistID: Int
-    @Published var detail: PlaylistDetail?
-    @Published var tracks: [Track] = []
-    @Published var privileges: [Int: TrackPrivilege] = [:]
-    @Published var isLoading = true
-    @Published var isLoadingMore = false
-    @Published var errorMessage: String?
-    @Published var filter = ""
-    private var reducedRecommendationIDs: Set<Int> = []
-
-    init(playlistID: Int) {
-        self.playlistID = playlistID
-    }
-
-    var filteredTracks: [Track] {
-        let query = filter.trimmingCharacters(in: .whitespaces).lowercased()
-        guard !query.isEmpty else { return tracks }
-        return tracks.filter {
-            $0.name.lowercased().contains(query)
-                || $0.artistNames.lowercased().contains(query)
-                || $0.album.name.lowercased().contains(query)
-        }
-    }
-
-    func load() async {
-        isLoading = tracks.isEmpty
-        errorMessage = nil
-        do {
-            let response = try await NeteaseAPI.playlistDetail(id: playlistID)
-            detail = response.playlist
-            tracks = response.playlist.tracks.filter { !reducedRecommendationIDs.contains($0.id) }
-            merge(privileges: response.privileges)
-            isLoading = false
-            await loadRemainingTracks()
-        } catch {
-            isLoading = false
-            if tracks.isEmpty { errorMessage = error.localizedDescription }
-        }
-    }
-
-    private func loadRemainingTracks() async {
-        guard let detail, tracks.count < detail.trackIds.count else { return }
-        isLoadingMore = true
-        defer { isLoadingMore = false }
-        let remaining = detail.trackIds.map(\.id).dropFirst(tracks.count)
-        for chunk in stride(from: 0, to: remaining.count, by: 500)
-            .map({ Array(remaining.dropFirst($0).prefix(500)) }) {
-            guard let response = try? await NeteaseAPI.songDetails(ids: chunk) else { break }
-            tracks += response.songs.filter { !reducedRecommendationIDs.contains($0.id) }
-            merge(privileges: response.privileges)
-        }
-    }
-
-    private func merge(privileges list: [TrackPrivilege]?) {
-        for privilege in list ?? [] {
-            privileges[privilege.id] = privilege
-        }
-    }
-
-    func remove(_ track: Track) {
-        tracks.removeAll { $0.id == track.id }
-    }
-
-    func replaceRecommendation(_ rejected: Track, with replacement: Track) {
-        if tracks.replaceRecommendation(rejected, with: replacement) {
-            reducedRecommendationIDs.insert(rejected.id)
-        }
-    }
-}
-
 struct PlaylistDetailView: View {
-    let playlistID: Int
+    let store: StoreOf<PlaylistDetailFeature>
+    let appStore: StoreOf<AppFeature>
     var isLikedList = false
     var recommendationContext: RecommendationContext?
 
-    @StateObject private var model: PlaylistDetailViewModel
-    @EnvironmentObject private var player: PlayerService
-    @EnvironmentObject private var account: AccountStore
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @State private var showFullDescription = false
 
-    init(playlistID: Int, isLikedList: Bool = false, recommendationContext: RecommendationContext? = nil) {
-        self.playlistID = playlistID
-        self.isLikedList = isLikedList
-        self.recommendationContext = recommendationContext
-        _model = StateObject(wrappedValue: PlaylistDetailViewModel(playlistID: playlistID))
-    }
+    private var account: AccountFeature.State { appStore.account }
 
     private var isOwnPlaylist: Bool {
-        model.detail?.creator?.userId == account.profile?.userId
+        store.detail?.creator?.userId == account.profile?.userId
     }
 
     private var isCompact: Bool {
@@ -105,7 +27,7 @@ struct PlaylistDetailView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: isCompact ? 16 : 20) {
-                if let detail = model.detail {
+                if let detail = store.detail {
                     if isCompact {
                         compactHeader(detail)
                             .padding(.horizontal, 16)
@@ -117,18 +39,26 @@ struct PlaylistDetailView: View {
                     }
 
                     TrackListView(
-                        tracks: model.filteredTracks,
-                        privileges: model.privileges,
-                        source: .playlist(playlistID),
-                        context: model.detail.map { .playlist(id: playlistID, name: $0.name) },
-                        removableFromPlaylistID: isOwnPlaylist ? playlistID : nil,
-                        onRemoved: { model.remove($0) },
+                        tracks: store.filteredTracks,
+                        privileges: store.privileges,
+                        removableFromPlaylistID: isOwnPlaylist ? store.playlistID : nil,
+                        onRemoved: { store.send(.trackRemoved($0)) },
                         recommendationContext: recommendationContext,
-                        onRecommendationReduced: { model.replaceRecommendation($0, with: $1) }
+                        onRecommendationReduced: { rejected, replacement in
+                            store.send(.recommendationReduced(rejected: rejected, replacement: replacement))
+                        },
+                        onPlay: { tracks, startAt in
+                            store.send(.delegate(.play(
+                                tracks: tracks,
+                                source: .playlist(store.playlistID),
+                                startAt: startAt,
+                                context: .playlist(id: store.playlistID, name: detail.name))))
+                        },
+                        appStore: appStore
                     )
                     .padding(.horizontal, isCompact ? 6 : Theme.Layout.contentInset - 10)
 
-                    if model.isLoadingMore {
+                    if store.isLoadingMore {
                         HStack {
                             Spacer()
                             ProgressView().controlSize(.small)
@@ -136,11 +66,11 @@ struct PlaylistDetailView: View {
                         }
                         .padding(.vertical, 12)
                     }
-                } else if model.isLoading {
+                } else if case .loading = store.loadState {
                     loadingHeader
-                } else if let message = model.errorMessage {
+                } else if case let .error(message) = store.loadState {
                     ErrorStateView(message: message) {
-                        Task { await model.load() }
+                        store.send(.reload)
                     }
                     .frame(minHeight: 400)
                 }
@@ -148,12 +78,12 @@ struct PlaylistDetailView: View {
             }
         }
         #if os(macOS)
-        .navigationTitle(model.detail?.name ?? String(localized: "歌单"))
+        .navigationTitle(store.detail?.name ?? String(localized: "歌单"))
         #else
         .navigationBarTitleDisplayMode(.inline)
         #endif
-        .task(id: playlistID) {
-            await model.load()
+        .task(id: store.playlistID) {
+            store.send(.onAppear)
         }
     }
 
@@ -228,12 +158,15 @@ struct PlaylistDetailView: View {
             // Compact Action Bar
             HStack(spacing: 10) {
                 Button {
-                    player.play(tracks: playable, source: .playlist(playlistID),
-                                context: model.detail.map { .playlist(id: playlistID, name: $0.name) })
+                    store.send(.delegate(.play(
+                        tracks: store.playableTracks,
+                        source: .playlist(store.playlistID),
+                        startAt: nil,
+                        context: .playlist(id: store.playlistID, name: detail.name))))
                 } label: {
                     HStack(spacing: 6) {
                         Image(systemName: "play.fill")
-                        Text("播放全部 (\(playable.count))")
+                        Text("播放全部 (\(store.playableTracks.count))")
                     }
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(.white)
@@ -246,7 +179,7 @@ struct PlaylistDetailView: View {
 
                 if isLikedList {
                     Button {
-                        startHeartbeat()
+                        store.send(.startHeartbeat)
                     } label: {
                         Image(systemName: "heart.circle.fill")
                             .font(.system(size: 18))
@@ -257,7 +190,7 @@ struct PlaylistDetailView: View {
                     .buttonStyle(.pressable)
                 } else if !isOwnPlaylist, account.isLoggedIn {
                     Button {
-                        toggleSubscribe(detail)
+                        store.send(.toggleSubscribe)
                     } label: {
                         Image(systemName: detail.subscribed ? "checkmark" : "plus")
                             .font(.system(size: 14, weight: .semibold))
@@ -338,8 +271,11 @@ struct PlaylistDetailView: View {
     private func actionRow(_ detail: PlaylistDetail) -> some View {
         HStack(spacing: 10) {
             Button {
-                player.play(tracks: playable, source: .playlist(playlistID),
-                            context: .playlist(id: playlistID, name: detail.name))
+                store.send(.delegate(.play(
+                    tracks: store.playableTracks,
+                    source: .playlist(store.playlistID),
+                    startAt: nil,
+                    context: .playlist(id: store.playlistID, name: detail.name))))
             } label: {
                 Label("播放全部", systemImage: "play.fill")
                     .font(.system(size: 13, weight: .semibold))
@@ -353,7 +289,7 @@ struct PlaylistDetailView: View {
 
             if isLikedList {
                 Button {
-                    startHeartbeat()
+                    store.send(.startHeartbeat)
                 } label: {
                     Label("心动模式", systemImage: "heart.circle")
                         .font(.system(size: 13, weight: .medium))
@@ -364,7 +300,7 @@ struct PlaylistDetailView: View {
                 .buttonStyle(.pressable)
             } else if !isOwnPlaylist, account.isLoggedIn {
                 Button {
-                    toggleSubscribe(detail)
+                    store.send(.toggleSubscribe)
                 } label: {
                     Label(detail.subscribed ? String(localized: "已收藏") : String(localized: "收藏"),
                           systemImage: detail.subscribed ? "checkmark" : "plus")
@@ -382,7 +318,7 @@ struct PlaylistDetailView: View {
                 Image(systemName: "magnifyingglass")
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
-                TextField("搜索歌单内歌曲", text: $model.filter)
+                TextField("搜索歌单内歌曲", text: filterBinding)
                     .textFieldStyle(.plain)
                     .font(.system(size: 12))
                     .frame(width: 130)
@@ -393,42 +329,8 @@ struct PlaylistDetailView: View {
         }
     }
 
-    private var playable: [Track] {
-        if SettingsManager.shared.enableUnblock { return model.tracks }
-        return model.tracks.filter {
-            $0.playability(privilege: model.privileges[$0.id],
-                           isLoggedIn: account.isLoggedIn,
-                           vipType: account.vipType) == .playable
-        }
-    }
-
-    private func startHeartbeat() {
-        Task {
-            guard let seed = playable.randomElement() else { return }
-            do {
-                let tracks = try await NeteaseAPI.intelligenceList(songID: seed.id, playlistID: playlistID)
-                guard !tracks.isEmpty else {
-                    ToastCenter.shared.show(String(localized: "心动模式暂时不可用"))
-                    return
-                }
-                player.play(tracks: tracks, source: .playlist(playlistID), context: .heartbeat)
-                ToastCenter.shared.show(String(localized: "已开启心动模式"))
-            } catch {
-                ToastCenter.shared.show(error.localizedDescription)
-            }
-        }
-    }
-
-    private func toggleSubscribe(_ detail: PlaylistDetail) {
-        Task {
-            do {
-                try await NeteaseAPI.subscribePlaylist(id: detail.id, subscribe: !detail.subscribed)
-                model.detail?.subscribed.toggle()
-                await account.refreshLibrary()
-            } catch {
-                ToastCenter.shared.show(error.localizedDescription)
-            }
-        }
+    private var filterBinding: Binding<String> {
+        Binding(get: { store.filter }, set: { store.send(.setFilter($0)) })
     }
 
     private var loadingHeader: some View {

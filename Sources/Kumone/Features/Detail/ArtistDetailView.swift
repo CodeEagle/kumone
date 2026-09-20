@@ -1,20 +1,13 @@
+import ComposableArchitecture
 import SwiftUI
 
 struct ArtistDetailView: View {
-    let artistID: Int
+    let store: StoreOf<ArtistDetailFeature>
+    let appStore: StoreOf<AppFeature>
 
-    @State private var artist: ArtistSummary?
-    @State private var hotSongs: [Track] = []
-    @State private var albums: [AlbumSummary] = []
-    @State private var epsAndSingles: [AlbumSummary] = []
-    @State private var similar: [ArtistSummary] = []
-    @State private var isFollowed = false
-    @State private var isLoading = true
-    @State private var errorMessage: String?
-
-    @EnvironmentObject private var player: PlayerService
-    @EnvironmentObject private var account: AccountStore
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+
+    private var account: AccountFeature.State { appStore.account }
 
     private var isCompact: Bool {
         #if os(iOS)
@@ -27,7 +20,7 @@ struct ArtistDetailView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: isCompact ? 16 : 26) {
-                if let artist {
+                if let artist = store.artist {
                     if isCompact {
                         compactHeader(artist)
                             .padding(.horizontal, 16)
@@ -38,27 +31,33 @@ struct ArtistDetailView: View {
                             .padding(.top, 16)
                     }
 
-                    if !hotSongs.isEmpty {
+                    if !store.hotSongs.isEmpty {
                         SectionHeader(title: "热门单曲")
                             .padding(.horizontal, isCompact ? 16 : Theme.Layout.contentInset)
 
                         TrackListView(
-                            tracks: hotSongs,
+                            tracks: store.hotSongs,
                             style: .compact,
-                            source: .artist(artistID),
-                            context: .artist(id: artistID, name: artist.name)
+                            onPlay: { tracks, startAt in
+                                store.send(.delegate(.play(
+                                    tracks: tracks,
+                                    source: .artist(store.artistID),
+                                    startAt: startAt,
+                                    context: .artist(id: store.artistID, name: artist.name))))
+                            },
+                            appStore: appStore
                         )
                         .padding(.horizontal, isCompact ? 6 : Theme.Layout.contentInset - 10)
                     }
 
-                    if !albums.isEmpty {
+                    if !store.albums.isEmpty {
                         SectionHeader(title: "专辑")
                             .padding(.horizontal, isCompact ? 16 : Theme.Layout.contentInset)
 
                         ScrollView(.horizontal, showsIndicators: false) {
                             HStack(spacing: 16) {
                                 Spacer().frame(width: (isCompact ? 16 : Theme.Layout.contentInset) - 16)
-                                ForEach(albums) { album in
+                                ForEach(store.albums) { album in
                                     albumCard(album)
                                 }
                                 Spacer().frame(width: (isCompact ? 16 : Theme.Layout.contentInset) - 16)
@@ -66,14 +65,14 @@ struct ArtistDetailView: View {
                         }
                     }
 
-                    if !epsAndSingles.isEmpty {
+                    if !store.epsAndSingles.isEmpty {
                         SectionHeader(title: "EP 与单曲")
                             .padding(.horizontal, isCompact ? 16 : Theme.Layout.contentInset)
 
                         ScrollView(.horizontal, showsIndicators: false) {
                             HStack(spacing: 16) {
                                 Spacer().frame(width: (isCompact ? 16 : Theme.Layout.contentInset) - 16)
-                                ForEach(epsAndSingles) { album in
+                                ForEach(store.epsAndSingles) { album in
                                     albumCard(album)
                                 }
                                 Spacer().frame(width: (isCompact ? 16 : Theme.Layout.contentInset) - 16)
@@ -81,15 +80,17 @@ struct ArtistDetailView: View {
                         }
                     }
 
-                    if !similar.isEmpty {
+                    if !store.similar.isEmpty {
                         SectionHeader(title: "相似歌手")
                             .padding(.horizontal, isCompact ? 16 : Theme.Layout.contentInset)
 
                         ScrollView(.horizontal, showsIndicators: false) {
                             HStack(spacing: 16) {
                                 Spacer().frame(width: (isCompact ? 16 : Theme.Layout.contentInset) - 16)
-                                ForEach(similar) { sim in
-                                    NavigationLink(value: Destination.artist(sim.id)) {
+                                ForEach(store.similar) { sim in
+                                    Button {
+                                        appStore.send(.openDestination(.artist(sim.id)))
+                                    } label: {
                                         VStack(spacing: 8) {
                                             CachedAsyncImage(url: sim.picUrl?.resizedImageURL(256))
                                                 .frame(width: isCompact ? 80 : 100, height: isCompact ? 80 : 100)
@@ -106,11 +107,11 @@ struct ArtistDetailView: View {
                             }
                         }
                     }
-                } else if isLoading {
+                } else if case .loading = store.loadState {
                     loadingHeader
-                } else if let errorMessage {
-                    ErrorStateView(message: errorMessage) {
-                        Task { await load() }
+                } else if case let .error(message) = store.loadState {
+                    ErrorStateView(message: message) {
+                        store.send(.reload)
                     }
                     .frame(minHeight: 400)
                 }
@@ -119,35 +120,12 @@ struct ArtistDetailView: View {
             }
         }
         #if os(macOS)
-        .navigationTitle(artist?.name ?? String(localized: "歌手"))
+        .navigationTitle(store.artist?.name ?? String(localized: "歌手"))
         #else
         .navigationBarTitleDisplayMode(.inline)
         #endif
-        .task(id: artistID) {
-            await load()
-        }
-    }
-
-    private func load() async {
-        isLoading = true
-        errorMessage = nil
-        do {
-            let response = try await NeteaseAPI.artist(id: artistID)
-            artist = response.artist
-            hotSongs = response.hotSongs
-            isFollowed = response.artist.followed
-            isLoading = false
-
-            if let result = try? await NeteaseAPI.artistAlbums(id: artistID, limit: 60) {
-                albums = result.hotAlbums.filter { $0.size > 1 }
-                epsAndSingles = result.hotAlbums.filter { $0.size <= 1 }
-            }
-            if account.isLoggedIn {
-                similar = (try? await NeteaseAPI.similarArtists(id: artistID)) ?? []
-            }
-        } catch {
-            isLoading = false
-            errorMessage = error.localizedDescription
+        .task(id: store.artistID) {
+            store.send(.onAppear)
         }
     }
 
@@ -180,8 +158,7 @@ struct ArtistDetailView: View {
             // Compact Action Bar
             HStack(spacing: 10) {
                 Button {
-                    player.play(tracks: hotSongs, source: .artist(artistID),
-                                context: .artist(id: artistID, name: artist.name))
+                    store.send(.playAll)
                 } label: {
                     HStack(spacing: 6) {
                         Image(systemName: "play.fill")
@@ -198,11 +175,11 @@ struct ArtistDetailView: View {
 
                 if account.isLoggedIn {
                     Button {
-                        toggleFollow()
+                        store.send(.toggleFollow)
                     } label: {
-                        Image(systemName: isFollowed ? "checkmark" : "plus")
+                        Image(systemName: store.isFollowed ? "checkmark" : "plus")
                             .font(.system(size: 14, weight: .semibold))
-                            .foregroundStyle(isFollowed ? Theme.accent : .primary)
+                            .foregroundStyle(store.isFollowed ? Theme.accent : .primary)
                             .frame(width: 38, height: 38)
                             .background(.primary.opacity(0.06), in: Circle())
                     }
@@ -241,8 +218,7 @@ struct ArtistDetailView: View {
 
                 HStack(spacing: 10) {
                     Button {
-                        player.play(tracks: hotSongs, source: .artist(artistID),
-                                context: .artist(id: artistID, name: artist.name))
+                        store.send(.playAll)
                     } label: {
                         Label("播放热门", systemImage: "play.fill")
                             .font(.system(size: 13, weight: .semibold))
@@ -256,10 +232,10 @@ struct ArtistDetailView: View {
 
                     if account.isLoggedIn {
                         Button {
-                            toggleFollow()
+                            store.send(.toggleFollow)
                         } label: {
-                            Label(isFollowed ? String(localized: "已关注") : String(localized: "关注"),
-                                  systemImage: isFollowed ? "checkmark" : "plus")
+                            Label(store.isFollowed ? String(localized: "已关注") : String(localized: "关注"),
+                                  systemImage: store.isFollowed ? "checkmark" : "plus")
                                 .font(.system(size: 13, weight: .medium))
                                 .padding(.horizontal, 14)
                                 .padding(.vertical, 8)
@@ -274,7 +250,9 @@ struct ArtistDetailView: View {
     }
 
     private func albumCard(_ album: AlbumSummary) -> some View {
-        NavigationLink(value: Destination.album(album.id)) {
+        Button {
+            appStore.send(.openDestination(.album(album.id)))
+        } label: {
             CoverCardBody(
                 coverURL: album.picUrl?.resizedImageURL(384),
                 title: album.name,
@@ -282,18 +260,6 @@ struct ArtistDetailView: View {
             )
         }
         .buttonStyle(.interactiveCard)
-    }
-
-    private func toggleFollow() {
-        Task {
-            do {
-                try await NeteaseAPI.subscribeArtist(id: artistID, subscribe: !isFollowed)
-                isFollowed.toggle()
-                ToastCenter.shared.show(isFollowed ? String(localized: "已关注歌手") : String(localized: "已取消关注"))
-            } catch {
-                ToastCenter.shared.show(error.localizedDescription)
-            }
-        }
     }
 
     private var loadingHeader: some View {

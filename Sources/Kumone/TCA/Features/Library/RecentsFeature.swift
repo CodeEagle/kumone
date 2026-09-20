@@ -22,6 +22,7 @@ struct RecentsFeature {
 
     enum Action: Equatable {
         case onAppear
+        case reload
         case toggleWeek
         case recordsResponse([PlayRecordItem])
         case loadFailed(String)
@@ -41,6 +42,9 @@ struct RecentsFeature {
             switch action {
             case .onAppear:
                 guard state.loadState == .idle else { return .none }
+                return startLoad(state: &state)
+
+            case .reload:
                 return startLoad(state: &state)
 
             case .toggleWeek:

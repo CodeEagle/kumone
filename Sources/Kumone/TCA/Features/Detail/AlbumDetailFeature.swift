@@ -39,7 +39,7 @@ struct AlbumDetailFeature {
     }
 
     enum Delegate: Equatable {
-        case play(tracks: [Track], source: PlaySource, context: PlayContext?)
+        case play(tracks: [Track], source: PlaySource, startAt: Track?, context: PlayContext?)
         case toast(String)
         case subscriptionChanged
     }
@@ -78,7 +78,7 @@ struct AlbumDetailFeature {
                 guard let album = state.album else { return .none }
                 return .send(.delegate(.play(
                     tracks: state.tracks, source: .album(state.albumID),
-                    context: .album(id: state.albumID, name: album.name))))
+                    startAt: nil, context: .album(id: state.albumID, name: album.name))))
 
             case .toggleSubscribe:
                 let subscribed = !state.isSubscribed

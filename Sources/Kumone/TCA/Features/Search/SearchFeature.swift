@@ -42,6 +42,11 @@ struct SearchFeature {
         /// or if the query is blank).
         case load
         case loaded(tab: State.Tab, results: Results)
+        case delegate(Delegate)
+    }
+
+    enum Delegate: Equatable {
+        case play(tracks: [Track], source: PlaySource, startAt: Track?, context: PlayContext?)
     }
 
     /// One tab's worth of matches.
@@ -104,6 +109,9 @@ struct SearchFeature {
                     state.playlists = results.playlists
                 }
                 state.isLoading = false
+                return .none
+
+            case .delegate:
                 return .none
             }
         }

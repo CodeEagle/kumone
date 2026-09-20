@@ -101,6 +101,7 @@ final class AlbumDetailFeatureTests: XCTestCase {
         await store.receive(.delegate(.play(
             tracks: [Self.makeSong(10), Self.makeSong(11)],
             source: .album(1),
+            startAt: nil,
             context: .album(id: 1, name: "专辑1")
         )))
     }

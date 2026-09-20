@@ -21,6 +21,11 @@ struct ToplistsFeature {
         case reload
         case response([ToplistItem])
         case loadFailed(String)
+        case delegate(Delegate)
+    }
+
+    enum Delegate: Equatable {
+        case play(tracks: [Track], source: PlaySource, context: PlayContext?)
     }
 
     @Dependency(\.netease) var netease
@@ -44,6 +49,9 @@ struct ToplistsFeature {
 
             case let .loadFailed(message):
                 state.loadState = .error(message)
+                return .none
+
+            case .delegate:
                 return .none
             }
         }

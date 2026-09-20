@@ -1,40 +1,13 @@
 import CoreImage.CIFilterBuiltins
+import ComposableArchitecture
 import SwiftUI
 
 struct LoginSheet: View {
-    private enum Mode: String, CaseIterable, Identifiable {
-        case qr = "扫码登录"
-        case sms = "手机验证码"
+    @Bindable var store: StoreOf<LoginFeature>
+    let appStore: StoreOf<AppFeature>
 
-        var id: String { rawValue }
-    }
-
-    private enum Phase: Equatable {
-        case loading
-        case waiting          // 801
-        case scanned(String)  // 802, nickname
-        case expired          // 800
-        case success
-        case failed(String)
-    }
-
-    @State private var mode: Mode = .qr
-    @State private var phase: Phase = .loading
     @State private var qrImage: PlatformImage?
-    @State private var unikey: String?
-    @State private var pollTask: Task<Void, Never>?
 
-    // SMS login
-    @State private var phone = ""
-    @State private var code = ""
-    @State private var smsCooldown = 0
-    @State private var smsSending = false
-    @State private var smsLoggingIn = false
-    @State private var smsMessage: String?
-    @State private var cooldownTask: Task<Void, Never>?
-
-    @EnvironmentObject private var account: AccountStore
-    @Environment(\.dismiss) private var dismiss
     @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
@@ -42,8 +15,11 @@ struct LoginSheet: View {
             VStack(spacing: 6) {
                 Text("登录网易云音乐")
                     .font(.title3.weight(.semibold))
-                Picker("", selection: $mode) {
-                    ForEach(Mode.allCases) { mode in
+                Picker("", selection: Binding(
+                    get: { store.mode },
+                    set: { store.send(.switchMode($0)) }
+                )) {
+                    ForEach(LoginFeature.Mode.allCases) { mode in
                         Text(LocalizedStringKey(mode.rawValue)).tag(mode)
                     }
                 }
@@ -54,7 +30,7 @@ struct LoginSheet: View {
             }
             .padding(.top, 28)
 
-            switch mode {
+            switch store.mode {
             case .qr:
                 qrSection
             case .sms:
@@ -62,7 +38,7 @@ struct LoginSheet: View {
             }
 
             Button("取消") {
-                dismiss()
+                appStore.send(.dismissLogin)
             }
             .buttonStyle(.plain)
             .font(.system(size: 12.5))
@@ -70,20 +46,24 @@ struct LoginSheet: View {
             .padding(.bottom, 20)
         }
         .frame(width: 320)
-        .onAppear { startLogin() }
+        .onAppear {
+            store.send(.onAppear)
+            qrImage = store.qrLoginURL.flatMap { Self.generateQR(from: $0) }
+        }
         .onDisappear {
-            pollTask?.cancel()
-            cooldownTask?.cancel()
+            store.send(.dismiss)
+        }
+        .onChange(of: store.qrLoginURL) { _, url in
+            qrImage = url.flatMap { Self.generateQR(from: $0) }
         }
         // Coming back from the NetEase app (single-device flow): if polling
         // died while we were in the background, pick it up again.
-        .onChange(of: scenePhase) { _ in
-            guard scenePhase == .active, mode == .qr else { return }
-            if case .failed = phase { startLogin(reusingKey: true) }
-            else if pollTask == nil || pollTask?.isCancelled == true { startLogin(reusingKey: true) }
+        .onChange(of: scenePhase) { _, phase in
+            guard phase == .active, store.mode == .qr else { return }
+            if case .failed = store.phase { store.send(.onAppear) }
         }
-        .onChange(of: mode) { _ in
-            if mode == .qr, case .failed = phase { startLogin(reusingKey: true) }
+        .onChange(of: store.mode) { _, mode in
+            if mode == .qr, case .failed = store.phase { store.send(.onAppear) }
         }
     }
 
@@ -113,7 +93,7 @@ struct LoginSheet: View {
 
                 if overlayVisible {
                     VStack(spacing: 10) {
-                        switch phase {
+                        switch store.phase {
                         case .expired:
                             Image(systemName: "arrow.clockwise.circle.fill")
                                 .font(.system(size: 34))
@@ -121,7 +101,7 @@ struct LoginSheet: View {
                             Text("二维码已失效")
                                 .font(.system(size: 12, weight: .medium))
                             Button("刷新") {
-                                startLogin()
+                                store.send(.onAppear)
                             }
                             .buttonStyle(.borderedProminent)
                             .tint(Theme.accent)
@@ -145,7 +125,7 @@ struct LoginSheet: View {
             }
 
             Group {
-                switch phase {
+                switch store.phase {
                 case .loading:
                     Text("正在获取二维码…")
                 case .waiting:
@@ -174,72 +154,9 @@ struct LoginSheet: View {
     }
 
     private var overlayVisible: Bool {
-        switch phase {
+        switch store.phase {
         case .expired, .scanned: return true
         default: return false
-        }
-    }
-
-    /// Starts (or resumes) the QR login. Polling tolerates transient network
-    /// errors (the app being backgrounded while the user scans) instead of
-    /// giving up on the first failure.
-    private func startLogin(reusingKey: Bool = false) {
-        pollTask?.cancel()
-        let existingKey = reusingKey ? unikey : nil
-        if existingKey == nil {
-            phase = .loading
-            qrImage = nil
-        } else {
-            phase = .waiting
-        }
-        pollTask = Task {
-            do {
-                let key: String
-                if let existingKey {
-                    key = existingKey
-                } else {
-                    key = try await NeteaseAPI.qrKey()
-                    unikey = key
-                    qrImage = Self.generateQR(from: NeteaseAPI.qrLoginURL(unikey: key))
-                    phase = .waiting
-                }
-
-                var consecutiveErrors = 0
-                while !Task.isCancelled {
-                    try await Task.sleep(for: .seconds(1.2))
-                    let check: NeteaseAPI.QRCheckResponse
-                    do {
-                        check = try await NeteaseAPI.qrCheck(unikey: key)
-                        consecutiveErrors = 0
-                    } catch {
-                        consecutiveErrors += 1
-                        if consecutiveErrors >= 15 { throw error }
-                        continue
-                    }
-                    switch check.code {
-                    case 800:
-                        phase = .expired
-                        unikey = nil
-                        return
-                    case 801:
-                        if case .waiting = phase {} else { phase = .waiting }
-                    case 802:
-                        phase = .scanned(check.nickname ?? "")
-                    case 803:
-                        phase = .success
-                        await account.bootstrap()
-                        ToastCenter.shared.show(String(localized: "欢迎回来，\(account.profile?.nickname ?? "")"))
-                        dismiss()
-                        return
-                    default:
-                        break
-                    }
-                }
-            } catch {
-                if !Task.isCancelled {
-                    phase = .failed(error.localizedDescription)
-                }
-            }
         }
     }
 
@@ -267,7 +184,10 @@ struct LoginSheet: View {
                         .font(.system(size: 15)).foregroundStyle(.secondary).frame(width: 20)
                     Text("+86").font(.system(size: 15, weight: .medium))
                     Rectangle().fill(.quaternary).frame(width: 1, height: 20)
-                    TextField("手机号", text: $phone)
+                    TextField("手机号", text: Binding(
+                        get: { store.phone },
+                        set: { store.send(.setPhone($0)) }
+                    ))
                         .textFieldStyle(.plain).font(.system(size: 15))
                         #if os(iOS)
                         .keyboardType(.phonePad).textContentType(.telephoneNumber)
@@ -276,19 +196,22 @@ struct LoginSheet: View {
                 .fieldChrome()
 
                 HStack(spacing: 10) {
-                    TextField("验证码", text: $code)
+                    TextField("验证码", text: Binding(
+                        get: { store.code },
+                        set: { store.send(.setCode($0)) }
+                    ))
                         .textFieldStyle(.plain).font(.system(size: 15))
                         #if os(iOS)
                         .keyboardType(.numberPad).textContentType(.oneTimeCode)
                         #endif
                     Button {
-                        sendCode()
+                        store.send(.sendCode)
                     } label: {
                         Group {
-                            if smsSending {
+                            if store.isSendingCode {
                                 ProgressView().controlSize(.small)
-                            } else if smsCooldown > 0 {
-                                Text("\(smsCooldown)s").monospacedDigit()
+                            } else if store.smsCooldown > 0 {
+                                Text("\(store.smsCooldown)s").monospacedDigit()
                             } else {
                                 Text("获取验证码")
                             }
@@ -302,17 +225,17 @@ struct LoginSheet: View {
             }
             .padding(.horizontal, 28)
 
-            if let smsMessage {
-                Text(smsMessage)
+            if let statusMessage = store.statusMessage {
+                Text(statusMessage)
                     .font(.system(size: 12)).foregroundStyle(Theme.accent)
                     .multilineTextAlignment(.center).padding(.horizontal, 24)
             }
 
             Button {
-                loginWithCode()
+                store.send(.loginWithCode)
             } label: {
                 Group {
-                    if smsLoggingIn {
+                    if store.isLoggingIn {
                         ProgressView().controlSize(.small).tint(.white)
                     } else {
                         Text("登录")
@@ -331,48 +254,8 @@ struct LoginSheet: View {
         .frame(minHeight: 300)
     }
 
-    private var canSendCode: Bool { !smsSending && smsCooldown == 0 && phone.count >= 11 }
-    private var canLogin: Bool { !smsLoggingIn && phone.count >= 11 && code.count >= 4 }
-
-
-    private func sendCode() {
-        smsSending = true
-        smsMessage = nil
-        Task {
-            defer { smsSending = false }
-            do {
-                try await NeteaseAPI.sendSMSCode(phone: phone)
-                smsMessage = String(localized: "验证码已发送")
-                smsCooldown = 60
-                cooldownTask?.cancel()
-                cooldownTask = Task {
-                    while smsCooldown > 0, !Task.isCancelled {
-                        try? await Task.sleep(for: .seconds(1))
-                        smsCooldown -= 1
-                    }
-                }
-            } catch {
-                smsMessage = error.localizedDescription
-            }
-        }
-    }
-
-    private func loginWithCode() {
-        smsLoggingIn = true
-        smsMessage = nil
-        Task {
-            defer { smsLoggingIn = false }
-            do {
-                try await NeteaseAPI.loginCellphone(phone: phone, captcha: code)
-                pollTask?.cancel()
-                await account.bootstrap()
-                ToastCenter.shared.show(String(localized: "欢迎回来，\(account.profile?.nickname ?? "")"))
-                dismiss()
-            } catch {
-                smsMessage = error.localizedDescription
-            }
-        }
-    }
+    private var canSendCode: Bool { !store.isSendingCode && store.smsCooldown == 0 && store.phone.count >= 11 }
+    private var canLogin: Bool { !store.isLoggingIn && store.phone.count >= 11 && store.code.count >= 4 }
 
     private static func generateQR(from string: String) -> PlatformImage? {
         let filter = CIFilter.qrCodeGenerator()

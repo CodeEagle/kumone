@@ -1,5 +1,6 @@
 #if os(macOS)
 import AppKit
+import ComposableArchitecture
 import SwiftUI
 
 /// LyricsX-style desktop lyrics: a borderless, transparent, screen-sized
@@ -12,6 +13,7 @@ final class DesktopLyricsController {
 
     private var window: NSWindow?
     private var observers: [NSObjectProtocol] = []
+    private var appStore: StoreOf<AppFeature>?
 
     private init() {}
 
@@ -30,7 +32,8 @@ final class DesktopLyricsController {
             window.sharingType = .none // keep lyrics out of screenshots/recordings
             window.isReleasedWhenClosed = false
 
-            let host = NSHostingView(rootView: DesktopLyricsSurface())
+            let host = NSHostingView(rootView: DesktopLyricsSurface()
+                .environment(\.appStore, appStore))
             host.layer?.backgroundColor = .clear
             window.contentView = host
             self.window = window
@@ -57,7 +60,8 @@ final class DesktopLyricsController {
         window?.orderOut(nil)
     }
 
-    func sync(with enabled: Bool) {
+    func sync(with enabled: Bool, store: StoreOf<AppFeature>) {
+        appStore = store
         enabled ? show() : hide()
     }
 
@@ -80,12 +84,13 @@ private final class KeylessWindow: NSWindow {
 /// Screen-sized transparent surface positioning the lyric box by two 0…1
 /// factors (x from left, y from top), draggable with an 8pt center snap.
 private struct DesktopLyricsSurface: View {
-    @StateObject private var player = PlayerService.shared
-    @StateObject private var settings = SettingsManager.shared
+    @Environment(\.appStore) private var appStore: StoreOf<AppFeature>?
 
     @AppStorage("desktopLyrics.xFactor") private var xFactor = 0.5
     @AppStorage("desktopLyrics.yFactor") private var yFactor = 0.9
     @State private var dragOffset: CGSize = .zero
+
+    private var settings: SettingsFeature.State { appStore?.settings ?? .init() }
 
     var body: some View {
         GeometryReader { geo in
@@ -118,20 +123,19 @@ private struct DesktopLyricsSurface: View {
                         }
                 )
         }
-        .environmentObject(player)
-        .environmentObject(settings)
     }
 }
 
 private struct DesktopLyricsBox: View {
-    @EnvironmentObject private var player: PlayerService
-    @ObservedObject private var lyricsCursor = PlayerService.shared.lyricsCursor
-    @EnvironmentObject private var settings: SettingsManager
+    @Environment(\.appStore) private var appStore: StoreOf<AppFeature>?
+
+    private var player: PlayerFeature.State { appStore?.player ?? .init() }
+    private var settings: SettingsFeature.State { appStore?.settings ?? .init() }
 
     private var currentLine: LyricLine? {
-        guard player.isPlaying || PlayerService.shared.progress > 0,
+        guard player.isPlaying || player.progress > 0,
               let lyrics = player.lyrics, !lyrics.isEmpty,
-              let index = lyricsCursor.activeIndex else { return nil }
+              let index = player.lyricsCursorIndex else { return nil }
         return lyrics.lines[index]
     }
 
@@ -188,6 +192,7 @@ private struct DesktopLyricsBox: View {
 }
 
 #else
+import ComposableArchitecture
 import SwiftUI
 
 @MainActor
@@ -197,6 +202,6 @@ final class DesktopLyricsController {
     var isVisible: Bool { false }
     func show() {}
     func hide() {}
-    func sync(with enabled: Bool) {}
+    func sync(with enabled: Bool, store: StoreOf<AppFeature>) {}
 }
 #endif

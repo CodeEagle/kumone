@@ -1,9 +1,10 @@
+import ComposableArchitecture
 import SwiftUI
 
 struct PlayerBar: View {
-    @EnvironmentObject private var player: PlayerService
-    @EnvironmentObject private var account: AccountStore
-    @EnvironmentObject private var settings: SettingsManager
+    let appStore: StoreOf<AppFeature>
+
+    private var player: PlayerFeature.State { appStore.player }
 
     var body: some View {
         GeometryReader { proxy in
@@ -47,7 +48,7 @@ struct PlayerBar: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             if let track = player.currentTrack {
-                LikeButton(trackID: track.id)
+                LikeButton(trackID: track.id, appStore: appStore)
             }
         }
     }
@@ -56,7 +57,7 @@ struct PlayerBar: View {
         Button {
             guard player.hasCurrentTrack else { return }
             withAnimation(AppAnimation.smooth) {
-                player.showNowPlaying = true
+                appStore.send(.presentNowPlaying)
             }
         } label: {
             CachedAsyncImage(url: player.currentTrack?.album.picUrl?.resizedImageURL(128))
@@ -80,7 +81,7 @@ struct PlayerBar: View {
             HStack(spacing: 6) {
                 if player.isFMMode {
                     PlayerIconButton(icon: "trash", size: 12) {
-                        player.fmTrash()
+                        appStore.send(.player(.fmTrash))
                     }
                     .help("不喜欢，换一首")
                 } else {
@@ -88,19 +89,19 @@ struct PlayerBar: View {
                         icon: "shuffle", size: 12,
                         isActive: player.shuffleEnabled
                     ) {
-                        player.toggleShuffle()
+                        appStore.send(.player(.toggleShuffle))
                     }
                     .help("随机播放")
                 }
 
                 PlayerIconButton(icon: "backward.fill", size: 14, disabled: player.isFMMode) {
-                    player.previous()
+                    appStore.send(.player(.previous))
                 }
 
                 playPauseButton
 
                 PlayerIconButton(icon: "forward.fill", size: 14) {
-                    player.next()
+                    appStore.send(.player(.next))
                 }
 
                 if player.isFMMode {
@@ -114,12 +115,12 @@ struct PlayerBar: View {
                         icon: player.repeatMode == .one ? "repeat.1" : "repeat", size: 12,
                         isActive: player.repeatMode != .off
                     ) {
-                        player.cycleRepeatMode()
+                        appStore.send(.player(.cycleRepeatMode))
                     }
                     .help("循环模式")
                 }
             }
-            ScrubberLane()
+            ScrubberLane(appStore: appStore)
         }
         .padding(.vertical, 5)
         .opacity(player.hasCurrentTrack ? 1 : 0.5)
@@ -127,7 +128,7 @@ struct PlayerBar: View {
 
     private var playPauseButton: some View {
         Button {
-            player.togglePlayPause()
+            appStore.send(.player(.togglePlayPause))
         } label: {
             ZStack {
                 Circle()
@@ -168,14 +169,14 @@ struct PlayerBar: View {
                 icon: "quote.bubble", size: 13,
                 isActive: player.activePanel == .lyrics
             ) {
-                player.activePanel = player.activePanel == .lyrics ? nil : .lyrics
+                appStore.send(.player(.togglePanel(.lyrics)))
             }
             .help("歌词")
             PlayerIconButton(
-                icon: "inset.filled.bottomthird.square", size: 13,
-                isActive: settings.showDesktopLyrics
+                icon: "quote.bubble", size: 13,
+                isActive: appStore.settings.showDesktopLyrics
             ) {
-                settings.showDesktopLyrics.toggle()
+                appStore.send(.settings(.setShowDesktopLyrics(!appStore.settings.showDesktopLyrics)))
             }
             .help("桌面歌词")
             PlayerIconButton(
@@ -183,14 +184,14 @@ struct PlayerBar: View {
                 isActive: player.activePanel == .queue,
                 disabled: player.isFMMode
             ) {
-                player.activePanel = player.activePanel == .queue ? nil : .queue
+                appStore.send(.player(.togglePanel(.queue)))
             }
             .help("播放队列")
             #if os(macOS)
             RoutePickerButton(diameter: 26, glyphSize: 13,
                               tint: .secondary, background: .clear)
             #endif
-            VolumeControl()
+            VolumeControl(appStore: appStore)
         }
     }
 
@@ -251,16 +252,15 @@ struct PlayerIconButton: View {
 struct LikeButton: View {
     let trackID: Int
     var size: CGFloat = 13
-
-    @EnvironmentObject private var account: AccountStore
+    let appStore: StoreOf<AppFeature>
 
     var body: some View {
-        let liked = account.isLiked(trackID)
+        let liked = appStore.account.isLiked(trackID)
         PlayerIconButton(
             icon: liked ? "heart.fill" : "heart", size: size,
             isActive: liked
         ) {
-            Task { await account.toggleLike(trackID: trackID) }
+            appStore.send(.account(.toggleLike(trackID)))
         }
         .help(liked ? String(localized: "取消喜欢") : String(localized: "喜欢"))
     }
@@ -269,8 +269,9 @@ struct LikeButton: View {
 // MARK: - Scrubber
 
 struct ScrubberLane: View {
-    @EnvironmentObject private var player: PlayerService
-    @ObservedObject private var clock = PlayerService.shared.clock
+    let appStore: StoreOf<AppFeature>
+
+    private var player: PlayerFeature.State { appStore.player }
     @Environment(\.colorScheme) private var colorScheme
 
     @State private var isHovering = false
@@ -279,13 +280,13 @@ struct ScrubberLane: View {
 
     private var fraction: Double {
         guard player.duration > 0 else { return 0 }
-        let value = isDragging ? dragProgress : clock.progress
+        let value = isDragging ? dragProgress : player.progress
         return min(max(value / player.duration, 0), 1)
     }
 
     var body: some View {
         HStack(spacing: 8) {
-            timeLabel(isDragging ? dragProgress : clock.progress)
+            timeLabel(isDragging ? dragProgress : player.progress)
             track
             timeLabel(player.duration)
         }
@@ -323,13 +324,11 @@ struct ScrubberLane: View {
                     .onChanged { value in
                         guard player.duration > 0 else { return }
                         isDragging = true
-                        player.isScrubbing = true
                         dragProgress = min(max(value.location.x / width, 0), 1) * player.duration
                     }
                     .onEnded { _ in
-                        player.seek(to: dragProgress)
+                        appStore.send(.player(.seek(dragProgress)))
                         isDragging = false
-                        player.isScrubbing = false
                     }
             )
         }
@@ -348,15 +347,18 @@ struct ScrubberLane: View {
 // MARK: - Volume
 
 struct VolumeControl: View {
-    @EnvironmentObject private var player: PlayerService
+    let appStore: StoreOf<AppFeature>
+
     @State private var showPopover = false
+
+    private var volume: Float { appStore.player.volume }
 
     var body: some View {
         PlayerIconButton(icon: volumeIcon, size: 13) {
             showPopover.toggle()
         }
         .popover(isPresented: $showPopover, arrowEdge: .top) {
-            VolumeSlider()
+            VolumeSlider(appStore: appStore)
                 .padding(.vertical, 12)
                 .padding(.horizontal, 10)
         }
@@ -364,7 +366,7 @@ struct VolumeControl: View {
     }
 
     private var volumeIcon: String {
-        switch player.volume {
+        switch volume {
         case 0: return "speaker.slash"
         case ..<0.4: return "speaker.wave.1"
         case ..<0.75: return "speaker.wave.2"
@@ -374,7 +376,8 @@ struct VolumeControl: View {
 }
 
 struct VolumeSlider: View {
-    @EnvironmentObject private var player: PlayerService
+    let appStore: StoreOf<AppFeature>
+
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
@@ -386,14 +389,16 @@ struct VolumeSlider: View {
                     .frame(width: 4)
                 Capsule()
                     .fill(Theme.accent)
-                    .frame(width: 4, height: max(4, height * CGFloat(player.volume)))
+                    .frame(width: 4, height: max(4, height * CGFloat(appStore.player.volume)))
             }
             .frame(maxWidth: .infinity)
             .contentShape(Rectangle())
             .gesture(
                 DragGesture(minimumDistance: 0)
                     .onChanged { value in
-                        player.volume = Float(min(max(1 - value.location.y / height, 0), 1))
+                        appStore.send(.player(.setVolume(
+                            Float(min(max(1 - value.location.y / height, 0), 1))
+                        )))
                     }
             )
         }

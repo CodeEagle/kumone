@@ -1,3 +1,4 @@
+import ComposableArchitecture
 import SwiftUI
 
 /// The lyric itself, with furigana over the kanji when the reader asked for it
@@ -16,10 +17,10 @@ struct LyricText: View {
     /// Per-character opacity for the karaoke wipe, when there is one.
     var alphas: [Double]?
 
-    @EnvironmentObject private var settings: SettingsManager
+    @Environment(\.appStore) private var appStore: StoreOf<AppFeature>?
 
     var body: some View {
-        if settings.lyricsAnnotation == .furigana, let furigana = line.furigana {
+        if appStore?.settings.lyricsAnnotation == .furigana, let furigana = line.furigana {
             RubyText(
                 segments: furigana,
                 size: size,

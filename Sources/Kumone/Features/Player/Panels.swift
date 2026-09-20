@@ -1,11 +1,12 @@
+import ComposableArchitecture
 import SwiftUI
 
 // MARK: - Lyrics panel
 
 struct LyricsPanel: View {
-    @EnvironmentObject private var player: PlayerService
-    @ObservedObject private var lyricsCursor = PlayerService.shared.lyricsCursor
-    @EnvironmentObject private var settings: SettingsManager
+    let appStore: StoreOf<AppFeature>
+
+    private var player: PlayerFeature.State { appStore.player }
 
     @State private var activeIndex: Int?
     @State private var isUserScrolling = false
@@ -40,7 +41,7 @@ struct LyricsPanel: View {
             }
             Spacer()
             Button {
-                player.activePanel = nil
+                appStore.send(.player(.togglePanel(.lyrics)))
             } label: {
                 Image(systemName: "xmark")
                     .font(.system(size: 11, weight: .semibold))
@@ -69,7 +70,7 @@ struct LyricsPanel: View {
                     }
                     .padding(.horizontal, 20)
                 }
-                .onChange(of: lyricsCursor.activeIndex) { index in
+                .onChange(of: player.lyricsCursorIndex) { _, index in
                     guard index != activeIndex else { return }
                     activeIndex = index
                     guard !isUserScrolling, let index else { return }
@@ -80,7 +81,7 @@ struct LyricsPanel: View {
                 .onAppear {
                     adoptCursor(proxy: proxy)
                 }
-                .onChange(of: player.currentTrack?.id) { _ in
+                .onChange(of: player.currentTrack?.id) { _, _ in
                     activeIndex = nil
                     proxy.scrollTo(0, anchor: .top)
                 }
@@ -117,7 +118,7 @@ struct LyricsPanel: View {
     /// the top. Scrolling is deferred a turn: the list has not laid out yet
     /// while `onAppear` runs, and `scrollTo` on an unlaid list does nothing.
     private func adoptCursor(proxy: ScrollViewProxy) {
-        let index = lyricsCursor.activeIndex
+        let index = player.lyricsCursorIndex
         activeIndex = index
         guard let index else { return }
         DispatchQueue.main.async {
@@ -127,10 +128,10 @@ struct LyricsPanel: View {
 
     private func lyricLine(_ line: LyricLine, isActive: Bool) -> some View {
         Button {
-            player.seek(to: line.time)
+            appStore.send(.player(.seek(line.time)))
         } label: {
             VStack(alignment: .leading, spacing: 3) {
-                if settings.lyricsAnnotation == .romaji, let romaji = line.romaji {
+                if appStore.settings.lyricsAnnotation == .romaji, let romaji = line.romaji {
                     Text(romaji)
                         .font(.system(size: isActive ? 12 : 11))
                         .foregroundStyle(isActive ? AnyShapeStyle(.secondary) : AnyShapeStyle(.tertiary))
@@ -143,7 +144,7 @@ struct LyricsPanel: View {
                     // styles the other rows use are spelled out here.
                     color: isActive ? .primary : .secondary
                 )
-                if settings.showLyricsTranslation, let translation = line.translation {
+                if appStore.settings.showLyricsTranslation, let translation = line.translation {
                     Text(translation)
                         .font(.system(size: isActive ? 13 : 12))
                         .foregroundStyle(isActive ? AnyShapeStyle(.secondary) : AnyShapeStyle(.tertiary))
@@ -163,7 +164,9 @@ struct LyricsPanel: View {
 // MARK: - Queue panel
 
 struct QueuePanel: View {
-    @EnvironmentObject private var player: PlayerService
+    let appStore: StoreOf<AppFeature>
+
+    private var player: PlayerFeature.State { appStore.player }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -173,14 +176,14 @@ struct QueuePanel: View {
                 ScrollView(showsIndicators: false) {
                     LazyVStack(alignment: .leading, spacing: 2) {
                         sectionLabel("正在播放")
-                        QueueRow(track: current, isCurrent: true)
+                        QueueRow(track: current, isCurrent: true, appStore: appStore)
 
                         if !player.upcomingTracks.isEmpty {
                             sectionLabel("即将播放")
                                 .padding(.top, 10)
                             ForEach(Array(player.upcomingTracks.prefix(100).enumerated()),
                                     id: \.offset) { _, track in
-                                QueueRow(track: track, isCurrent: false)
+                                QueueRow(track: track, isCurrent: false, appStore: appStore)
                             }
                         }
                     }
@@ -210,7 +213,7 @@ struct QueuePanel: View {
                 .foregroundStyle(.tertiary)
             Spacer()
             Button {
-                player.activePanel = nil
+                appStore.send(.player(.togglePanel(.queue)))
             } label: {
                 Image(systemName: "xmark")
                     .font(.system(size: 11, weight: .semibold))
@@ -236,14 +239,16 @@ struct QueuePanel: View {
 private struct QueueRow: View {
     let track: Track
     let isCurrent: Bool
+    let appStore: StoreOf<AppFeature>
 
-    @EnvironmentObject private var player: PlayerService
     @State private var isHovering = false
+
+    private var isPlaying: Bool { appStore.player.isPlaying }
 
     var body: some View {
         Button {
             guard !isCurrent else { return }
-            player.jumpTo(track)
+            appStore.send(.player(.jumpTo(track)))
         } label: {
             HStack(spacing: 10) {
                 CachedAsyncImage(url: track.album.picUrl?.resizedImageURL(96), animated: false)
@@ -261,10 +266,10 @@ private struct QueueRow: View {
                 }
                 Spacer(minLength: 0)
                 if isCurrent {
-                    PlayingIndicator(animating: player.isPlaying)
+                    PlayingIndicator(animating: isPlaying)
                 } else if isHovering {
                     Button {
-                        player.removeFromUpcoming(track)
+                        appStore.send(.player(.removeFromUpcoming(track)))
                     } label: {
                         Image(systemName: "xmark")
                             .font(.system(size: 9, weight: .semibold))

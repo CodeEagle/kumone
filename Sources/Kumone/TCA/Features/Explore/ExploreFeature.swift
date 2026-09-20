@@ -36,6 +36,13 @@ struct ExploreFeature {
         /// Loads the next page (the grid's "load more" trigger).
         case loadMore
         case pageLoaded(Page)
+        /// Fetches a category playlist's tracks and hands them to the player.
+        case playPlaylist(Int)
+        case delegate(Delegate)
+    }
+
+    enum Delegate: Equatable {
+        case play(tracks: [Track], source: PlaySource, context: PlayContext?)
     }
 
     /// One category's worth of content. 排行榜 replaces the grid; every other
@@ -105,6 +112,23 @@ struct ExploreFeature {
                 }
                 state.loadState = .loaded
                 return .none
+
+            case .delegate:
+                return .none
+
+            case let .playPlaylist(id):
+                return .run { [netease] send in
+                    guard let detail = try? await netease.playlistDetail(id: id) else { return }
+                    var tracks = detail.playlist.tracks
+                    if tracks.isEmpty {
+                        let ids = detail.playlist.trackIds.map(\.id)
+                        tracks = (try? await netease.songDetails(ids: Array(ids.prefix(500))))?.songs ?? []
+                    }
+                    await send(.delegate(.play(
+                        tracks: tracks,
+                        source: .playlist(id),
+                        context: .playlist(id: id, name: detail.playlist.name))))
+                }
             }
         }
     }

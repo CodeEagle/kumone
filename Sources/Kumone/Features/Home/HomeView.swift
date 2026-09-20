@@ -1,121 +1,20 @@
+import ComposableArchitecture
 import SwiftUI
 
-@MainActor
-final class HomeViewModel: ObservableObject {
-    /// Shared so the loaded page survives sidebar switches (no skeleton flash).
-    static let shared = HomeViewModel()
-
-    enum State {
-        case idle, loading, loaded
-        case error(String)
-    }
-
-    /// The personalized radar family — global playlist IDs whose content is
-    /// generated per logged-in account (same list YesPlayMusic special-cases).
-    static let radarPlaylistIDs = [
-        3_136_952_023, // 私人雷达
-        2_829_883_282, // 华语私人雷达
-        2_829_816_518, // 欧美私人雷达
-        2_829_896_389, // 日系私人雷达
-    ]
-
-    struct RadarPlaylist: Identifiable, Hashable {
-        let id: Int
-        let title: String
-        let subtitle: String?
-        let coverURL: String?
-    }
-
-    @Published var state: State = .idle
-    @Published var recommendPlaylists: [PlaylistSummary] = []
-    @Published var radarPlaylists: [RadarPlaylist] = []
-    @Published var toplists: [ToplistItem] = []
-    @Published var newAlbums: [AlbumSummary] = []
-    @Published var topArtists: [ArtistSummary] = []
-    @Published var dailyFirstCover: String?
-
-    func load(loggedIn: Bool) async {
-        if case .loaded = state { return }
-        state = .loading
-
-        async let playlistsTask = fetchRecommendPlaylists(loggedIn: loggedIn)
-        async let toplistsTask = try? NeteaseAPI.toplists()
-        async let albumsTask = try? NeteaseAPI.newAlbums(limit: 20)
-        async let artistsTask = try? NeteaseAPI.topArtists()
-
-        let playlists = await playlistsTask
-        recommendPlaylists = playlists
-        toplists = (await toplistsTask ?? []).filter {
-            [19_723_756, 3_779_629, 2_884_035, 3_778_678, 60198].contains($0.id)
-        }
-        newAlbums = await albumsTask ?? []
-        let artists = await artistsTask ?? []
-        topArtists = Array(artists.shuffled().prefix(6))
-
-        if loggedIn {
-            if let daily = try? await NeteaseAPI.dailyRecommendSongs() {
-                dailyFirstCover = daily.first?.album.picUrl
-            }
-            await loadRadarPlaylists()
-        }
-
-        state = playlists.isEmpty && newAlbums.isEmpty ? .error(String(localized: "网络连接失败")) : .loaded
-    }
-
-    func reload(loggedIn: Bool) async {
-        state = .idle
-        await load(loggedIn: loggedIn)
-    }
-
-    private func loadRadarPlaylists() async {
-        let briefs = await withTaskGroup(of: (Int, NeteaseAPI.PlaylistBrief.Body?).self) { group in
-            for id in Self.radarPlaylistIDs {
-                group.addTask {
-                    (id, try? await NeteaseAPI.playlistBrief(id: id))
-                }
-            }
-            var byID: [Int: NeteaseAPI.PlaylistBrief.Body] = [:]
-            for await (id, brief) in group {
-                if let brief { byID[id] = brief }
-            }
-            return byID
-        }
-        radarPlaylists = Self.radarPlaylistIDs.compactMap { id in
-            guard let brief = briefs[id] else { return nil }
-            // Names arrive as "今天从《…》听起|私人雷达" — split into title/subtitle.
-            let parts = (brief.name ?? "").components(separatedBy: "|")
-            let title = parts.count > 1 ? parts.last! : (brief.name ?? String(localized: "雷达歌单"))
-            let subtitle = parts.count > 1 ? parts.dropLast().joined(separator: "|") : nil
-            return RadarPlaylist(id: id, title: title, subtitle: subtitle, coverURL: brief.coverImgUrl)
-        }
-    }
-
-    private func fetchRecommendPlaylists(loggedIn: Bool) async -> [PlaylistSummary] {
-        if loggedIn {
-            async let recommend = try? NeteaseAPI.recommendResource()
-            async let personalized = try? NeteaseAPI.personalizedPlaylists(limit: 30)
-            let head = await recommend ?? []
-            let tail = await personalized ?? []
-            var seen = Set<Int>()
-            return (head + tail).filter { seen.insert($0.id).inserted }
-        }
-        return (try? await NeteaseAPI.personalizedPlaylists(limit: 30)) ?? []
-    }
-}
-
 struct HomeView: View {
-    @EnvironmentObject private var account: AccountStore
-    @EnvironmentObject private var player: PlayerService
-    @StateObject private var model = HomeViewModel.shared
+    let store: StoreOf<HomeFeature>
+    let appStore: StoreOf<AppFeature>
+
+    private var account: AccountFeature.State { appStore.account }
 
     var body: some View {
         ScrollView {
-            switch model.state {
+            switch store.loadState {
             case .idle, .loading:
                 loadingBody
-            case .error(let message):
+            case let .error(message):
                 ErrorStateView(message: message) {
-                    Task { await model.reload(loggedIn: account.isLoggedIn) }
+                    store.send(.reload)
                 }
                 .frame(minHeight: 400)
             case .loaded:
@@ -124,7 +23,7 @@ struct HomeView: View {
         }
         .navigationTitle("推荐")
         .task(id: account.isLoggedIn) {
-            await model.load(loggedIn: account.isLoggedIn)
+            store.send(.onAppear)
         }
     }
 
@@ -152,25 +51,27 @@ struct HomeView: View {
                     .padding(.top, 8)
             }
 
-            if !model.recommendPlaylists.isEmpty {
+            if !store.recommendPlaylists.isEmpty {
                 Shelf(title: "推荐歌单", rowHeight: Theme.Layout.coverShelfHeight) {
-                    ForEach(Array(model.recommendPlaylists.prefix(12).enumerated()), id: \.element.id) { index, playlist in
+                    ForEach(Array(store.recommendPlaylists.prefix(12).enumerated()), id: \.element.id) { index, playlist in
                         playlistCard(playlist)
                             .staggeredAppearance(index: index, id: "home-rec-\(playlist.id)")
                     }
                 }
             }
 
-            if !model.radarPlaylists.isEmpty {
+            if !store.radarPlaylists.isEmpty {
                 Shelf(title: "雷达歌单", rowHeight: Theme.Layout.coverShelfHeight) {
-                    ForEach(model.radarPlaylists) { radar in
-                        NavigationLink(value: Destination.radarPlaylist(radar.id)) {
+                    ForEach(store.radarPlaylists) { radar in
+                        Button {
+                            appStore.send(.openDestination(.radarPlaylist(radar.id)))
+                        } label: {
                             CoverCardBody(
                                 coverURL: radar.coverURL?.resizedImageURL(384),
                                 title: radar.title,
                                 subtitle: radar.subtitle
                             ) {
-                                playPlaylist(radar.id)
+                                store.send(.playPlaylist(radar.id))
                             }
                         }
                         .buttonStyle(.plain)
@@ -178,10 +79,12 @@ struct HomeView: View {
                 }
             }
 
-            if !model.toplists.isEmpty {
+            if !store.toplists.isEmpty {
                 Shelf(title: "排行榜", seeAll: nil, rowHeight: Theme.Layout.coverShelfHeight) {
-                    ForEach(model.toplists) { toplist in
-                        NavigationLink(value: Destination.playlist(toplist.id)) {
+                    ForEach(store.toplists) { toplist in
+                        Button {
+                            appStore.send(.openDestination(.playlist(toplist.id)))
+                        } label: {
                             toplistCard(toplist)
                         }
                         .buttonStyle(.plain)
@@ -189,17 +92,17 @@ struct HomeView: View {
                 }
             }
 
-            if !model.newAlbums.isEmpty {
+            if !store.newAlbums.isEmpty {
                 Shelf(title: "新碟上架", rowHeight: Theme.Layout.coverShelfHeight) {
-                    ForEach(model.newAlbums) { album in
+                    ForEach(store.newAlbums) { album in
                         albumCard(album)
                     }
                 }
             }
 
-            if !model.topArtists.isEmpty {
+            if !store.topArtists.isEmpty {
                 Shelf(title: "推荐歌手", rowHeight: Theme.Layout.artistShelfHeight) {
-                    ForEach(model.topArtists) { artist in
+                    ForEach(store.topArtists) { artist in
                         artistCard(artist)
                     }
                 }
@@ -218,19 +121,21 @@ struct HomeView: View {
             HStack(spacing: 16) {
                 Color.clear.frame(width: max(0, Theme.Layout.contentInset - 16), height: 1)
                 if account.isLoggedIn {
-                    NavigationLink(value: Destination.daily) {
+                    Button {
+                        appStore.send(.openDestination(.daily))
+                    } label: {
                         FeatureCard(
                             title: "每日推荐",
                             subtitle: "根据你的口味生成",
                             icon: "calendar",
-                            coverURL: model.dailyFirstCover?.resizedImageURL(512),
+                            coverURL: store.dailyFirstCover?.resizedImageURL(512),
                             showsDate: true
                         )
                     }
                     .buttonStyle(.plain)
 
                     Button {
-                        player.startFM()
+                        appStore.send(.player(.startFM))
                     } label: {
                         FeatureCard(
                             title: "私人漫游",
@@ -243,7 +148,7 @@ struct HomeView: View {
                     .buttonStyle(.interactiveCard)
 
                     Button {
-                        startHeartbeatMode()
+                        store.send(.startHeartbeat)
                     } label: {
                         FeatureCard(
                             title: "心动模式",
@@ -262,64 +167,43 @@ struct HomeView: View {
         .compatScrollClipDisabled()
     }
 
-    private func startHeartbeatMode() {
-        guard let likedList = account.likedSongsPlaylist else { return }
-        Task {
-            guard let seed = account.likedTrackIDs.randomElement() else {
-                ToastCenter.shared.show(String(localized: "先收藏一些喜欢的歌曲吧"))
-                return
-            }
-            do {
-                let tracks = try await NeteaseAPI.intelligenceList(songID: seed, playlistID: likedList.id)
-                guard !tracks.isEmpty else {
-                    ToastCenter.shared.show(String(localized: "心动模式暂时不可用"))
-                    return
-                }
-                player.play(tracks: tracks, source: .playlist(likedList.id),
-                            context: .heartbeat)
-                ToastCenter.shared.show(String(localized: "已开启心动模式"))
-            } catch {
-                ToastCenter.shared.show(error.localizedDescription)
-            }
-        }
-    }
-
     // MARK: - Cards
 
     private func playlistCard(_ playlist: PlaylistSummary) -> some View {
-        NavigationLink(value: Destination.playlist(playlist.id)) {
+        Button {
+            appStore.send(.openDestination(.playlist(playlist.id)))
+        } label: {
             CoverCardBody(
                 coverURL: playlist.coverURL?.resizedImageURL(384),
                 title: playlist.name,
                 subtitle: playlist.copywriter,
                 playCount: playlist.playCount
             ) {
-                playPlaylist(playlist.id)
+                store.send(.playPlaylist(playlist.id))
             }
         }
         .buttonStyle(.plain)
     }
 
     private func albumCard(_ album: AlbumSummary) -> some View {
-        NavigationLink(value: Destination.album(album.id)) {
+        Button {
+            appStore.send(.openDestination(.album(album.id)))
+        } label: {
             CoverCardBody(
                 coverURL: album.picUrl?.resizedImageURL(384),
                 title: album.name,
                 subtitle: album.artistName
             ) {
-                Task {
-                    if let detail = try? await NeteaseAPI.album(id: album.id) {
-                        player.play(tracks: detail.songs, source: .album(album.id),
-                                    context: .album(id: album.id, name: album.name))
-                    }
-                }
+                store.send(.playAlbum(album))
             }
         }
         .buttonStyle(.plain)
     }
 
     private func artistCard(_ artist: ArtistSummary) -> some View {
-        NavigationLink(value: Destination.artist(artist.id)) {
+        Button {
+            appStore.send(.openDestination(.artist(artist.id)))
+        } label: {
             VStack(spacing: 10) {
                 CachedAsyncImage(url: artist.picUrl?.resizedImageURL(256))
                     .frame(width: 128, height: 128)
@@ -356,19 +240,6 @@ struct HomeView: View {
         }
         .frame(width: Theme.Layout.cardSize, alignment: .leading)
         .contentShape(Rectangle())
-    }
-
-    private func playPlaylist(_ id: Int) {
-        Task {
-            guard let detail = try? await NeteaseAPI.playlistDetail(id: id) else { return }
-            var tracks = detail.playlist.tracks
-            if tracks.isEmpty {
-                let ids = detail.playlist.trackIds.map(\.id)
-                tracks = (try? await NeteaseAPI.songDetails(ids: Array(ids.prefix(500))))?.songs ?? []
-            }
-            player.play(tracks: tracks, source: .playlist(id),
-                        context: .playlist(id: id, name: detail.playlist.name))
-        }
     }
 }
 

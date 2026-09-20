@@ -1,12 +1,9 @@
+import ComposableArchitecture
 import SwiftUI
 
 struct DailySongsView: View {
-    @State private var tracks: [Track] = []
-    @State private var isLoading = true
-    @State private var errorMessage: String?
-
-    @EnvironmentObject private var player: PlayerService
-    @EnvironmentObject private var account: AccountStore
+    let store: StoreOf<DailySongsFeature>
+    let appStore: StoreOf<AppFeature>
 
     var body: some View {
         ScrollView {
@@ -15,27 +12,30 @@ struct DailySongsView: View {
                     .padding(.horizontal, Theme.Layout.contentInset)
                     .padding(.top, 16)
 
-                if isLoading {
+                switch store.loadState {
+                case .loading:
                     ProgressView()
                         .frame(maxWidth: .infinity, minHeight: 300)
-                } else if let errorMessage {
-                    ErrorStateView(message: errorMessage) {
-                        Task { await load() }
+                case let .error(message):
+                    ErrorStateView(message: message) {
+                        store.send(.reload)
                     }
                     .frame(minHeight: 300)
-                } else if tracks.isEmpty {
+                case .loaded where store.tracks.isEmpty:
                     EmptyStateView(icon: "calendar.badge.clock", title: "暂无每日推荐",
                                    subtitle: "多听几首歌培养口味，每天 6:00 更新")
                         .frame(minHeight: 300)
-                } else {
+                default:
                     TrackListView(
-                        tracks: tracks,
-                        source: .daily,
-                        context: .daily,
+                        tracks: store.tracks,
                         recommendationContext: .daily,
                         onRecommendationReduced: { rejected, replacement in
-                            tracks.replaceRecommendation(rejected, with: replacement)
-                        }
+                            store.send(.recommendationReduced(rejected: rejected, replacement: replacement))
+                        },
+                        onPlay: { tracks, _ in
+                            store.send(.delegate(.play(tracks: tracks, source: .daily, context: .daily)))
+                        },
+                        appStore: appStore
                     )
                         .padding(.horizontal, Theme.Layout.contentInset - 10)
                 }
@@ -44,15 +44,13 @@ struct DailySongsView: View {
         }
         .navigationTitle("每日推荐")
         .task {
-            if tracks.isEmpty {
-                await load()
-            }
+            store.send(.onAppear)
         }
     }
 
     private var header: some View {
         ZStack(alignment: .bottomLeading) {
-            CachedAsyncImage(url: tracks.first?.album.picUrl?.resizedImageURL(1024))
+            CachedAsyncImage(url: store.tracks.first?.album.picUrl?.resizedImageURL(1024))
                 .frame(height: 220)
                 .frame(maxWidth: .infinity)
                 .clipped()
@@ -80,7 +78,7 @@ struct DailySongsView: View {
                 Spacer()
 
                 Button {
-                    player.play(tracks: tracks, source: .daily, context: .daily)
+                    store.send(.playAll)
                 } label: {
                     Label("播放全部", systemImage: "play.fill")
                         .font(.system(size: 13, weight: .semibold))
@@ -102,22 +100,5 @@ struct DailySongsView: View {
         fmt.locale = .current
         fmt.setLocalizedDateFormatFromTemplate("MMMdEEEE")
         return fmt.string(from: .now)
-    }
-
-    private func load() async {
-        guard account.isLoggedIn else {
-            isLoading = false
-            errorMessage = String(localized: "登录后才能查看每日推荐")
-            return
-        }
-        isLoading = true
-        errorMessage = nil
-        do {
-            tracks = try await NeteaseAPI.dailyRecommendSongs()
-            isLoading = false
-        } catch {
-            isLoading = false
-            errorMessage = error.localizedDescription
-        }
     }
 }

@@ -1,86 +1,24 @@
+import ComposableArchitecture
 import SwiftUI
 
-@MainActor
-final class SearchViewModel: ObservableObject {
-    enum Tab: String, CaseIterable, Identifiable {
-        case all = "综合"
-        case songs = "单曲"
-        case artists = "歌手"
-        case albums = "专辑"
-        case playlists = "歌单"
-
-        var id: String { rawValue }
-    }
-
-    var query: String
-    @Published var tab: Tab = .all
-    @Published var songs: [Track] = []
-    @Published var artists: [ArtistSummary] = []
-    @Published var albums: [AlbumSummary] = []
-    @Published var playlists: [PlaylistSummary] = []
-    @Published var isLoading = false
-    @Published var loadedTabs: Set<Tab> = []
-
-    init(query: String) {
-        self.query = query
-    }
-
-    func setQuery(_ newQuery: String) {
-        guard newQuery != query else { return }
-        query = newQuery
-        loadedTabs.removeAll()
-        songs = []
-        artists = []
-        albums = []
-        playlists = []
-    }
-
-    func load(tab: Tab) async {
-        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return }
-        guard !loadedTabs.contains(tab) else { return }
-        isLoading = true
-        defer { isLoading = false }
-        loadedTabs.insert(tab)
-
-        switch tab {
-        case .all:
-            async let songsTask = try? NeteaseAPI.search(trimmed, type: .songs, limit: 12)
-            async let artistsTask = try? NeteaseAPI.search(trimmed, type: .artists, limit: 10)
-            async let albumsTask = try? NeteaseAPI.search(trimmed, type: .albums, limit: 10)
-            async let playlistsTask = try? NeteaseAPI.search(trimmed, type: .playlists, limit: 10)
-            songs = (await songsTask)?.songs ?? []
-            artists = (await artistsTask)?.artists ?? []
-            albums = (await albumsTask)?.albums ?? []
-            playlists = (await playlistsTask)?.playlists ?? []
-        case .songs:
-            songs = (try? await NeteaseAPI.search(trimmed, type: .songs, limit: 100))?.songs ?? songs
-        case .artists:
-            artists = (try? await NeteaseAPI.search(trimmed, type: .artists, limit: 50))?.artists ?? artists
-        case .albums:
-            albums = (try? await NeteaseAPI.search(trimmed, type: .albums, limit: 50))?.albums ?? albums
-        case .playlists:
-            playlists = (try? await NeteaseAPI.search(trimmed, type: .playlists, limit: 50))?.playlists ?? playlists
-        }
-    }
-}
-
 struct SearchView: View {
-    @StateObject private var model: SearchViewModel
-    @State private var searchText: String = ""
-    @EnvironmentObject private var player: PlayerService
+    let store: StoreOf<SearchFeature>
+    let appStore: StoreOf<AppFeature>
 
-    init(query: String) {
-        _model = StateObject(wrappedValue: SearchViewModel(query: query))
-        _searchText = State(initialValue: query)
+    @State private var searchText: String
+
+    init(store: StoreOf<SearchFeature>, appStore: StoreOf<AppFeature>) {
+        self.store = store
+        self.appStore = appStore
+        _searchText = State(initialValue: store.query)
     }
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
-                if !searchText.trimmingCharacters(in: .whitespaces).isEmpty {
-                    Picker("", selection: $model.tab) {
-                        ForEach(SearchViewModel.Tab.allCases) { tab in
+                if !store.query.trimmingCharacters(in: .whitespaces).isEmpty {
+                    Picker("", selection: tabBinding) {
+                        ForEach(SearchFeature.State.Tab.allCases) { tab in
                             Text(LocalizedStringKey(tab.rawValue)).tag(tab)
                         }
                     }
@@ -89,7 +27,7 @@ struct SearchView: View {
                     .padding(.horizontal, Theme.Layout.contentInset)
                     .padding(.top, 12)
 
-                    if model.isLoading && currentEmpty {
+                    if store.isLoading && currentEmpty {
                         ProgressView()
                             .frame(maxWidth: .infinity, minHeight: 300)
                     } else {
@@ -107,23 +45,20 @@ struct SearchView: View {
         // only search field and navigates here with its submitted query.
         .searchable(text: $searchText, prompt: "搜索歌曲、歌手、专辑、歌单")
         .onSubmit(of: .search) {
-            model.setQuery(searchText)
-            Task { await model.load(tab: model.tab) }
+            store.send(.setQuery(searchText))
         }
         .onChange(of: searchText) { newValue in
-            model.setQuery(newValue)
-            Task {
-                try? await Task.sleep(nanoseconds: 400_000_000)
-                if searchText == newValue {
-                    await model.load(tab: model.tab)
-                }
-            }
+            store.send(.setQuery(newValue))
         }
         #endif
-        .navigationTitle(searchText.isEmpty ? "搜索" : String(localized: "搜索：\(searchText)"))
-        .task(id: model.tab) {
-            await model.load(tab: model.tab)
+        .navigationTitle(store.query.isEmpty ? "搜索" : String(localized: "搜索：\(store.query)"))
+        .task(id: store.tab) {
+            store.send(.load)
         }
+    }
+
+    private var tabBinding: Binding<SearchFeature.State.Tab> {
+        Binding(get: { store.tab }, set: { store.send(.selectTab($0)) })
     }
 
     private var emptySearchPrompt: some View {
@@ -144,64 +79,78 @@ struct SearchView: View {
     }
 
     private var currentEmpty: Bool {
-        switch model.tab {
-        case .all: return model.songs.isEmpty && model.artists.isEmpty
-        case .songs: return model.songs.isEmpty
-        case .artists: return model.artists.isEmpty
-        case .albums: return model.albums.isEmpty
-        case .playlists: return model.playlists.isEmpty
+        switch store.tab {
+        case .all: return store.songs.isEmpty && store.artists.isEmpty
+        case .songs: return store.songs.isEmpty
+        case .artists: return store.artists.isEmpty
+        case .albums: return store.albums.isEmpty
+        case .playlists: return store.playlists.isEmpty
         }
     }
 
     @ViewBuilder
     private var tabContent: some View {
-        switch model.tab {
+        switch store.tab {
         case .all:
-            if !model.songs.isEmpty {
+            if !store.songs.isEmpty {
                 VStack(alignment: .leading, spacing: 10) {
                     SectionHeader(title: "单曲") {
-                        model.tab = .songs
+                        store.send(.selectTab(.songs))
                     }
                     .padding(.horizontal, Theme.Layout.contentInset)
-                    TrackListView(tracks: Array(model.songs.prefix(6)))
+                    TrackListView(
+                        tracks: Array(store.songs.prefix(6)),
+                        onPlay: { tracks, startAt in
+                            store.send(.delegate(.play(
+                                tracks: tracks, source: .none, startAt: startAt, context: nil)))
+                        },
+                        appStore: appStore
+                    )
                         .padding(.horizontal, Theme.Layout.contentInset - 10)
                 }
             }
-            if !model.artists.isEmpty {
-                Shelf(title: "歌手", seeAll: { model.tab = .artists }) {
-                    artistCards(model.artists.prefix(8))
+            if !store.artists.isEmpty {
+                Shelf(title: "歌手", seeAll: { store.send(.selectTab(.artists)) }) {
+                    artistCards(store.artists.prefix(8))
                 }
             }
-            if !model.albums.isEmpty {
-                Shelf(title: "专辑", seeAll: { model.tab = .albums }) {
-                    albumCards(model.albums.prefix(8))
+            if !store.albums.isEmpty {
+                Shelf(title: "专辑", seeAll: { store.send(.selectTab(.albums)) }) {
+                    albumCards(store.albums.prefix(8))
                 }
             }
-            if !model.playlists.isEmpty {
-                Shelf(title: "歌单", seeAll: { model.tab = .playlists }) {
-                    playlistCards(model.playlists.prefix(8))
+            if !store.playlists.isEmpty {
+                Shelf(title: "歌单", seeAll: { store.send(.selectTab(.playlists)) }) {
+                    playlistCards(store.playlists.prefix(8))
                 }
             }
-            if currentEmpty, !model.isLoading {
+            if currentEmpty, !store.isLoading {
                 EmptyStateView(icon: "magnifyingglass", title: "没有找到相关结果")
                     .frame(minHeight: 300)
             }
         case .songs:
-            TrackListView(tracks: model.songs)
+            TrackListView(
+                tracks: store.songs,
+                onPlay: { tracks, startAt in
+                    store.send(.delegate(.play(
+                        tracks: tracks, source: .none, startAt: startAt, context: nil)))
+                },
+                appStore: appStore
+            )
                 .padding(.horizontal, Theme.Layout.contentInset - 10)
         case .artists:
             CardGrid(minWidth: 140) {
-                artistCards(model.artists)
+                artistCards(store.artists)
             }
             .padding(.horizontal, Theme.Layout.contentInset)
         case .albums:
             CardGrid {
-                albumCards(model.albums)
+                albumCards(store.albums)
             }
             .padding(.horizontal, Theme.Layout.contentInset)
         case .playlists:
             CardGrid {
-                playlistCards(model.playlists)
+                playlistCards(store.playlists)
             }
             .padding(.horizontal, Theme.Layout.contentInset)
         }
@@ -209,8 +158,8 @@ struct SearchView: View {
 
     private func artistCards(_ items: some Collection<ArtistSummary>) -> some View {
         ForEach(Array(items)) { artist in
-            NavigationLink {
-                ArtistDetailView(artistID: artist.id)
+            Button {
+                appStore.send(.openDestination(.artist(artist.id)))
             } label: {
                 VStack(spacing: 10) {
                     CachedAsyncImage(url: artist.picUrl?.resizedImageURL(256))
@@ -229,8 +178,8 @@ struct SearchView: View {
 
     private func albumCards(_ items: some Collection<AlbumSummary>) -> some View {
         ForEach(Array(items)) { album in
-            NavigationLink {
-                AlbumDetailView(albumID: album.id)
+            Button {
+                appStore.send(.openDestination(.album(album.id)))
             } label: {
                 CoverCardBody(
                     coverURL: album.picUrl?.resizedImageURL(384),
@@ -244,8 +193,8 @@ struct SearchView: View {
 
     private func playlistCards(_ items: some Collection<PlaylistSummary>) -> some View {
         ForEach(Array(items)) { playlist in
-            NavigationLink {
-                PlaylistDetailView(playlistID: playlist.id)
+            Button {
+                appStore.send(.openDestination(.playlist(playlist.id)))
             } label: {
                 CoverCardBody(
                     coverURL: playlist.coverURL?.resizedImageURL(384),

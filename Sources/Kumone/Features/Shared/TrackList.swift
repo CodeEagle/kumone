@@ -1,3 +1,4 @@
+import ComposableArchitecture
 import SwiftUI
 
 enum TrackRowStyle {
@@ -29,8 +30,7 @@ struct TrackRow: View {
     var onRecommendationReduced: ((Track) -> Void)?
     let onPlay: () -> Void
 
-    @EnvironmentObject private var player: PlayerService
-    @EnvironmentObject private var account: AccountStore
+    let appStore: StoreOf<AppFeature>
     @Environment(\.openDestination) private var openDestination
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @ScaledMetric(relativeTo: .body) private var compactArtworkSize: CGFloat = 48
@@ -40,6 +40,7 @@ struct TrackRow: View {
     @State private var showAddToPlaylist = false
     @State private var isReducingRecommendation = false
 
+    private var player: PlayerFeature.State { appStore.player }
     private var isCurrent: Bool { player.currentTrack?.id == track.id }
     private var isPlayable: Bool { playability == .playable }
     private var showsArtwork: Bool { style != .albumTrack }
@@ -154,7 +155,7 @@ struct TrackRow: View {
         #endif
         .contextMenu { contextMenuItems }
         .sheet(isPresented: $showAddToPlaylist) {
-            AddToPlaylistSheet(track: track)
+            AddToPlaylistSheet(track: track, appStore: appStore)
         }
     }
 
@@ -180,7 +181,7 @@ struct TrackRow: View {
                 .frame(width: compactArtworkSize, height: compactArtworkSize)
                 .overlay(alignment: .bottomTrailing) {
                     if hidesLeadingIndex, isCurrent {
-                        PlayingIndicator(animating: player.isPlaying && !player.showNowPlaying)
+                        PlayingIndicator(animating: player.isPlaying && !appStore.isNowPlayingPresented)
                             .padding(5)
                             .background(
                                 .ultraThinMaterial,
@@ -238,7 +239,7 @@ struct TrackRow: View {
     private var leadingIndicator: some View {
         ZStack {
             if isCurrent {
-                PlayingIndicator(animating: player.isPlaying && !player.showNowPlaying)
+                PlayingIndicator(animating: player.isPlaying && !appStore.isNowPlayingPresented)
             } else if isHovering, isPlayable {
                 Button(action: onPlay) {
                     Image(systemName: "play.fill")
@@ -257,9 +258,9 @@ struct TrackRow: View {
 
     private var likeAndDuration: some View {
         HStack(spacing: 8) {
-            let liked = account.isLiked(track.id)
+            let liked = appStore.account.isLiked(track.id)
             Button {
-                Task { await account.toggleLike(trackID: track.id) }
+                appStore.send(.account(.toggleLike(track.id)))
             } label: {
                 Image(systemName: liked ? "heart.fill" : "heart")
                     .font(.system(size: 12))
@@ -279,12 +280,12 @@ struct TrackRow: View {
     private var contextMenuItems: some View {
         Button("播放") { onPlay() }
         Button("下一首播放") {
-            player.addToPlayNext(track)
+            appStore.send(.player(.addToPlayNext(track, playNow: false)))
         }
         Divider()
-        let liked = account.isLiked(track.id)
+        let liked = appStore.account.isLiked(track.id)
         Button(liked ? String(localized: "从「我喜欢」中移除") : String(localized: "添加到「我喜欢」")) {
-            Task { await account.toggleLike(trackID: track.id) }
+            appStore.send(.account(.toggleLike(track.id)))
         }
         Button("收藏到歌单…") {
             showAddToPlaylist = true
@@ -295,15 +296,15 @@ struct TrackRow: View {
                     do {
                         try await NeteaseAPI.playlistTracks(op: "del", playlistID: pid, trackIDs: [track.id])
                         onRemoved?()
-                        ToastCenter.shared.show(String(localized: "已从歌单中删除"))
+                        appStore.send(.toasts(.presented(String(localized: "已从歌单中删除"))))
                     } catch {
-                        ToastCenter.shared.show(error.localizedDescription)
+                        appStore.send(.toasts(.presented(error.localizedDescription)))
                     }
                 }
             }
         }
         #if os(macOS)
-        if !account.isLiked(track.id), let onRecommendationReduced {
+        if !appStore.account.isLiked(track.id), let onRecommendationReduced {
             Button(String(localized: "减少推荐"), role: .destructive) {
                 guard !isReducingRecommendation else { return }
                 isReducingRecommendation = true
@@ -312,9 +313,9 @@ struct TrackRow: View {
                     do {
                         let replacement = try await NeteaseAPI.dislikeRecommendedSong(id: track.id)
                         onRecommendationReduced(replacement)
-                        ToastCenter.shared.show(String(localized: "已减少推荐"))
+                        appStore.send(.toasts(.presented(String(localized: "已减少推荐"))))
                     } catch {
-                        ToastCenter.shared.show(error.localizedDescription)
+                        appStore.send(.toasts(.presented(error.localizedDescription)))
                     }
                 }
             }
@@ -335,7 +336,7 @@ struct TrackRow: View {
         Divider()
         Button("复制链接") {
             Platform.copyToPasteboard(string: "https://music.163.com/#/song?id=\(track.id)")
-            ToastCenter.shared.show(String(localized: "链接已复制"))
+            appStore.send(.toasts(.presented(String(localized: "链接已复制"))))
         }
     }
 }
@@ -530,16 +531,15 @@ struct TrackListView: View {
     let tracks: [Track]
     var style: TrackRowStyle = .full
     var privileges: [Int: TrackPrivilege] = [:]
-    var source: PlaySource = .none
-    /// The place this list belongs to, for the Dock menu's recents.
-    var context: PlayContext?
     var removableFromPlaylistID: Int?
     var onRemoved: ((Track) -> Void)?
     var recommendationContext: RecommendationContext?
     var onRecommendationReduced: ((Track, Track) -> Void)?
+    /// Hands the queue to the player: the owning page wires this to its
+    /// feature's `delegate(.play)` so the parent reducer routes the queue.
+    var onPlay: ([Track], Track?) -> Void
 
-    @EnvironmentObject private var player: PlayerService
-    @EnvironmentObject private var account: AccountStore
+    let appStore: StoreOf<AppFeature>
 
     var body: some View {
         LazyVStack(spacing: 1) {
@@ -554,11 +554,10 @@ struct TrackListView: View {
                     onRemoved: { onRemoved?(track) },
                     onRecommendationReduced: recommendationContext == nil || recommendationHandler == nil
                         ? nil
-                        : { replacement in recommendationHandler?(track, replacement) }
-                ) {
-                    player.play(tracks: playableTracks, source: source, startAt: track,
-                                context: context)
-                }
+                        : { replacement in recommendationHandler?(track, replacement) },
+                    onPlay: { onPlay(playableTracks, track) },
+                    appStore: appStore
+                )
             }
         }
     }
@@ -569,11 +568,11 @@ struct TrackListView: View {
 
     private func playability(of track: Track) -> TrackPlayability {
         // With unblock enabled, gray tracks resolve from third-party sources.
-        if SettingsManager.shared.enableUnblock { return .playable }
+        if appStore.settings.enableUnblock { return .playable }
         return track.playability(
             privilege: privileges[track.id],
-            isLoggedIn: account.isLoggedIn,
-            vipType: account.vipType
+            isLoggedIn: appStore.account.isLoggedIn,
+            vipType: appStore.account.vipType
         )
     }
 }
@@ -582,8 +581,8 @@ struct TrackListView: View {
 
 struct AddToPlaylistSheet: View {
     let track: Track
+    let appStore: StoreOf<AppFeature>
 
-    @EnvironmentObject private var account: AccountStore
     @Environment(\.dismiss) private var dismiss
     @State private var newName = ""
     @State private var creating = false
@@ -644,15 +643,17 @@ struct AddToPlaylistSheet: View {
         .frame(width: 340)
     }
 
+    private var account: AccountFeature.State { appStore.account }
+
     private func add(to playlist: PlaylistSummary) {
         Task {
             do {
                 try await NeteaseAPI.playlistTracks(op: "add", playlistID: playlist.id, trackIDs: [track.id])
-                ToastCenter.shared.show(String(localized: "已收藏到「\(playlist.name)」"))
-                await account.refreshLibrary()
+                appStore.send(.toasts(.presented(String(localized: "已收藏到「\(playlist.name)」"))))
+                appStore.send(.account(.refreshLibrary))
                 dismiss()
             } catch {
-                ToastCenter.shared.show(error.localizedDescription)
+                appStore.send(.toasts(.presented(error.localizedDescription)))
             }
         }
     }
@@ -666,12 +667,12 @@ struct AddToPlaylistSheet: View {
             do {
                 if let id = try await NeteaseAPI.createPlaylist(name: name, isPrivate: false) {
                     try await NeteaseAPI.playlistTracks(op: "add", playlistID: id, trackIDs: [track.id])
-                    ToastCenter.shared.show(String(localized: "已收藏到「\(name)」"))
-                    await account.refreshLibrary()
+                    appStore.send(.toasts(.presented(String(localized: "已收藏到「\(name)」"))))
+                    appStore.send(.account(.refreshLibrary))
                     dismiss()
                 }
             } catch {
-                ToastCenter.shared.show(error.localizedDescription)
+                appStore.send(.toasts(.presented(error.localizedDescription)))
             }
         }
     }

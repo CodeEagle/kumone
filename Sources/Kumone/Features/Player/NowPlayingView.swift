@@ -1,14 +1,18 @@
 import SwiftUI
+import ComposableArchitecture
 
 /// Immersive full-window now-playing page: artwork-tinted gradient backdrop,
 /// large artwork on the left, big synced lyrics on the right.
 struct NowPlayingView: View {
     let onOpenDestination: (Destination) -> Void
 
-    @EnvironmentObject private var player: PlayerService
-    @ObservedObject private var lyricsCursor = PlayerService.shared.lyricsCursor
-    @EnvironmentObject private var account: AccountStore
-    @EnvironmentObject private var settings: SettingsManager
+    @Environment(\.appStore) private var appStore: StoreOf<AppFeature>?
+
+    private var player: PlayerFeature.State { appStore?.player ?? .init() }
+
+    private var account: AccountFeature.State { appStore?.account ?? .init() }
+
+    private var settings: SettingsFeature.State { appStore?.settings ?? .init() }
     #if os(macOS)
     @EnvironmentObject private var artworkStore: NowPlayingArtworkStore
     #endif
@@ -106,11 +110,11 @@ struct NowPlayingView: View {
             showLyricsOnMobile = settings.nowPlayingMode == .immersive
             showQueueOnMobile = false
         }
-        .onChange(of: settings.nowPlayingMode) { _ in
+        .onChange(of: settings.nowPlayingMode) { _, _ in
             showLyricsOnMobile = settings.nowPlayingMode == .immersive
             showQueueOnMobile = false
         }
-        .onChange(of: player.currentTrack?.id) { _ in
+        .onChange(of: player.currentTrack?.id) { _, _ in
             if settings.nowPlayingMode == .minimal || settings.nowPlayingMode == .vinyl {
                 showLyricsOnMobile = false
             }
@@ -134,11 +138,11 @@ struct NowPlayingView: View {
             dismissNowPlayingAction()
         } else {
             withAnimation(NowPlayingPresentationMetrics.presentationAnimation) {
-                player.showNowPlaying = false
+                appStore?.send(.dismissNowPlaying)
             }
         }
         #else
-        player.showNowPlaying = false
+        appStore?.send(.dismissNowPlaying)
         #endif
     }
 
@@ -156,7 +160,7 @@ struct NowPlayingView: View {
     /// the top. Scrolling is deferred a turn: the list has not laid out yet
     /// while `onAppear` runs, and `scrollTo` on an unlaid list does nothing.
     private func adoptCursor(proxy: ScrollViewProxy) {
-        let index = lyricsCursor.activeIndex
+        let index = player.lyricsCursorIndex
         activeIndex = index
         guard let index else { return }
         DispatchQueue.main.async {
@@ -301,10 +305,10 @@ struct NowPlayingView: View {
                                 }
                             },
                             onNextTrack: {
-                                player.next()
+                                appStore?.send(.player(.next))
                             },
                             onPreviousTrack: {
-                                player.previous()
+                                appStore?.send(.player(.previous))
                             }
                         )
                         .accessibilityIdentifier("vinylTurntable")
@@ -738,13 +742,13 @@ struct NowPlayingView: View {
                     trackId: player.currentTrack?.id,
                     size: artworkSize,
                     onTap: {
-                        player.togglePlayPause()
+                        appStore?.send(.player(.togglePlayPause))
                     },
                     onNextTrack: {
-                        player.next()
+                        appStore?.send(.player(.next))
                     },
                     onPreviousTrack: {
-                        player.previous()
+                        appStore?.send(.player(.previous))
                     }
                 )
             } else {
@@ -776,14 +780,14 @@ struct NowPlayingView: View {
                     icon: liked ? "heart.fill" : "heart",
                     size: 15, tint: liked ? Theme.accent : nil
                 ) {
-                    Task { await account.toggleLike(trackID: track.id) }
+                    appStore?.send(.account(.toggleLike(track.id)))
                 }
                 .frame(maxWidth: .infinity)
             }
 
             if player.isFMMode {
                 circleButton(icon: "trash", size: 14) {
-                    player.fmTrash()
+                    appStore?.send(.player(.fmTrash))
                 }
                 .frame(maxWidth: .infinity)
             } else {
@@ -791,11 +795,11 @@ struct NowPlayingView: View {
                     icon: "shuffle", size: 14,
                     tint: player.shuffleEnabled ? Theme.accent : nil
                 ) {
-                    player.toggleShuffle()
+                    appStore?.send(.player(.toggleShuffle))
                 }
                 .frame(maxWidth: .infinity)
                 circleButton(icon: "backward.fill", size: 16) {
-                    player.previous()
+                    appStore?.send(.player(.previous))
                 }
                 .frame(maxWidth: .infinity)
             }
@@ -804,7 +808,7 @@ struct NowPlayingView: View {
                 .frame(maxWidth: .infinity)
 
             circleButton(icon: "forward.fill", size: 16) {
-                player.next()
+                appStore?.send(.player(.next))
             }
             .frame(maxWidth: .infinity)
 
@@ -823,7 +827,7 @@ struct NowPlayingView: View {
                     size: 14,
                     tint: player.repeatMode != .off ? Theme.accent : nil
                 ) {
-                    player.cycleRepeatMode()
+                    appStore?.send(.player(.cycleRepeatMode))
                 }
                 .frame(maxWidth: .infinity)
             }
@@ -832,7 +836,7 @@ struct NowPlayingView: View {
 
     private var playPauseButton: some View {
         Button {
-            player.togglePlayPause()
+            appStore?.send(.player(.togglePlayPause))
         } label: {
             ZStack {
                 Circle()
@@ -888,7 +892,7 @@ struct NowPlayingView: View {
                         startPoint: .top, endPoint: .bottom
                     )
                 )
-                .onChange(of: lyricsCursor.activeIndex) { index in
+                .onChange(of: player.lyricsCursorIndex) { index in
                     guard index != activeIndex else { return }
                     activeIndex = index
                     guard !isUserScrolling, let index else { return }
@@ -902,7 +906,7 @@ struct NowPlayingView: View {
                     // song already is instead of waiting for the next line.
                     adoptCursor(proxy: proxy)
                 }
-                .onChange(of: player.currentTrack?.id) { _ in
+                .onChange(of: player.currentTrack?.id) { _, _ in
                     activeIndex = nil
                 }
                 .simultaneousGesture(
@@ -937,7 +941,7 @@ struct NowPlayingView: View {
 
     private func bigLyricLine(_ line: LyricLine, isActive: Bool) -> some View {
         Button {
-            player.seek(to: line.time)
+            appStore?.send(.player(.seek(line.time)))
         } label: {
             VStack(alignment: .leading, spacing: 5) {
                 if settings.lyricsAnnotation == .romaji, let romaji = line.romaji {
@@ -982,14 +986,17 @@ struct LyricMainText: View {
     let verbatim: Bool
     var inactiveOpacity: Double = 0.45
 
-    @EnvironmentObject private var player: PlayerService
+    @Environment(\.appStore) private var appStore: StoreOf<AppFeature>?
+    @Dependency(\.playback) private var playback
+
+    private var player: PlayerFeature.State { appStore?.player ?? .init() }
 
     var body: some View {
         if isActive, verbatim, let words = line.words, !words.isEmpty {
             TimelineView(.animation(paused: !player.isPlaying)) { _ in
                 LyricText(
                     line: line, size: size, weight: weight, color: .white,
-                    alphas: Self.alphas(for: line, words: words, at: player.livePlaybackTime)
+                    alphas: Self.alphas(for: line, words: words, at: playback.currentTime())
                 )
             }
         } else {
@@ -1026,9 +1033,11 @@ struct LyricMainText: View {
 
 #if os(iOS)
 private struct IOSImmersiveLyricsColumn: View {
-    @EnvironmentObject private var player: PlayerService
-    @ObservedObject private var lyricsCursor = PlayerService.shared.lyricsCursor
-    @EnvironmentObject private var settings: SettingsManager
+    @Environment(\.appStore) private var appStore: StoreOf<AppFeature>?
+
+    private var player: PlayerFeature.State { appStore?.player ?? .init() }
+
+    private var settings: SettingsFeature.State { appStore?.settings ?? .init() }
 
     @State private var activeIndex: Int?
     @State private var isUserScrolling = false
@@ -1054,7 +1063,7 @@ private struct IOSImmersiveLyricsColumn: View {
                     }
                     .mask(edgeMask)
                     .accessibilityIdentifier("syncedLyricsScroll")
-                    .onChange(of: lyricsCursor.activeIndex) { index in
+                    .onChange(of: player.lyricsCursorIndex) { index in
                         guard index != activeIndex else { return }
                         activeIndex = index
                         guard !isUserScrolling, let index else { return }
@@ -1065,7 +1074,7 @@ private struct IOSImmersiveLyricsColumn: View {
                     .onAppear {
                         adoptCursor(proxy: proxy)
                     }
-                    .onChange(of: player.currentTrack?.id) { _ in
+                    .onChange(of: player.currentTrack?.id) { _, _ in
                         activeIndex = nil
                     }
                     .simultaneousGesture(
@@ -1114,7 +1123,7 @@ private struct IOSImmersiveLyricsColumn: View {
     /// the top. Scrolling is deferred a turn: the list has not laid out yet
     /// while `onAppear` runs, and `scrollTo` on an unlaid list does nothing.
     private func adoptCursor(proxy: ScrollViewProxy) {
-        let index = lyricsCursor.activeIndex
+        let index = player.lyricsCursorIndex
         activeIndex = index
         guard let index else { return }
         DispatchQueue.main.async {
@@ -1139,7 +1148,7 @@ private struct IOSImmersiveLyricsColumn: View {
 
     private func lyricLine(_ line: LyricLine, isActive: Bool) -> some View {
         Button {
-            player.seek(to: line.time)
+            appStore?.send(.player(.seek(line.time)))
         } label: {
             VStack(alignment: .leading, spacing: 5) {
                 if settings.lyricsAnnotation == .romaji, let romaji = line.romaji {
@@ -1208,8 +1217,11 @@ private struct ImmersiveArtworkFramePreferenceKey: PreferenceKey {
 }
 
 private struct CompactTrackHeader: View {
-    @EnvironmentObject private var player: PlayerService
-    @EnvironmentObject private var account: AccountStore
+    @Environment(\.appStore) private var appStore: StoreOf<AppFeature>?
+
+    private var player: PlayerFeature.State { appStore?.player ?? .init() }
+
+    private var account: AccountFeature.State { appStore?.account ?? .init() }
     @State private var showAddToPlaylist = false
 
     let showsExpandedArtwork: Bool
@@ -1265,7 +1277,7 @@ private struct CompactTrackHeader: View {
                 let liked = account.isLiked(track.id)
                 HStack(spacing: 0) {
                     Button {
-                        Task { await account.toggleLike(trackID: track.id) }
+                        appStore?.send(.account(.toggleLike(track.id)))
                     } label: {
                         Image(systemName: liked ? "heart.fill" : "heart")
                             .font(.system(size: 21, weight: .medium))
@@ -1278,7 +1290,7 @@ private struct CompactTrackHeader: View {
 
                     Menu {
                         Button {
-                            player.addToPlayNext(track)
+                            appStore?.send(.player(.addToPlayNext(track, playNow: false)))
                         } label: {
                             Label("下一首播放", systemImage: "text.line.first.and.arrowtriangle.forward")
                         }
@@ -1301,7 +1313,7 @@ private struct CompactTrackHeader: View {
                             Platform.copyToPasteboard(
                                 string: "https://music.163.com/#/song?id=\(track.id)"
                             )
-                            ToastCenter.shared.show(String(localized: "链接已复制"))
+                            appStore?.send(.toasts(.presented(String(localized: "链接已复制"))))
                         } label: {
                             Label("复制链接", systemImage: "link")
                         }
@@ -1328,18 +1340,20 @@ private struct CompactTrackHeader: View {
 }
 
 private struct CompactTransportControls: View {
-    @EnvironmentObject private var player: PlayerService
+    @Environment(\.appStore) private var appStore: StoreOf<AppFeature>?
+
+    private var player: PlayerFeature.State { appStore?.player ?? .init() }
 
     var body: some View {
         HStack(spacing: 0) {
-            Button(action: player.isFMMode ? player.fmTrash : player.previous) {
+            Button(action: { appStore?.send(.player(player.isFMMode ? .fmTrash : .previous)) }) {
                 Image(systemName: player.isFMMode ? "trash" : "backward.fill")
                     .font(.system(size: 25, weight: .semibold))
                     .frame(maxWidth: .infinity, minHeight: 58)
             }
             .accessibilityLabel(player.isFMMode ? "不喜欢" : "上一首")
 
-            Button(action: player.togglePlayPause) {
+            Button(action: { appStore?.send(.player(.togglePlayPause)) }) {
                 Image(systemName: player.isPlaying ? "pause.fill" : "play.fill")
                     .font(.system(size: 36, weight: .bold))
                     .contentTransition(.opacity)
@@ -1347,7 +1361,7 @@ private struct CompactTransportControls: View {
             }
             .accessibilityLabel(player.isPlaying ? "暂停" : "播放")
 
-            Button(action: player.next) {
+            Button(action: { appStore?.send(.player(.next)) }) {
                 Image(systemName: "forward.fill")
                     .font(.system(size: 25, weight: .semibold))
                     .frame(maxWidth: .infinity, minHeight: 58)
@@ -1360,7 +1374,9 @@ private struct CompactTransportControls: View {
 }
 
 private struct CompactVolumeControl: View {
-    @EnvironmentObject private var player: PlayerService
+    @Environment(\.appStore) private var appStore: StoreOf<AppFeature>?
+
+    private var player: PlayerFeature.State { appStore?.player ?? .init() }
     @State private var isDragging = false
 
     var body: some View {
@@ -1407,16 +1423,16 @@ private struct CompactVolumeControl: View {
 
     private func updateVolume(at location: CGFloat, width: CGFloat) {
         guard width > 0 else { return }
-        player.volume = Float(min(max(location / width, 0), 1))
+        appStore?.send(.player(.setVolume(Float(min(max(location / width, 0), 1)))))
     }
 
     private func adjustVolume(_ direction: AccessibilityAdjustmentDirection) {
         let step: Float = 0.05
         switch direction {
         case .increment:
-            player.volume = min(player.volume + step, 1)
+            appStore?.send(.player(.setVolume(min(player.volume + step, 1))))
         case .decrement:
-            player.volume = max(player.volume - step, 0)
+            appStore?.send(.player(.setVolume(max(player.volume - step, 0))))
         @unknown default:
             break
         }
@@ -1424,7 +1440,7 @@ private struct CompactVolumeControl: View {
 }
 
 private struct CompactSecondaryControls: View {
-    @EnvironmentObject private var player: PlayerService
+    @Environment(\.appStore) private var appStore: StoreOf<AppFeature>?
     let showsLyrics: Bool
     let showsQueue: Bool
     let onToggleLyrics: () -> Void
@@ -1470,7 +1486,9 @@ private struct CompactSecondaryControls: View {
 }
 
 private struct CompactQueueContent: View {
-    @EnvironmentObject private var player: PlayerService
+    @Environment(\.appStore) private var appStore: StoreOf<AppFeature>?
+
+    private var player: PlayerFeature.State { appStore?.player ?? .init() }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 15) {
@@ -1485,21 +1503,21 @@ private struct CompactQueueContent: View {
                     icon: "shuffle",
                     label: player.shuffleEnabled ? "关闭随机播放" : "随机播放",
                     isActive: player.shuffleEnabled,
-                    action: player.toggleShuffle
+                    action: { appStore?.send(.player(.toggleShuffle)) }
                 )
                 modeButton(
                     icon: "repeat",
                     label: "列表循环",
                     isActive: player.repeatMode == .all
                 ) {
-                    player.repeatMode = player.repeatMode == .all ? .off : .all
+                    appStore?.send(.player(.setRepeatMode(player.repeatMode == .all ? .off : .all)))
                 }
                 modeButton(
                     icon: "repeat.1",
                     label: "单曲循环",
                     isActive: player.repeatMode == .one
                 ) {
-                    player.repeatMode = player.repeatMode == .one ? .off : .one
+                    appStore?.send(.player(.setRepeatMode(player.repeatMode == .one ? .off : .one)))
                 }
             }
 
@@ -1568,20 +1586,22 @@ private struct CompactQueueContent: View {
 
     private func enableSequentialPlayback() {
         if player.shuffleEnabled {
-            player.toggleShuffle()
+            appStore?.send(.player(.toggleShuffle))
         }
-        player.repeatMode = .off
+        appStore?.send(.player(.setRepeatMode(.off)))
     }
 }
 
 private struct CompactQueueRow: View {
     let track: Track
 
-    @EnvironmentObject private var player: PlayerService
+    @Environment(\.appStore) private var appStore: StoreOf<AppFeature>?
+
+    private var player: PlayerFeature.State { appStore?.player ?? .init() }
 
     var body: some View {
         Button {
-            player.jumpTo(track)
+            appStore?.send(.player(.jumpTo(track)))
         } label: {
             HStack(spacing: 11) {
                 CachedAsyncImage(url: track.album.picUrl?.resizedImageURL(120), animated: false)
@@ -1616,9 +1636,11 @@ private struct CompactQueueRow: View {
 
 
 private struct IOSMinimalLyricsColumn: View {
-    @EnvironmentObject private var player: PlayerService
-    @ObservedObject private var clock = PlayerService.shared.clock
-    @EnvironmentObject private var settings: SettingsManager
+    @Environment(\.appStore) private var appStore: StoreOf<AppFeature>?
+
+    private var player: PlayerFeature.State { appStore?.player ?? .init() }
+
+    private var settings: SettingsFeature.State { appStore?.settings ?? .init() }
 
     let onClose: () -> Void
 
@@ -1657,7 +1679,7 @@ private struct IOSMinimalLyricsColumn: View {
                                         selectionTimeoutTask?.cancel()
                                         selectionTimeoutTask = nil
                                         suppressesAutoScroll = true
-                                        player.seek(to: line.time) {
+                                        appStore?.send(.player(.seek(line.time))) {
                                             suppressesAutoScroll = false
                                         }
                                         activeIndex = line.id
@@ -1701,7 +1723,7 @@ private struct IOSMinimalLyricsColumn: View {
                             )
                         }
                         .onAppear {
-                            activeIndex = lyrics.activeIndex(at: clock.progress + 0.2)
+                            activeIndex = lyrics.activeIndex(at: player.progress + 0.2)
                             if let activeIndex {
                                 Task { @MainActor in
                                     await Task.yield()
@@ -1709,8 +1731,8 @@ private struct IOSMinimalLyricsColumn: View {
                                 }
                             }
                         }
-                        .onChange(of: clock.progress) { _ in
-                            let index = lyrics.activeIndex(at: clock.progress + 0.2)
+                        .onChange(of: player.progress) { _ in
+                            let index = lyrics.activeIndex(at: player.progress + 0.2)
                             guard index != activeIndex else { return }
                             activeIndex = index
                             guard !suppressesAutoScroll,
@@ -1720,7 +1742,7 @@ private struct IOSMinimalLyricsColumn: View {
                                 proxy.scrollTo(index, anchor: .center)
                             }
                         }
-                        .onChange(of: player.currentTrack?.id) { _ in
+                        .onChange(of: player.currentTrack?.id) { _, _ in
                             activeIndex = nil
                             selectedIndex = nil
                             nearestIndex = nil
@@ -1945,8 +1967,11 @@ private struct MinimalLyricCentersKey: PreferenceKey {
 // MARK: - Minimal track info row
 
 private struct MinimalTrackInfoRow: View {
-    @EnvironmentObject private var player: PlayerService
-    @EnvironmentObject private var account: AccountStore
+    @Environment(\.appStore) private var appStore: StoreOf<AppFeature>?
+
+    private var player: PlayerFeature.State { appStore?.player ?? .init() }
+
+    private var account: AccountFeature.State { appStore?.account ?? .init() }
     @State private var showAddToPlaylist = false
     @State private var airPlayRequest = 0
     let onOpenDestination: (Destination) -> Void
@@ -2016,7 +2041,7 @@ private struct MinimalTrackInfoRow: View {
     private func favoriteButton(for track: Track) -> some View {
         let liked = account.isLiked(track.id)
         return Button {
-            Task { await account.toggleLike(trackID: track.id) }
+            appStore?.send(.account(.toggleLike(track.id)))
         } label: {
             Image(systemName: liked ? "heart.fill" : "heart")
                 .font(.system(size: 22, weight: .medium))
@@ -2037,7 +2062,7 @@ private struct MinimalTrackInfoRow: View {
             }
 
             Button {
-                player.addToPlayNext(track)
+                appStore?.send(.player(.addToPlayNext(track, playNow: false)))
             } label: {
                 Label("下一首播放", systemImage: "text.line.first.and.arrowtriangle.forward")
             }
@@ -2060,7 +2085,7 @@ private struct MinimalTrackInfoRow: View {
                 Platform.copyToPasteboard(
                     string: "https://music.163.com/#/song?id=\(track.id)"
                 )
-                ToastCenter.shared.show(String(localized: "链接已复制"))
+                appStore?.send(.toasts(.presented(String(localized: "链接已复制"))))
             } label: {
                 Label("复制链接", systemImage: "link")
             }
@@ -2085,7 +2110,9 @@ private struct MinimalTrackInfoRow: View {
 }
 
 private struct MinimalTransportControls: View {
-    @EnvironmentObject private var player: PlayerService
+    @Environment(\.appStore) private var appStore: StoreOf<AppFeature>?
+
+    private var player: PlayerFeature.State { appStore?.player ?? .init() }
     let backdrop: ArtworkColors
     @Binding var showQueue: Bool
 
@@ -2102,14 +2129,14 @@ private struct MinimalTransportControls: View {
             .accessibilityIdentifier("immersivePlaylistButton")
                 .frame(maxWidth: .infinity)
 
-            Button(action: player.isFMMode ? player.fmTrash : player.previous) {
+            Button(action: { appStore?.send(.player(player.isFMMode ? .fmTrash : .previous)) }) {
                 Image(systemName: player.isFMMode ? "trash" : "backward.fill")
                     .font(.system(size: 25, weight: .semibold))
                     .frame(maxWidth: .infinity, minHeight: 58)
             }
             .accessibilityLabel(player.isFMMode ? "不喜欢" : "上一首")
 
-            Button(action: player.togglePlayPause) {
+            Button(action: { appStore?.send(.player(.togglePlayPause)) }) {
                 Image(systemName: player.isPlaying ? "pause.fill" : "play.fill")
                     .font(.system(size: 38, weight: .bold))
                     .contentTransition(.opacity)
@@ -2117,7 +2144,7 @@ private struct MinimalTransportControls: View {
             }
             .accessibilityLabel(player.isPlaying ? "暂停" : "播放")
 
-            Button(action: player.next) {
+            Button(action: { appStore?.send(.player(.next)) }) {
                 Image(systemName: "forward.fill")
                     .font(.system(size: 25, weight: .semibold))
                     .frame(maxWidth: .infinity, minHeight: 58)
@@ -2189,7 +2216,9 @@ private struct MinimalTransportControls: View {
 }
 
 private struct MinimalQueueSheet: View {
-    @EnvironmentObject private var player: PlayerService
+    @Environment(\.appStore) private var appStore: StoreOf<AppFeature>?
+
+    private var player: PlayerFeature.State { appStore?.player ?? .init() }
     let backdrop: ArtworkColors
 
     var body: some View {
@@ -2269,12 +2298,14 @@ private struct MinimalQueueRow: View {
     let track: Track
     let isCurrent: Bool
 
-    @EnvironmentObject private var player: PlayerService
+    @Environment(\.appStore) private var appStore: StoreOf<AppFeature>?
+
+    private var player: PlayerFeature.State { appStore?.player ?? .init() }
 
     var body: some View {
         Button {
             guard !isCurrent else { return }
-            player.jumpTo(track)
+            appStore?.send(.player(.jumpTo(track)))
         } label: {
             HStack(spacing: 10) {
                 CachedAsyncImage(url: track.album.picUrl?.resizedImageURL(96), animated: false)
@@ -2316,8 +2347,9 @@ private struct MinimalQueueRow: View {
 // MARK: - Scrubber (white-on-dark variant)
 
 struct NowPlayingScrubber: View {
-    @EnvironmentObject private var player: PlayerService
-    @ObservedObject private var clock = PlayerService.shared.clock
+    @Environment(\.appStore) private var appStore: StoreOf<AppFeature>?
+
+    private var player: PlayerFeature.State { appStore?.player ?? .init() }
 
     @State private var isHovering = false
     @State private var isDragging = false
@@ -2325,7 +2357,7 @@ struct NowPlayingScrubber: View {
 
     private var fraction: Double {
         guard player.duration > 0 else { return 0 }
-        let value = isDragging ? dragProgress : clock.progress
+        let value = isDragging ? dragProgress : player.progress
         return min(max(value / player.duration, 0), 1)
     }
 
@@ -2354,13 +2386,13 @@ struct NowPlayingScrubber: View {
                         .onChanged { value in
                             guard player.duration > 0 else { return }
                             isDragging = true
-                            player.isScrubbing = true
+                            
                             dragProgress = min(max(value.location.x / width, 0), 1) * player.duration
                         }
                         .onEnded { _ in
-                            player.seek(to: dragProgress)
+                            appStore?.send(.player(.seek(dragProgress)))
                             isDragging = false
-                            player.isScrubbing = false
+                            
                         }
                 )
             }
@@ -2370,7 +2402,7 @@ struct NowPlayingScrubber: View {
             }
 
             HStack {
-                Text(Formatters.duration(isDragging ? dragProgress : clock.progress))
+                Text(Formatters.duration(isDragging ? dragProgress : player.progress))
                 Spacer()
                 Text(Formatters.duration(player.duration))
             }
@@ -2392,12 +2424,13 @@ struct NowPlayingScrubber: View {
 struct MiniLyricsView: View {
     let onOpen: () -> Void
 
-    @EnvironmentObject private var player: PlayerService
-    @ObservedObject private var lyricsCursor = PlayerService.shared.lyricsCursor
+    @Environment(\.appStore) private var appStore: StoreOf<AppFeature>?
+
+    private var player: PlayerFeature.State { appStore?.player ?? .init() }
 
     private var lines: (previous: LyricLine?, current: LyricLine?, next: LyricLine?) {
         guard let lyrics = player.lyrics, !lyrics.isEmpty else { return (nil, nil, nil) }
-        guard let index = lyricsCursor.activeIndex else {
+        guard let index = player.lyricsCursorIndex else {
             return (nil, nil, lyrics.lines.first)
         }
         let all = lyrics.lines

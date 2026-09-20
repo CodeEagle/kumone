@@ -1,11 +1,9 @@
+import ComposableArchitecture
 import SwiftUI
 
 #if os(iOS)
 public struct IOSMainWindow: View {
-    @StateObject private var player = PlayerService.shared
-    @StateObject private var account = AccountStore.shared
-    @StateObject private var settings = SettingsManager.shared
-    @StateObject private var toasts = ToastCenter.shared
+    @StateObject private var store = Store(initialState: AppFeature.State()) { AppFeature() }
     @StateObject private var updater = IOSUpdater.shared
     @StateObject private var artworkStore = NowPlayingArtworkStore()
     @Namespace private var nowPlayingTransition
@@ -14,56 +12,60 @@ public struct IOSMainWindow: View {
     /// The app's intended scheme, read on this ancestor so the search-active
     /// tab environment can't invert it (#31).
     private var resolvedColorScheme: ColorScheme {
-        settings.appearance.colorScheme ?? systemColorScheme
+        store.settings.appearance.colorScheme ?? systemColorScheme
     }
 
     @State private var selectedTab: IOSTab = .home
-    @State private var showLogin = false
-    @State private var homePath: [Destination] = []
-    @State private var explorePath: [Destination] = []
-    @State private var fmPath: [Destination] = []
-    @State private var searchPath: [Destination] = []
-    @State private var libraryPath: [Destination] = []
-    @State private var iPadPath: [Destination] = []
 
     public init() {}
 
+    private var nowPlayingPresented: Binding<Bool> {
+        Binding(
+            get: { store.isNowPlayingPresented },
+            set: { store.send($0 ? .presentNowPlaying : .dismissNowPlaying) }
+        )
+    }
+
+    private var loginPresented: Binding<Bool> {
+        Binding(
+            get: { store.isLoginPresented },
+            set: { store.send($0 ? .presentLogin : .dismissLogin) }
+        )
+    }
+
     public var body: some View {
         presentationRoot
-            .environmentObject(player)
-            .environmentObject(account)
-            .environmentObject(settings)
-            .environmentObject(toasts)
-            .environmentObject(artworkStore)
+            .environment(\.appStore, store)
             .tint(Theme.accent)
-            .preferredColorScheme(settings.appearance.colorScheme)
-            .environment(\.openLogin, { showLogin = true })
+            .preferredColorScheme(store.settings.appearance.colorScheme)
+            .environment(\.openLogin, { store.send(.presentLogin) })
             .environment(\.openDestination, openDestination)
             .task {
-                await account.bootstrap()
-                if settings.autoCheckUpdates {
+                // The iPad branch embeds `MainWindow`, which sends `onAppear`
+                // itself; sending it here too would bootstrap the account twice.
+                guard UIDevice.current.userInterfaceIdiom != .pad else { return }
+                store.send(.onAppear)
+                if store.settings.autoCheckUpdates {
                     IOSUpdater.shared.check(interactive: false)
                 }
             }
-            .task(id: settings.showMainWindowAmbientBackground) {
-                artworkStore.setArtworkNeeded(settings.showMainWindowAmbientBackground)
+            .task(id: store.settings.showMainWindowAmbientBackground) {
+                artworkStore.setArtworkNeeded(store.settings.showMainWindowAmbientBackground)
             }
             .sheet(isPresented: $updater.showSheet) {
                 IOSUpdaterSheet()
             }
-            .sheet(isPresented: $showLogin) {
-                LoginSheet()
-                    .environmentObject(account)
-                    .environmentObject(toasts)
+            .sheet(isPresented: loginPresented) {
+                LoginSheet(store: store.scope(state: \.login, action: \.login), appStore: store)
             }
             .overlay(alignment: .top) {
-                if let toast = toasts.current {
+                if let toast = store.toasts.current {
                     ToastView(toast: toast)
                         .transition(.move(edge: .top).combined(with: .opacity))
                         .padding(.top, 8)
                 }
             }
-            .animation(.spring(duration: 0.3), value: toasts.current)
+            .animation(.spring(duration: 0.3), value: store.toasts.current)
     }
 
     @ViewBuilder
@@ -81,16 +83,18 @@ public struct IOSMainWindow: View {
 
     private var systemNowPlayingRoot: some View {
         appContent
-            .fullScreenCover(isPresented: $player.showNowPlaying) {
+            .fullScreenCover(isPresented: nowPlayingPresented) {
                 systemNowPlayingPresentation
+                    .environment(\.appStore, store)
             }
     }
 
     @available(iOS 18.0, *)
     private var zoomNowPlayingRoot: some View {
         appContent
-            .fullScreenCover(isPresented: $player.showNowPlaying) {
+            .fullScreenCover(isPresented: nowPlayingPresented) {
                 systemNowPlayingPresentation
+                    .environment(\.appStore, store)
                     .navigationTransition(
                         .zoom(
                             sourceID: NowPlayingTransitionID.surface,
@@ -120,7 +124,7 @@ public struct IOSMainWindow: View {
         ZStack {
             appContent
 
-            if player.showNowPlaying {
+            if store.isNowPlayingPresented {
                 // Present full-screen with a bottom slide-up. A previous version
                 // used `matchedGeometryEffect(.frame, isSource: false)` here to
                 // zoom out of the mini player, but that copies the *source*
@@ -136,20 +140,20 @@ public struct IOSMainWindow: View {
                 .zIndex(1)
             }
         }
-        .animation(NowPlayingPresentationMetrics.presentationAnimation, value: player.showNowPlaying)
+        .animation(NowPlayingPresentationMetrics.presentationAnimation, value: store.isNowPlayingPresented)
     }
 
     @ViewBuilder
     private var appContent: some View {
         if UIDevice.current.userInterfaceIdiom == .pad {
-            MainWindow(path: $iPadPath)
+            MainWindow(store: store)
         } else {
             tabInterface
                 .overlay {
-                    if settings.showMainWindowAmbientBackground {
+                    if store.settings.showMainWindowAmbientBackground {
                         MainWindowAmbientBackground(
                             colors: artworkStore.colors,
-                            intensity: settings.mainWindowAmbientBackgroundIntensity
+                            intensity: store.settings.mainWindowAmbientBackgroundIntensity
                         )
                         .ignoresSafeArea()
                     }
@@ -162,15 +166,12 @@ public struct IOSMainWindow: View {
         dismissAnimation: Animation?
     ) -> some View {
         IOSNowPlayingPresentation(
-            isPresented: $player.showNowPlaying,
-            mode: settings.nowPlayingMode,
+            isPresented: nowPlayingPresented,
+            mode: store.settings.nowPlayingMode,
             usesSystemInteractiveDismissal: usesSystemInteractiveDismissal,
             dismissAnimation: dismissAnimation
         ) {
             NowPlayingView(onOpenDestination: openDestination)
-                .environmentObject(player)
-                .environmentObject(account)
-                .environmentObject(settings)
         }
     }
 
@@ -198,34 +199,40 @@ public struct IOSMainWindow: View {
             // the screen centre (#57); not applying it when idle keeps the empty
             // accessory platter gone (#35).
             .modifier(MiniPlayerAccessoryModifier(
-                isActive: player.hasCurrentTrack,
+                isActive: store.player.hasCurrentTrack,
                 transitionNamespace: nowPlayingTransition,
                 colorScheme: resolvedColorScheme
             ))
-            .animation(AppAnimation.standard, value: player.hasCurrentTrack)
+            .animation(AppAnimation.standard, value: store.player.hasCurrentTrack)
     }
 
     @available(iOS 26.0, *)
     private var iOS26TabView: some View {
         TabView(selection: $selectedTab) {
             Tab("推荐", systemImage: "house", value: .home) {
-                tabStack(.home) { HomeView() }
+                tabStack(.home) {
+                    HomeView(store: store.scope(state: \.home, action: \.home), appStore: store)
+                }
             }
 
             Tab("精选", systemImage: "square.grid.2x2", value: .explore) {
-                tabStack(.explore) { ExploreView() }
+                tabStack(.explore) {
+                    ExploreView(store: store.scope(state: \.explore, action: \.explore), appStore: store)
+                }
             }
 
             Tab("漫游", systemImage: "wave.3.right.circle", value: .fm) {
-                tabStack(.fm) { FMView() }
+                tabStack(.fm) { FMView(appStore: store) }
             }
 
             Tab("我的", systemImage: "person.crop.circle", value: .library) {
-                tabStack(.library) { IOSLibraryView(showLogin: $showLogin) }
+                tabStack(.library) { IOSLibraryView(appStore: store) }
             }
 
             Tab(value: .search, role: .search) {
-                tabStack(.search) { SearchView(query: "") }
+                tabStack(.search) {
+                    SearchView(store: store.scope(state: \.search, action: \.search), appStore: store)
+                }
             } label: {
                 Label("搜索", systemImage: "magnifyingglass")
             }
@@ -235,15 +242,27 @@ public struct IOSMainWindow: View {
     private var customTabInterface: some View {
         ZStack(alignment: .bottom) {
             ZStack {
-                page(.home) { tabStack(.home) { HomeView() } }
-                page(.explore) { tabStack(.explore) { ExploreView() } }
-                page(.fm) { tabStack(.fm) { FMView() } }
-                page(.search) { tabStack(.search) { SearchView(query: "") } }
-                page(.library) { tabStack(.library) { IOSLibraryView(showLogin: $showLogin) } }
+                page(.home) {
+                    tabStack(.home) {
+                        HomeView(store: store.scope(state: \.home, action: \.home), appStore: store)
+                    }
+                }
+                page(.explore) {
+                    tabStack(.explore) {
+                        ExploreView(store: store.scope(state: \.explore, action: \.explore), appStore: store)
+                    }
+                }
+                page(.fm) { tabStack(.fm) { FMView(appStore: store) } }
+                page(.search) {
+                    tabStack(.search) {
+                        SearchView(store: store.scope(state: \.search, action: \.search), appStore: store)
+                    }
+                }
+                page(.library) { tabStack(.library) { IOSLibraryView(appStore: store) } }
             }
 
             VStack(spacing: 8) {
-                if player.hasCurrentTrack {
+                if store.player.hasCurrentTrack {
                     IOSMiniPlayerBar(presentation: .legacyOverlay)
                         .nowPlayingTransitionSource(in: nowPlayingTransition)
                         .padding(.horizontal, 12)
@@ -256,30 +275,16 @@ public struct IOSMainWindow: View {
             }
             .padding(.bottom, 6)
         }
-        .animation(AppAnimation.standard, value: player.hasCurrentTrack)
+        .animation(AppAnimation.standard, value: store.player.hasCurrentTrack)
     }
 
     private func popToRoot(_ tab: IOSTab) {
-        switch tab {
-        case .home: homePath = []
-        case .explore: explorePath = []
-        case .fm: fmPath = []
-        case .search: searchPath = []
-        case .library: libraryPath = []
-        }
+        store.send(.clearPath)
     }
 
     private func openDestination(_ destination: Destination) {
-        player.showNowPlaying = false
-        if UIDevice.current.userInterfaceIdiom == .pad {
-            iPadPath.appendIfNotCurrent(destination)
-            return
-        }
-
-        let path = binding(for: selectedTab)
-        var destinations = path.wrappedValue
-        destinations.appendIfNotCurrent(destination)
-        path.wrappedValue = destinations
+        store.send(.dismissNowPlaying)
+        store.send(.openDestination(destination))
     }
 
     @ViewBuilder
@@ -287,8 +292,15 @@ public struct IOSMainWindow: View {
         _ tab: IOSTab,
         @ViewBuilder _ content: () -> Content
     ) -> some View {
-        NavigationStack(path: binding(for: tab)) {
-            content().appDestinations()
+        // The five tab stacks all share the app's single detail path; only the
+        // selected tab may drive it, so sibling tabs stay rooted.
+        let path = selectedTab == tab
+            ? $store.scope(\.path, action: \.path)
+            : .constant(StackState<AppFeature.Path.State>())
+        NavigationStack(path: path) {
+            content()
+        } destination: { pathStore in
+            MainWindow.destinationView(pathStore, appStore: store)
         }
     }
 
@@ -301,16 +313,6 @@ public struct IOSMainWindow: View {
             .opacity(selectedTab == tab ? 1 : 0)
             .allowsHitTesting(selectedTab == tab)
             .zIndex(selectedTab == tab ? 1 : 0)
-    }
-
-    private func binding(for tab: IOSTab) -> Binding<[Destination]> {
-        switch tab {
-        case .home: return $homePath
-        case .explore: return $explorePath
-        case .fm: return $fmPath
-        case .search: return $searchPath
-        case .library: return $libraryPath
-        }
     }
 }
 
@@ -406,8 +408,10 @@ struct IOSMiniPlayerBar: View {
         var drawsBackground: Bool { self == .legacyOverlay }
     }
 
-    @EnvironmentObject private var player: PlayerService
+    @Environment(\.appStore) private var appStore: StoreOf<AppFeature>?
     let presentation: Presentation
+
+    private var player: PlayerFeature.State { appStore?.player ?? .init() }
 
     var body: some View {
         playerBarSurface
@@ -431,7 +435,7 @@ struct IOSMiniPlayerBar: View {
 
     private var content: some View {
         HStack(spacing: 4) {
-            Button(action: showNowPlaying) {
+            Button(action: { appStore?.send(.presentNowPlaying) }) {
                 trackSummary
             }
             .buttonStyle(.plain)
@@ -439,7 +443,7 @@ struct IOSMiniPlayerBar: View {
             .accessibilityHint("打开正在播放")
 
             if !presentation.isInline {
-                Button(action: player.previous) {
+                Button(action: { appStore?.send(.player(.previous)) }) {
                     Image(systemName: "backward.fill")
                         .font(.system(size: 14, weight: .semibold))
                         .foregroundStyle(.secondary)
@@ -452,7 +456,7 @@ struct IOSMiniPlayerBar: View {
                 .accessibilityLabel("上一首")
             }
 
-            Button(action: player.togglePlayPause) {
+            Button(action: { appStore?.send(.player(.togglePlayPause)) }) {
                 Image(systemName: player.isPlaying ? "pause.fill" : "play.fill")
                     .font(.system(size: 15, weight: .bold))
                     .foregroundStyle(.primary)
@@ -463,7 +467,7 @@ struct IOSMiniPlayerBar: View {
             .accessibilityLabel(player.isPlaying ? "暂停" : "播放")
 
             if !presentation.isInline {
-                Button(action: player.next) {
+                Button(action: { appStore?.send(.player(.next)) }) {
                     Image(systemName: "forward.fill")
                         .font(.system(size: 14, weight: .semibold))
                         .foregroundStyle(.secondary)
@@ -538,29 +542,22 @@ struct IOSMiniPlayerBar: View {
                     translation: value.translation.height,
                     predictedTranslation: value.predictedEndTranslation.height
                 ) else { return }
-                showNowPlaying()
+                appStore?.send(.presentNowPlaying)
             }
-    }
-
-    private func showNowPlaying() {
-        if #available(iOS 18.0, *) {
-            player.showNowPlaying = true
-        } else {
-            withAnimation(NowPlayingPresentationMetrics.presentationAnimation) {
-                player.showNowPlaying = true
-            }
-        }
     }
 }
 
 // MARK: - iOS Library View
 
 struct IOSLibraryView: View {
-    @Binding var showLogin: Bool
-    @EnvironmentObject private var account: AccountStore
+    let appStore: StoreOf<AppFeature>
+
+    @Environment(\.openDestination) private var openDestination
     @State private var showSettings = false
     @State private var showNewPlaylist = false
     @State private var newPlaylistName = ""
+
+    private var account: AccountFeature.State { appStore.account }
 
     var body: some View {
         List {
@@ -590,7 +587,7 @@ struct IOSLibraryView: View {
                     .padding(.vertical, 4)
                 } else {
                     Button {
-                        showLogin = true
+                        appStore.send(.presentLogin)
                     } label: {
                         HStack(spacing: 12) {
                             Image(systemName: "person.crop.circle.badge.plus")
@@ -613,21 +610,31 @@ struct IOSLibraryView: View {
             if account.hasAuthCookie {
                 Section("我的音乐") {
                     if let liked = account.likedSongsPlaylist {
-                        NavigationLink(value: Destination.playlist(liked.id)) {
+                        Button {
+                            openDestination(.playlist(liked.id))
+                        } label: {
                             Label("我喜欢的音乐", systemImage: "heart.fill")
                                 .foregroundStyle(Theme.accent)
                         }
                     }
-                    NavigationLink(value: Destination.daily) {
+                    Button {
+                        openDestination(.daily)
+                    } label: {
                         Label("每日推荐", systemImage: "calendar")
                     }
-                    NavigationLink(value: Destination.recents) {
+                    Button {
+                        openDestination(.recents)
+                    } label: {
                         Label("最近播放", systemImage: "clock.fill")
                     }
-                    NavigationLink(value: Destination.collections) {
+                    Button {
+                        openDestination(.collections)
+                    } label: {
                         Label("我的收藏", systemImage: "star.fill")
                     }
-                    NavigationLink(value: Destination.cloud) {
+                    Button {
+                        openDestination(.cloud)
+                    } label: {
                         Label("音乐云盘", systemImage: "icloud.fill")
                     }
                 }
@@ -635,7 +642,9 @@ struct IOSLibraryView: View {
                 if !account.createdPlaylists.isEmpty {
                     Section {
                         ForEach(account.createdPlaylists) { playlist in
-                            NavigationLink(value: Destination.playlist(playlist.id)) {
+                            Button {
+                                openDestination(.playlist(playlist.id))
+                            } label: {
                                 HStack(spacing: 10) {
                                     CachedAsyncImage(url: playlist.coverURL?.resizedImageURL(80), animated: false)
                                         .frame(width: 32, height: 32)
@@ -668,7 +677,9 @@ struct IOSLibraryView: View {
                 if !account.subscribedPlaylists.isEmpty {
                     Section("收藏的歌单") {
                         ForEach(account.subscribedPlaylists) { playlist in
-                            NavigationLink(value: Destination.playlist(playlist.id)) {
+                            Button {
+                                openDestination(.playlist(playlist.id))
+                            } label: {
                                 HStack(spacing: 10) {
                                     CachedAsyncImage(url: playlist.coverURL?.resizedImageURL(80), animated: false)
                                         .frame(width: 32, height: 32)
@@ -705,7 +716,10 @@ struct IOSLibraryView: View {
         }
         .sheet(isPresented: $showSettings) {
             NavigationStack {
-                SettingsView()
+                SettingsView(
+                    store: appStore.scope(state: \.settings, action: \.settings),
+                    appStore: appStore
+                )
                     .navigationTitle("设置")
                     .toolbar {
                         ToolbarItem(placement: .topBarTrailing) {
@@ -725,10 +739,10 @@ struct IOSLibraryView: View {
                 Task {
                     do {
                         try await NeteaseAPI.createPlaylist(name: name, isPrivate: false)
-                        await account.refreshLibrary()
-                        ToastCenter.shared.show(String(localized: "歌单已创建"))
+                        appStore.send(.account(.refreshLibrary))
+                        appStore.send(.toasts(.presented(String(localized: "歌单已创建"))))
                     } catch {
-                        ToastCenter.shared.show(error.localizedDescription)
+                        appStore.send(.toasts(.presented(error.localizedDescription)))
                     }
                 }
             }

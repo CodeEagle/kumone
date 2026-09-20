@@ -2,6 +2,11 @@ import ComposableArchitecture
 import Dependencies
 import Foundation
 
+/// The lyrics / queue side panel on macOS.
+enum RightPanel {
+    case lyrics, queue
+}
+
 /// The playback queue, transport and per-track plumbing. Replaces the
 /// `PlayerService` singleton: the reducer is now the single source of truth for
 /// *what* is queued and *where* the cursor is, while `PlaybackEngineClient`
@@ -35,6 +40,8 @@ struct PlayerFeature {
         var recentContexts: [PlayContext] = []
         var lyrics: ParsedLyrics?
         var lyricsCursorIndex: Int?
+        /// The lyrics / queue side panel (macOS). `nil` while hidden.
+        var activePanel: RightPanel?
 
         var sleepTimer = SleepTimerState()
 
@@ -106,6 +113,8 @@ struct PlayerFeature {
         /// Sets the repeat mode directly (the Dock menu's submenu).
         case setRepeatMode(RepeatMode)
         case setVolume(Float)
+        /// Toggles the lyrics / queue side panel (macOS Commands menu).
+        case togglePanel(RightPanel)
 
         // Resolution
         case urlResolved(generation: Int, ResolvedSource)
@@ -406,6 +415,10 @@ struct PlayerFeature {
             case let .setVolume(volume):
                 state.volume = volume
                 return .run { [playback] _ in playback.setVolume(volume) }
+
+            case let .togglePanel(panel):
+                state.activePanel = state.activePanel == panel ? nil : panel
+                return .none
 
             // MARK: - Playing a track
 

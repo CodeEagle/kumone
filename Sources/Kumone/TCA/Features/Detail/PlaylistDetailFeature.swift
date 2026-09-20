@@ -81,7 +81,7 @@ struct PlaylistDetailFeature {
     /// Effects the parent owns: handing the queue to the player, showing a
     /// toast, and refreshing the library after a subscription change.
     enum Delegate: Equatable {
-        case play(tracks: [Track], source: PlaySource, context: PlayContext?)
+        case play(tracks: [Track], source: PlaySource, startAt: Track?, context: PlayContext?)
         case toast(String)
         case subscriptionChanged
     }
@@ -176,7 +176,8 @@ struct PlaylistDetailFeature {
                             return
                         }
                         await send(.delegate(.play(
-                            tracks: tracks, source: .playlist(playlistID), context: .heartbeat)))
+                            tracks: tracks, source: .playlist(playlistID),
+                            startAt: nil, context: .heartbeat)))
                         await send(.delegate(.toast(String(localized: "已开启心动模式"))))
                     } catch {
                         await send(.delegate(.toast(error.localizedDescription)))

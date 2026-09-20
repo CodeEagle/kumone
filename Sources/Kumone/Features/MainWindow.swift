@@ -1,50 +1,25 @@
+import ComposableArchitecture
 import SwiftUI
 
 struct MainWindow: View {
-    private let externalPath: Binding<[Destination]>?
+    @Bindable var store: StoreOf<AppFeature>
 #if os(macOS)
     @Environment(\.openWindow) private var openWindow
 #endif
     @Environment(\.colorScheme) private var colorScheme
-    @EnvironmentObject private var player: PlayerService
-    @EnvironmentObject private var account: AccountStore
-    @EnvironmentObject private var settings: SettingsManager
-    @EnvironmentObject private var toasts: ToastCenter
 
     #if os(macOS)
     @StateObject private var artworkStore = NowPlayingArtworkStore()
     #else
     @EnvironmentObject private var artworkStore: NowPlayingArtworkStore
     #endif
-    @State private var selection: SidebarItem = .home
-    @State private var localPath: [Destination] = []
-    @State private var showLogin = false
     @State private var detailWidth: CGFloat = 0
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
     @State private var visibilityBeforeNowPlaying: NavigationSplitViewVisibility?
 
-    init(path: Binding<[Destination]>? = nil) {
-        externalPath = path
-    }
-
-    private var path: [Destination] {
-        get { externalPath?.wrappedValue ?? localPath }
-        nonmutating set {
-            if let externalPath {
-                externalPath.wrappedValue = newValue
-            } else {
-                localPath = newValue
-            }
-        }
-    }
-
-    private var pathBinding: Binding<[Destination]> {
-        externalPath ?? $localPath
-    }
-
     var body: some View {
         NavigationSplitView(columnVisibility: $columnVisibility) {
-            SidebarView(selection: $selection, showLogin: $showLogin)
+            SidebarView(store: store)
                 .navigationSplitViewColumnWidth(min: 200, ideal: Theme.Layout.sidebarWidth, max: 280)
         } detail: {
             detailStack
@@ -56,10 +31,10 @@ struct MainWindow: View {
         }
         .navigationSplitViewStyle(.balanced)
         .overlay(alignment: .trailing) {
-            if settings.showMainWindowAmbientBackground, detailWidth > 0 {
+            if store.settings.showMainWindowAmbientBackground, detailWidth > 0 {
                 MainWindowAmbientBackground(
                     colors: artworkStore.colors,
-                    intensity: settings.mainWindowAmbientBackgroundIntensity
+                    intensity: store.settings.mainWindowAmbientBackgroundIntensity
                 )
                     .frame(width: detailWidth)
             }
@@ -68,7 +43,7 @@ struct MainWindow: View {
             if #available(macOS 26.0, iOS 26.0, *) {
                 ToolbarItem(placement: .primaryAction) {
                     SearchFieldView { query in
-                        path.append(Destination.search(query))
+                        store.send(.openDestination(.search(query)))
                     }
                 }
                 // Hide the Liquid Glass shared toolbar background behind the
@@ -78,7 +53,7 @@ struct MainWindow: View {
             } else {
                 ToolbarItem(placement: .primaryAction) {
                     SearchFieldView { query in
-                        path.append(Destination.search(query))
+                        store.send(.openDestination(.search(query)))
                     }
                 }
             }
@@ -86,29 +61,31 @@ struct MainWindow: View {
         #if os(macOS)
         // Immersive now-playing page: hide the whole window toolbar
         // (sidebar toggle, navigation title, search field).
-        .toolbar(player.showNowPlaying ? .hidden : .automatic, for: .windowToolbar)
+        .toolbar(store.isNowPlayingPresented ? .hidden : .automatic, for: .windowToolbar)
         // Keep the single main window alive on Cmd+W / red button so the Dock
         // icon can always bring it back (#60/#63/#66/#70).
         .background(
             MainWindowConfigurator(
                 ambientConfiguration: MainWindowAmbientConfiguration(
-                    showsAmbientBackground: settings.showMainWindowAmbientBackground,
-                    showsTitlebarAmbientBackground: !player.showNowPlaying,
+                    showsAmbientBackground: store.settings.showMainWindowAmbientBackground,
+                    showsTitlebarAmbientBackground: !store.isNowPlayingPresented,
                     colors: artworkStore.colors,
                     mainColumnWidth: detailWidth,
-                    intensity: settings.mainWindowAmbientBackgroundIntensity,
+                    intensity: store.settings.mainWindowAmbientBackgroundIntensity,
                     isDark: isDarkAppearance
                 )
             )
         )
         #endif
-        .playerChrome(detailWidth: detailWidth)
-        .environment(\.openLogin, { showLogin = true })
+        .playerChrome(appStore: store, detailWidth: detailWidth)
+        .environment(\.openLogin, { store.send(.presentLogin) })
         .environment(\.openDestination, openDestination)
+        .environment(\.appStore, store)
         #if os(macOS)
         .environmentObject(artworkStore)
         #endif
         .task {
+            store.send(.onAppear)
 #if os(macOS)
             // Keep this action in the app delegate: when the user closes the
             // last WindowGroup window, there is no view left to receive a
@@ -116,25 +93,24 @@ struct MainWindow: View {
             AppDelegate.shared?.openMainWindow = { openWindow(id: "main") }
             artworkStore.setArtworkNeeded(needsCurrentArtwork)
 #endif
-            DesktopLyricsController.shared.sync(with: settings.showDesktopLyrics)
-            await account.bootstrap()
+            DesktopLyricsController.shared.sync(with: store.settings.showDesktopLyrics, store: store)
         }
-        .onChange(of: settings.showDesktopLyrics) { _ in
-            DesktopLyricsController.shared.sync(with: settings.showDesktopLyrics)
+        .onChange(of: store.settings.showDesktopLyrics) { _, enabled in
+            DesktopLyricsController.shared.sync(with: enabled, store: store)
         }
         #if os(macOS)
-        .onChange(of: settings.showMainWindowAmbientBackground) { _ in
+        .onChange(of: store.settings.showMainWindowAmbientBackground) { _, _ in
             artworkStore.setArtworkNeeded(needsCurrentArtwork)
         }
         #endif
         // Collapse the sidebar while the immersive page is open: the split
         // view's divider keeps its resize-cursor rect active even underneath
         // an overlay, leaking the drag cursor onto the now-playing page (#6).
-        .onChange(of: player.showNowPlaying) { _ in
+        .onChange(of: store.isNowPlayingPresented) { _, isPresented in
             #if os(macOS)
             artworkStore.setArtworkNeeded(needsCurrentArtwork)
             #endif
-            if player.showNowPlaying {
+            if isPresented {
                 visibilityBeforeNowPlaying = columnVisibility
                 columnVisibility = .detailOnly
             } else {
@@ -142,96 +118,141 @@ struct MainWindow: View {
                 visibilityBeforeNowPlaying = nil
             }
         }
-        .sheet(isPresented: $showLogin) {
-            LoginSheet()
+        .onChange(of: store.player.currentTrack) { _, track in
+            artworkStore.update(trackID: track?.id, artworkURL: track?.album.picUrl)
+        }
+        .sheet(isPresented: loginBinding) {
+            LoginSheet(store: store.scope(state: \.login, action: \.login), appStore: store)
         }
         .overlay {
-            if player.showNowPlaying {
+            if store.isNowPlayingPresented {
                 #if os(macOS)
-                NowPlayingView(onOpenDestination: openDestination)
+                NowPlayingView(
+                    onOpenDestination: openDestination
+                )
                     .environmentObject(artworkStore)
                     // Resolve the slide at the page boundary, including artwork
                     // inserted asynchronously while the transition is running.
                     .geometryGroup()
                     .transition(.move(edge: .bottom).combined(with: .opacity))
                 #else
-                NowPlayingView(onOpenDestination: openDestination)
+                NowPlayingView(
+                    onOpenDestination: openDestination
+                )
                     .transition(.move(edge: .bottom).combined(with: .opacity))
                 #endif
             }
         }
         .overlay(alignment: .top) {
-            if let toast = toasts.current {
+            if let toast = store.toasts.current {
                 ToastView(toast: toast)
                     .transition(.move(edge: .top).combined(with: .opacity))
                     .padding(.top, 12)
             }
         }
-        .animation(AppAnimation.smooth, value: player.showNowPlaying)
-        .animation(.spring(duration: 0.3), value: toasts.current)
+        .animation(AppAnimation.smooth, value: store.isNowPlayingPresented)
+        .animation(.spring(duration: 0.3), value: store.toasts.current)
+    }
+
+    private var loginBinding: Binding<Bool> {
+        Binding(
+            get: { store.isLoginPresented },
+            set: { store.send($0 ? .presentLogin : .dismissLogin) }
+        )
     }
 
     private var detailStack: some View {
-        NavigationStack(path: pathBinding) {
+        NavigationStack(path: $store.scope(\.path, action: \.path)) {
             rootView
-                .playerContentInset()
-                .appDestinations()
-        }
-        .onChange(of: selection) { _ in
-            path = []
+        } destination: { pathStore in
+            Self.destinationView(pathStore, appStore: store)
         }
     }
 
     private func openDestination(_ destination: Destination) {
         #if os(macOS)
-        guard player.showNowPlaying else {
-            path.appendIfNotCurrent(destination)
+        guard store.isNowPlayingPresented else {
+            store.send(.openDestination(destination))
             return
         }
 
         withAnimation(AppAnimation.smooth, completionCriteria: .removed) {
-            player.showNowPlaying = false
+            store.send(.dismissNowPlaying)
         } completion: {
-            path.appendIfNotCurrent(destination)
+            store.send(.openDestination(destination))
         }
         #else
-        player.showNowPlaying = false
-        path.appendIfNotCurrent(destination)
+        store.send(.dismissNowPlaying)
+        store.send(.openDestination(destination))
         #endif
     }
 
     @ViewBuilder
     private var rootView: some View {
-        switch selection {
+        switch store.selection {
         case .home:
-            HomeView()
+            HomeView(store: store.scope(state: \.home, action: \.home), appStore: store)
         case .explore:
-            ExploreView()
+            ExploreView(store: store.scope(state: \.explore, action: \.explore), appStore: store)
         case .fm:
-            FMView()
+            FMView(appStore: store)
         case .search:
             // iPad search entry: SearchView's `.searchable` bar surfaces in the
             // detail nav bar (the desktop toolbar search field doesn't render on
             // iPad). (#59)
-            SearchView(query: "")
+            SearchView(store: store.scope(state: \.search, action: \.search), appStore: store)
         case .likedSongs:
-            if let playlist = account.likedSongsPlaylist {
-                PlaylistDetailView(playlistID: playlist.id, isLikedList: true)
-                    .id(playlist.id)
+            if let playlist = store.account.likedSongsPlaylist {
+                PlaylistDetailView(
+                    store: store.scope(state: \.playlistRoot, action: \.playlistRoot),
+                    appStore: store
+                )
+                .id(playlist.id)
             } else {
                 loginPrompt
             }
         case .daily:
-            DailySongsView()
+            DailySongsView(store: store.scope(state: \.daily, action: \.daily), appStore: store)
         case .recents:
-            RecentsView()
+            RecentsView(store: store.scope(state: \.recents, action: \.recents), appStore: store)
         case .collections:
-            CollectionsView()
+            CollectionsView(store: store.scope(state: \.collections, action: \.collections), appStore: store)
         case .cloud:
-            CloudView()
-        case .playlist(let id):
-            PlaylistDetailView(playlistID: id)
-                .id(id)
+            CloudView(store: store.scope(state: \.cloud, action: \.cloud), appStore: store)
+        case .playlist:
+            PlaylistDetailView(
+                store: store.scope(state: \.playlistRoot, action: \.playlistRoot),
+                appStore: store
+            )
+        }
+    }
+
+    @ViewBuilder
+    static func destinationView(
+        _ pathStore: StoreOf<AppFeature.Path>,
+        appStore: StoreOf<AppFeature>
+    ) -> some View {
+        switch pathStore.case {
+        case .playlist(let detail):
+            PlaylistDetailView(store: detail, appStore: appStore)
+        case .radarPlaylist(let detail):
+            PlaylistDetailView(store: detail, appStore: appStore, recommendationContext: .radar)
+        case .album(let album):
+            AlbumDetailView(store: album, appStore: appStore)
+        case .artist(let artist):
+            ArtistDetailView(store: artist, appStore: appStore)
+        case .search(let search):
+            SearchView(store: search, appStore: appStore)
+        case .daily(let daily):
+            DailySongsView(store: daily, appStore: appStore)
+        case .recents(let recents):
+            RecentsView(store: recents, appStore: appStore)
+        case .collections(let collections):
+            CollectionsView(store: collections, appStore: appStore)
+        case .cloud(let cloud):
+            CloudView(store: cloud, appStore: appStore)
+        case .toplists(let toplists):
+            ToplistsView(store: toplists, appStore: appStore)
         }
     }
 
@@ -242,7 +263,7 @@ struct MainWindow: View {
                 .foregroundStyle(.tertiary)
             Text("登录后查看你喜欢的音乐")
                 .font(.headline)
-            Button("登录") { showLogin = true }
+            Button("登录") { store.send(.presentLogin) }
                 .buttonStyle(.borderedProminent)
                 .tint(Theme.accent)
         }
@@ -251,11 +272,11 @@ struct MainWindow: View {
 
     #if os(macOS)
     private var needsCurrentArtwork: Bool {
-        settings.showMainWindowAmbientBackground || player.showNowPlaying
+        store.settings.showMainWindowAmbientBackground || store.isNowPlayingPresented
     }
 
     private var isDarkAppearance: Bool {
-        (settings.appearance.colorScheme ?? colorScheme) == .dark
+        (store.settings.appearance.colorScheme ?? colorScheme) == .dark
     }
     #endif
 }
@@ -286,10 +307,10 @@ struct MainWindowConfigurator: NSViewRepresentable {
         return view
     }
 
-    func updateNSView(_ nsView: NSView, context: Context) {
+    func updateNSView(_ nsview: NSView, context: Context) {
         DispatchQueue.main.async {
             context.coordinator.requestAmbientBackgroundConfiguration(
-                from: nsView,
+                from: nsview,
                 ambientConfiguration: ambientConfiguration
             )
         }

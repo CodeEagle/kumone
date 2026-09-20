@@ -8,7 +8,7 @@ struct NowPlayingArtworkStoreTests {
     @Test func latestArtworkRequestWins() async {
         let firstArtwork = artwork(color: .systemRed)
         let secondArtwork = artwork(color: .systemBlue)
-        let store = NowPlayingArtworkStore(player: nil) { url in
+        let store = NowPlayingArtworkStore { url in
             if url.absoluteString.contains("first-artwork") {
                 try? await Task.sleep(nanoseconds: 20_000_000)
                 return firstArtwork
@@ -32,7 +32,7 @@ struct NowPlayingArtworkStoreTests {
     }
 
     @Test func missingArtworkImmediatelyUsesFallback() {
-        let store = NowPlayingArtworkStore(player: nil) { _ in artwork(color: .systemRed) }
+        let store = NowPlayingArtworkStore { _ in artwork(color: .systemRed) }
 
         store.update(trackID: 1, artworkURL: nil)
 
@@ -43,7 +43,7 @@ struct NowPlayingArtworkStoreTests {
 
     @Test func failedArtworkLoadUsesFallback() async {
         let loaderCalls = ImageLoaderCallSignal()
-        let store = NowPlayingArtworkStore(player: nil) { _ in
+        let store = NowPlayingArtworkStore { _ in
             await loaderCalls.record()
             return nil
         }
@@ -62,7 +62,7 @@ struct NowPlayingArtworkStoreTests {
 
     @Test func waitsForAConsumerBeforeLoadingArtwork() async {
         let loaderCalls = ImageLoaderCallSignal()
-        let store = NowPlayingArtworkStore(player: nil) { _ in
+        let store = NowPlayingArtworkStore { _ in
             await loaderCalls.record()
             return nil
         }

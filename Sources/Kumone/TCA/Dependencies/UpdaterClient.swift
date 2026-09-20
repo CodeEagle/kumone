@@ -46,6 +46,17 @@ extension UpdaterClient: DependencyKey {
     }()
 }
 
+extension UpdaterClient: TestDependencyKey {
+    /// Sparkle must never start under test: `SPUStandardUpdaterController`'s
+    /// first `startUpdater` block blocks the main thread on a helper XPC that
+    /// never answers in a headless test run, so a test that merely *reads*
+    /// `@Dependency(\.updater)` would deadlock the suite.
+    public static let testValue = UpdaterClient(
+        start: { .never },
+        setAutomaticChecks: { _ in },
+        checkForUpdates: { })
+}
+
 extension DependencyValues {
     var updater: UpdaterClient {
         get { self[UpdaterClient.self] }

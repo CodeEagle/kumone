@@ -127,12 +127,12 @@ final class SettingsManager: ObservableObject {
 
     /// Check for updates on launch. When off, no update sheet appears
     /// automatically; the user can still check manually (#42).
+    ///
+    /// The Sparkle push is store-driven now (`AppFeature` sends
+    /// `.updater(.setAutomaticChecks)`), so this legacy setter only persists.
     @Published var autoCheckUpdates: Bool {
         didSet {
             UserDefaults.standard.set(autoCheckUpdates, forKey: Keys.autoCheckUpdates)
-            #if os(macOS)
-            UpdaterManager.shared.setAutomaticChecks(autoCheckUpdates)
-            #endif
         }
     }
 

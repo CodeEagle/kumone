@@ -1,4 +1,14 @@
+import ComposableArchitecture
 import SwiftUI
+
+// MARK: - Environment
+
+extension EnvironmentValues {
+    /// The composition root, injected by `MainWindow` / `IOSMainWindow`. Shared
+    /// leaf views (the clearance spacer, the track row) read it here rather than
+    /// threading player/account/settings stores through every page.
+    @Entry var appStore: StoreOf<AppFeature>?
+}
 
 private struct OpenLoginKey: EnvironmentKey {
     static let defaultValue: () -> Void = {}
@@ -21,30 +31,30 @@ extension EnvironmentValues {
 }
 
 struct PlayerChromeModifier: ViewModifier {
-    @EnvironmentObject private var player: PlayerService
+    let appStore: StoreOf<AppFeature>
     let detailWidth: CGFloat
 
     func body(content: Content) -> some View {
         content
             .overlay(alignment: .bottomTrailing) {
-                PlayerBar()
+                PlayerBar(appStore: appStore)
                     .frame(width: detailWidth)
             }
             .overlay(alignment: .trailing) {
                 rightPanel
             }
-            .animation(AppAnimation.standard, value: player.activePanel)
+            .animation(AppAnimation.standard, value: appStore.player.activePanel)
     }
 
     @ViewBuilder
     private var rightPanel: some View {
-        if let panel = player.activePanel {
+        if let panel = appStore.player.activePanel {
             Group {
                 switch panel {
                 case .lyrics:
-                    LyricsPanel()
+                    LyricsPanel(appStore: appStore)
                 case .queue:
-                    QueuePanel()
+                    QueuePanel(appStore: appStore)
                 }
             }
             .padding(.top, 12)
@@ -68,6 +78,8 @@ enum SidebarItem: Hashable {
     case playlist(Int)
 }
 
+/// A view-level navigation request. `AppFeature.pathElement(for:)` maps this
+/// onto the state a pushed page needs; `AppFeature.openDestination` appends it.
 enum Destination: Hashable {
     case playlist(Int)
     case radarPlaylist(Int)
@@ -88,62 +100,19 @@ extension Array where Element == Destination {
     }
 }
 
-/// Registers all shared navigation destinations on a stack.
-struct DestinationsModifier: ViewModifier {
-    func body(content: Content) -> some View {
-        content.navigationDestination(for: Destination.self) { destination in
-            Group {
-                switch destination {
-                case .playlist(let id):
-                    PlaylistDetailView(playlistID: id)
-                case .radarPlaylist(let id):
-                    PlaylistDetailView(playlistID: id, recommendationContext: .radar)
-                case .album(let id):
-                    AlbumDetailView(albumID: id)
-                case .artist(let id):
-                    ArtistDetailView(artistID: id)
-                case .daily:
-                    DailySongsView()
-                case .toplists:
-                    ToplistsView()
-                case .recents:
-                    RecentsView()
-                case .collections:
-                    CollectionsView()
-                case .cloud:
-                    CloudView()
-                case .search(let query):
-                    SearchView(query: query)
-                }
-            }
-            .playerContentInset()
-        }
-    }
-}
-
 extension View {
-    func playerChrome(detailWidth: CGFloat) -> some View {
-        modifier(PlayerChromeModifier(detailWidth: detailWidth))
-    }
-
-    /// Pages clear the floating player bar with an explicit trailing
-    /// `PlayerClearanceSpacer` in their scroll content; safeAreaPadding
-    /// proved unreliable inside navigation stacks (#12).
-    func playerContentInset() -> some View {
-        self
-    }
-
-    func appDestinations() -> some View {
-        modifier(DestinationsModifier())
+    func playerChrome(appStore: StoreOf<AppFeature>, detailWidth: CGFloat) -> some View {
+        modifier(PlayerChromeModifier(appStore: appStore, detailWidth: detailWidth))
     }
 }
 
 /// Trailing spacer for scrollable pages so the last row clears the
 /// floating player bar.
 struct PlayerClearanceSpacer: View {
-    @EnvironmentObject private var player: PlayerService
+    @Environment(\.appStore) private var appStore
 
     var body: some View {
+        let hasCurrentTrack = appStore?.player.hasCurrentTrack ?? false
         #if os(iOS)
         if #available(iOS 26.0, *) {
             // On iOS 26+, the native TabView bottom accessory automatically
@@ -153,7 +122,7 @@ struct PlayerClearanceSpacer: View {
             // On iOS < 26, customTabInterface floats above content and requires
             // explicit bottom clearance.
             Color.clear.frame(
-                height: player.hasCurrentTrack
+                height: hasCurrentTrack
                     ? Theme.Layout.FloatingChrome.fullChromeClearance
                     : Theme.Layout.FloatingChrome.tabBarClearance
             )

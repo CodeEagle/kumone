@@ -260,7 +260,7 @@ final class AppFeatureTests: XCTestCase {
         let store = TestStore(initialState: AppFeature.State()) {
             AppFeature()
         }
-        await store.send(.playlistRoot(.delegate(.play(tracks: [], source: .none, context: nil))))
+        await store.send(.playlistRoot(.delegate(.play(tracks: [], source: .none, startAt: nil, context: nil))))
         await store.receive(.player(.play(tracks: [], source: .none, startAt: nil, context: nil)))
     }
 
@@ -271,7 +271,7 @@ final class AppFeatureTests: XCTestCase {
         await store.send(.openDestination(.album(3))) {
             $0.path.append(.album(AlbumDetailFeature.State(albumID: 3)))
         }
-        await store.send(.path(.element(id: 0, action: .album(.delegate(.play(tracks: [], source: .album(3), context: nil))))))
+        await store.send(.path(.element(id: 0, action: .album(.delegate(.play(tracks: [], source: .album(3), startAt: nil, context: nil))))))
         await store.receive(.player(.play(tracks: [], source: .album(3), startAt: nil, context: nil)))
     }
 

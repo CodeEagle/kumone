@@ -1,11 +1,14 @@
+import ComposableArchitecture
 import SwiftUI
 
 /// 私人漫游 — immersive personal FM page.
 struct FMView: View {
-    @EnvironmentObject private var player: PlayerService
-    @EnvironmentObject private var account: AccountStore
+    let appStore: StoreOf<AppFeature>
+
     @Environment(\.openLogin) private var openLogin
     @Environment(\.colorScheme) private var colorScheme
+
+    private var player: PlayerFeature.State { appStore.player }
 
     private var isPhone: Bool {
         #if os(iOS)
@@ -18,7 +21,7 @@ struct FMView: View {
     var body: some View {
         ZStack {
             backdrop
-            if account.hasAuthCookie {
+            if appStore.account.hasAuthCookie {
                 content
             } else {
                 loginPrompt
@@ -114,7 +117,7 @@ struct FMView: View {
                     controls
                 } else {
                     Button {
-                        player.startFM()
+                        appStore.send(.player(.startFM))
                     } label: {
                         Label("开始漫游", systemImage: "wave.3.right")
                             .font(.system(size: 15, weight: .semibold))
@@ -138,7 +141,7 @@ struct FMView: View {
     private var controls: some View {
         HStack(spacing: 26) {
             Button {
-                player.fmTrash()
+                appStore.send(.player(.fmTrash))
             } label: {
                 Image(systemName: "trash")
                     .font(.system(size: 17, weight: .medium))
@@ -150,7 +153,7 @@ struct FMView: View {
             .help("不喜欢，换一首")
 
             Button {
-                player.togglePlayPause()
+                appStore.send(.player(.togglePlayPause))
             } label: {
                 ZStack {
                     Circle()
@@ -166,7 +169,7 @@ struct FMView: View {
             .buttonStyle(.pressable)
 
             Button {
-                player.fmNext()
+                appStore.send(.player(.fmNext))
             } label: {
                 Image(systemName: "forward.fill")
                     .font(.system(size: 17, weight: .medium))
@@ -178,7 +181,7 @@ struct FMView: View {
             .help("下一首")
 
             if let track {
-                LikeButton(trackID: track.id, size: 16)
+                LikeButton(trackID: track.id, size: 16, appStore: appStore)
                     .frame(width: 48, height: 48)
                     .background(.primary.opacity(0.06), in: Circle())
             }

@@ -266,6 +266,7 @@ final class PlaylistDetailFeatureTests: XCTestCase {
         await store.receive(.delegate(.play(
             tracks: [Self.makeSong(20), Self.makeSong(21)],
             source: .playlist(7),
+            startAt: nil,
             context: .heartbeat
         )))
         await store.receive(.delegate(.toast(String(localized: "已开启心动模式"))))

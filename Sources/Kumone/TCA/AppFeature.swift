@@ -32,6 +32,8 @@ struct AppFeature {
         var selection: SidebarItem = .home
         var path = StackState<Path.State>()
         var isLoginPresented = false
+        /// The immersive Now Playing page (replaces `PlayerService.showNowPlaying`).
+        var isNowPlayingPresented = false
     }
 
     enum Action: Equatable {
@@ -55,9 +57,17 @@ struct AppFeature {
         /// A destination asked for from outside the sidebar (the toolbar search
         /// field, now-playing links, the Dock menu).
         case openDestination(Destination)
+        /// Drops the detail stack back to the root. The iPhone tab bar switches
+        /// between five stacks that all share `path`; clearing on the switch
+        /// keeps each tab rooted.
+        case clearPath
 
         case presentLogin
         case dismissLogin
+
+        /// Opens / closes the immersive Now Playing page.
+        case presentNowPlaying
+        case dismissNowPlaying
 
         /// App launch: rehydrate settings, load the account, start the updater,
         /// and listen for system media commands.
@@ -85,6 +95,7 @@ struct AppFeature {
     }
 
     @Dependency(\.nowPlaying) var nowPlaying
+    @Dependency(\.netease) var netease
 
     var body: some ReducerOf<Self> {
         Scope(state: \.toasts, action: \.toasts) { ToastsFeature() }
@@ -174,6 +185,18 @@ struct AppFeature {
                 state.isLoginPresented = false
                 return .send(.login(.dismiss))
 
+            case .presentNowPlaying:
+                state.isNowPlayingPresented = true
+                return .none
+
+            case .dismissNowPlaying:
+                state.isNowPlayingPresented = false
+                return .none
+
+            case .clearPath:
+                state.path = StackState()
+                return .none
+
             // A login (QR or SMS) landed its cookies: load the account.
             case .login(.loginSucceeded):
                 state.isLoginPresented = false
@@ -202,20 +225,56 @@ struct AppFeature {
 
             // The player surfaces this for the toast overlay; it carries no
             // state of its own.
+            // The "心动模式" card: needs the account's liked list and a seed
+            // track, which only this composition root can see.
+            case .home(.delegate(.startHeartbeat)):
+                guard let likedList = state.account.likedSongsPlaylist else { return .none }
+                guard let seed = state.account.likedTrackIDs.randomElement() else {
+                    return .send(.toasts(.presented(String(localized: "先收藏一些喜欢的歌曲吧"))))
+                }
+                let playlistID = likedList.id
+                return .run { [netease] send in
+                    do {
+                        let tracks = try await netease.intelligenceList(songID: seed, playlistID: playlistID)
+                        guard !tracks.isEmpty else {
+                            await send(.toasts(.presented(String(localized: "心动模式暂时不可用"))))
+                            return
+                        }
+                        await send(.player(.play(
+                            tracks: tracks, source: .playlist(playlistID), startAt: nil, context: .heartbeat)))
+                        await send(.toasts(.presented(String(localized: "已开启心动模式"))))
+                    } catch {
+                        await send(.toasts(.presented(error.localizedDescription)))
+                    }
+                }
+
             case let .player(.toast(message)):
                 return .send(.toasts(.presented(message)))
 
             // Content pages handing the queue to the player.
-            case let .playlistRoot(.delegate(.play(tracks, source, context))),
-                 let .path(.element(_, .playlist(.delegate(.play(tracks, source, context))))),
-                 let .path(.element(_, .radarPlaylist(.delegate(.play(tracks, source, context))))),
-                 let .path(.element(_, .album(.delegate(.play(tracks, source, context))))),
-                 let .path(.element(_, .artist(.delegate(.play(tracks, source, context))))),
+            case let .playlistRoot(.delegate(.play(tracks, source, startAt, context))),
+                 let .path(.element(_, .playlist(.delegate(.play(tracks, source, startAt, context))))),
+                 let .path(.element(_, .radarPlaylist(.delegate(.play(tracks, source, startAt, context))))),
+                 let .path(.element(_, .album(.delegate(.play(tracks, source, startAt, context))))),
+                 let .path(.element(_, .artist(.delegate(.play(tracks, source, startAt, context))))):
+                return .send(.player(.play(tracks: tracks, source: source, startAt: startAt, context: context)))
+
+            case let .home(.delegate(.play(tracks, source, context))),
+                 let .explore(.delegate(.play(tracks, source, context))),
+                 let .daily(.delegate(.play(tracks, source, context))),
+                 let .cloud(.delegate(.play(tracks, source, context))),
+                 let .path(.element(_, .toplists(.delegate(.play(tracks, source, context))))),
                  let .path(.element(_, .daily(.delegate(.play(tracks, source, context))))),
                  let .path(.element(_, .cloud(.delegate(.play(tracks, source, context))))):
                 return .send(.player(.play(tracks: tracks, source: source, startAt: nil, context: context)))
 
-            case let .path(.element(_, .recents(.delegate(.play(tracks, startAt, context))))):
+            // Search hands the player the row the user tapped.
+            case let .search(.delegate(.play(tracks, source, startAt, context))),
+                 let .path(.element(_, .search(.delegate(.play(tracks, source, startAt, context))))):
+                return .send(.player(.play(tracks: tracks, source: source, startAt: startAt, context: context)))
+
+            case let .recents(.delegate(.play(tracks, startAt, context))),
+                 let .path(.element(_, .recents(.delegate(.play(tracks, startAt, context))))):
                 return .send(.player(.play(tracks: tracks, source: .none, startAt: startAt, context: context)))
 
             // Failures and confirmations surface as toasts.
@@ -232,7 +291,8 @@ struct AppFeature {
                  .path(.element(_, .radarPlaylist(.delegate(.subscriptionChanged)))):
                 return .send(.account(.refreshLibrary))
 
-            case .path(.element(_, .collections(.delegate(.refreshSublists)))):
+            case .collections(.delegate(.refreshSublists)),
+                 .path(.element(_, .collections(.delegate(.refreshSublists)))):
                 return .send(.account(.refreshSublists))
 
             default:

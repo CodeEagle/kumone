@@ -1,14 +1,19 @@
+import ComposableArchitecture
 import SwiftUI
 
 struct SettingsView: View {
-    @EnvironmentObject private var settings: SettingsManager
-    @EnvironmentObject private var account: AccountStore
+    @Bindable var store: StoreOf<SettingsFeature>
+    let appStore: StoreOf<AppFeature>
+
     @State private var cacheSize: String = String(localized: "计算中…")
 
     var body: some View {
         Form {
             Section("播放") {
-                Picker("音质", selection: $settings.audioQuality) {
+                Picker("音质", selection: Binding(
+                    get: { store.audioQuality },
+                    set: { store.send(.setAudioQuality($0)) }
+                )) {
                     ForEach(AudioQuality.allCases) { quality in
                         Text(quality.displayName).tag(quality)
                     }
@@ -16,26 +21,44 @@ struct SettingsView: View {
                 Text("无损与 Hi-Res 需要黑胶 VIP，未开通时自动回落到可用音质")
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                Toggle("灰色歌曲解锁", isOn: $settings.enableUnblock)
+                Toggle("灰色歌曲解锁", isOn: Binding(
+                    get: { store.enableUnblock },
+                    set: { store.send(.setEnableUnblock($0)) }
+                ))
                 Text("无版权 / 下架歌曲自动从第三方音源（酷我、酷狗等）匹配播放")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
 
             Section("外观") {
-                Picker("主题", selection: $settings.appearance) {
+                Picker("主题", selection: Binding(
+                    get: { store.appearance },
+                    set: { store.send(.setAppearance($0)) }
+                )) {
                     ForEach(AppAppearance.allCases) { appearance in
                         Text(appearance.displayName).tag(appearance)
                     }
                 }
-                Picker("播放页模式", selection: $settings.nowPlayingMode) {
+                Picker("播放页模式", selection: Binding(
+                    get: { store.nowPlayingMode },
+                    set: { store.send(.setNowPlayingMode($0)) }
+                )) {
                     ForEach(NowPlayingMode.allCases) { mode in
                         Text(mode.displayName).tag(mode)
                     }
                 }
-                Toggle("显示歌词翻译", isOn: $settings.showLyricsTranslation)
-                Toggle("逐字歌词（卡拉OK）", isOn: $settings.verbatimLyrics)
-                Picker("日文歌词读音", selection: $settings.lyricsAnnotation) {
+                Toggle("显示歌词翻译", isOn: Binding(
+                    get: { store.showLyricsTranslation },
+                    set: { store.send(.setShowLyricsTranslation($0)) }
+                ))
+                Toggle("逐字歌词（卡拉OK）", isOn: Binding(
+                    get: { store.verbatimLyrics },
+                    set: { store.send(.setVerbatimLyrics($0)) }
+                ))
+                Picker("日文歌词读音", selection: Binding(
+                    get: { store.lyricsAnnotation },
+                    set: { store.send(.setLyricsAnnotation($0)) }
+                )) {
                     ForEach(LyricsAnnotation.allCases) { annotation in
                         Text(annotation.displayName).tag(annotation)
                     }
@@ -43,18 +66,24 @@ struct SettingsView: View {
                 Text("罗马音在歌词上方另起一行，汉字读音把假名标在汉字正上方；缺少官方罗马音时自动生成读音")
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                Toggle("主界面环境色", isOn: $settings.showMainWindowAmbientBackground)
-                if settings.showMainWindowAmbientBackground {
+                Toggle("主界面环境色", isOn: Binding(
+                    get: { store.showMainWindowAmbientBackground },
+                    set: { store.send(.setShowMainWindowAmbientBackground($0)) }
+                ))
+                if store.showMainWindowAmbientBackground {
                     VStack(alignment: .leading, spacing: 6) {
                         HStack {
                             Text("背景色强度")
                             Spacer()
-                            Text("\(Int(settings.mainWindowAmbientBackgroundIntensity * 100))%")
+                            Text("\(Int(store.mainWindowAmbientBackgroundIntensity * 100))%")
                                 .foregroundStyle(.secondary)
                         }
                         Slider(
-                            value: $settings.mainWindowAmbientBackgroundIntensity,
-                            in: SettingsManager.mainWindowAmbientBackgroundIntensityRange,
+                            value: Binding(
+                                get: { store.mainWindowAmbientBackgroundIntensity },
+                                set: { store.send(.setMainWindowAmbientBackgroundIntensity($0)) }
+                            ),
+                            in: SettingsFeature.intensityRange,
                             step: 0.1
                         )
                         HStack {
@@ -67,9 +96,15 @@ struct SettingsView: View {
                     }
                 }
                 #if os(macOS)
-                Toggle("桌面歌词", isOn: $settings.showDesktopLyrics)
-                if settings.showDesktopLyrics {
-                    Toggle("桌面歌词水平居中", isOn: $settings.desktopLyricsCentered)
+                Toggle("桌面歌词", isOn: Binding(
+                    get: { store.showDesktopLyrics },
+                    set: { store.send(.setShowDesktopLyrics($0)) }
+                ))
+                if store.showDesktopLyrics {
+                    Toggle("桌面歌词水平居中", isOn: Binding(
+                        get: { store.desktopLyricsCentered },
+                        set: { store.send(.setDesktopLyricsCentered($0)) }
+                    ))
                 }
                 Text("在屏幕上悬浮显示当前歌词，可拖动调整位置")
                     .font(.caption)
@@ -85,10 +120,10 @@ struct SettingsView: View {
             }
 
             Section("账号") {
-                if let profile = account.profile {
+                if let profile = appStore.account.profile {
                     LabeledContent("当前账号", value: profile.nickname)
                     Button("退出登录", role: .destructive) {
-                        Task { await AccountStore.shared.logout() }
+                        appStore.send(.account(.logout))
                     }
                 } else {
                     Text("未登录")
@@ -97,7 +132,10 @@ struct SettingsView: View {
             }
 
             Section("更新") {
-                Toggle("启动时自动检查更新", isOn: $settings.autoCheckUpdates)
+                Toggle("启动时自动检查更新", isOn: Binding(
+                    get: { store.autoCheckUpdates },
+                    set: { store.send(.setAutoCheckUpdates($0)) }
+                ))
                 Text("关闭后启动不再自动弹出更新提示，仍可手动检查更新")
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -159,7 +197,7 @@ struct SettingsView: View {
             try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
             DispatchQueue.main.async {
                 cacheSize = String(localized: "0 字节")
-                ToastCenter.shared.show(String(localized: "缓存已清除"))
+                appStore.send(.toasts(.presented(String(localized: "缓存已清除"))))
             }
         }
     }

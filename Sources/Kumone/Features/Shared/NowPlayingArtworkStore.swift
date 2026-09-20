@@ -19,28 +19,13 @@ final class NowPlayingArtworkStore: ObservableObject {
     private let imageLoader: ImageLoader
     private var request: Request?
     private var loadTask: Task<Void, Never>?
-    private var cancellables = Set<AnyCancellable>()
     private var artworkURL: String?
     private var artworkIsNeeded = false
 
-    init(
-        player: PlayerService?,
-        imageLoader: @escaping ImageLoader = { url in
-            await ImageCache.shared.image(for: url)
-        }
-    ) {
+    init(imageLoader: @escaping ImageLoader = { url in
+        await ImageCache.shared.image(for: url)
+    }) {
         self.imageLoader = imageLoader
-
-        guard let player else { return }
-        player.$currentTrack
-            .sink { [weak self] track in
-                self?.update(trackID: track?.id, artworkURL: track?.album.picUrl)
-            }
-            .store(in: &cancellables)
-    }
-
-    convenience init() {
-        self.init(player: PlayerService.shared)
     }
 
     func update(trackID: Int?, artworkURL: String?) {

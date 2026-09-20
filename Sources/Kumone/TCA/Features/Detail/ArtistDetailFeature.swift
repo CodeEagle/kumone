@@ -44,7 +44,7 @@ struct ArtistDetailFeature {
     }
 
     enum Delegate: Equatable {
-        case play(tracks: [Track], source: PlaySource, context: PlayContext?)
+        case play(tracks: [Track], source: PlaySource, startAt: Track?, context: PlayContext?)
         case toast(String)
         case subscriptionChanged
     }
@@ -89,7 +89,7 @@ struct ArtistDetailFeature {
                 guard let artist = state.artist else { return .none }
                 return .send(.delegate(.play(
                     tracks: state.hotSongs, source: .artist(state.artistID),
-                    context: .artist(id: state.artistID, name: artist.name))))
+                    startAt: nil, context: .artist(id: state.artistID, name: artist.name))))
 
             case .toggleFollow:
                 let followed = !state.isFollowed

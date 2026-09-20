@@ -79,10 +79,6 @@ struct PlayContext: Codable, Hashable {
     }
 }
 
-enum RightPanel {
-    case lyrics, queue
-}
-
 /// The playback engine: queue, shuffle/repeat, personal FM, URL resolution,
 /// lyrics, scrobbling. Modeled on YesPlayMusic's Player class, backed by AVPlayer.
 /// High-frequency playback position, isolated so per-tick updates only

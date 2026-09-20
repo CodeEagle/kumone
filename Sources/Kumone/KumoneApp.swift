@@ -1,98 +1,92 @@
-import Combine
+import ComposableArchitecture
 import SwiftUI
 
 #if os(macOS)
 public struct KumoneApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
 
-    @StateObject private var player = PlayerService.shared
-    @StateObject private var account = AccountStore.shared
-    @StateObject private var settings = SettingsManager.shared
-    @StateObject private var toasts = ToastCenter.shared
+    private var store: StoreOf<AppFeature> { appDelegate.store }
 
     public init() {}
 
     public var body: some Scene {
         Window("Kumone", id: "main") {
-            MainWindow()
-                .environmentObject(player)
-                .environmentObject(account)
-                .environmentObject(settings)
-                .environmentObject(toasts)
+            MainWindow(store: store)
                 .tint(Theme.accent)
-                .preferredColorScheme(settings.appearance.colorScheme)
-                .frame(minWidth: player.showNowPlaying
-                           ? Theme.Layout.minWindowWidthSidebarCollapsed
-                           : Theme.Layout.minWindowWidth,
-                       minHeight: Theme.Layout.minWindowHeight)
+                .preferredColorScheme(store.settings.appearance.colorScheme)
+                .frame(
+                    minWidth: store.isNowPlayingPresented
+                        ? Theme.Layout.minWindowWidthSidebarCollapsed
+                        : Theme.Layout.minWindowWidth,
+                    minHeight: Theme.Layout.minWindowHeight)
         }
         .defaultSize(width: Theme.Layout.defaultWindowWidth,
                      height: Theme.Layout.defaultWindowHeight)
         .windowResizability(.contentMinSize)
         .commands {
             CommandGroup(after: .appInfo) {
-                CheckForUpdatesButton()
+                Button("检查更新…") { store.send(.settings(.checkForUpdates)) }
             }
 
             CommandMenu("播放") {
+                let player = store.player
                 Button(player.isPlaying ? String(localized: "暂停") : String(localized: "播放")) {
-                    player.togglePlayPause()
+                    store.send(.player(.togglePlayPause))
                 }
                 .disabled(!player.hasCurrentTrack)
 
-                Button("下一首") { player.next() }
+                Button("下一首") { store.send(.player(.next)) }
                     .keyboardShortcut(.rightArrow, modifiers: .command)
-                Button("上一首") { player.previous() }
+                Button("上一首") { store.send(.player(.previous)) }
                     .keyboardShortcut(.leftArrow, modifiers: .command)
 
                 Divider()
 
-                Button("随机播放") { player.toggleShuffle() }
+                Button("随机播放") { store.send(.player(.toggleShuffle)) }
                     .keyboardShortcut("s", modifiers: [.command, .shift])
-                Button("循环模式") { player.cycleRepeatMode() }
+                Button("循环模式") { store.send(.player(.cycleRepeatMode)) }
                     .keyboardShortcut("r", modifiers: [.command, .shift])
 
                 Divider()
 
-                SleepTimerMenu(player: player)
+                SleepTimerMenu(store: store.scope(state: \.player, action: \.player))
 
                 Divider()
 
-                Button(player.currentTrack.map { AccountStore.shared.isLiked($0.id) ? String(localized: "取消喜欢") : String(localized: "喜欢") } ?? String(localized: "喜欢")) {
-                    if let track = player.currentTrack {
-                        Task { await account.toggleLike(trackID: track.id) }
+                let liked = player.currentTrack.map { store.account.isLiked($0.id) } ?? false
+                Button(liked ? String(localized: "取消喜欢") : String(localized: "喜欢")) {
+                    if let trackID = player.currentTrack?.id {
+                        store.send(.account(.toggleLike(trackID)))
                     }
                 }
                 .keyboardShortcut("l", modifiers: [.command, .shift])
                 .disabled(!player.hasCurrentTrack)
 
-                Button("歌词") {
-                    player.activePanel = player.activePanel == .lyrics ? nil : .lyrics
-                }
-                .keyboardShortcut("l", modifiers: .command)
+                Button("歌词") { store.send(.player(.togglePanel(.lyrics))) }
+                    .keyboardShortcut("l", modifiers: .command)
 
-                Button("播放队列") {
-                    player.activePanel = player.activePanel == .queue ? nil : .queue
-                }
-                .keyboardShortcut("u", modifiers: .command)
+                Button("播放队列") { store.send(.player(.togglePanel(.queue))) }
+                    .keyboardShortcut("u", modifiers: .command)
             }
         }
 
         Settings {
-            SettingsView()
-                .environmentObject(account)
-                .environmentObject(settings)
+            SettingsView(
+                store: store.scope(state: \.settings, action: \.settings),
+                appStore: store
+            )
                 .tint(Theme.accent)
-                .preferredColorScheme(settings.appearance.colorScheme)
+                .preferredColorScheme(store.settings.appearance.colorScheme)
         }
     }
 }
 
-final class AppDelegate: NSObject, NSApplicationDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
     static weak var shared: AppDelegate?
 
+    let store = Store(initialState: AppFeature.State()) { AppFeature() }
+
     private var keyMonitor: Any?
-    private var appearanceObserver: AnyCancellable?
     /// Installed by the SwiftUI main scene. Calling it recreates the scene
     /// when its NSWindow was released after the user closed the last window.
     var openMainWindow: (() -> Void)?
@@ -103,17 +97,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         Self.shared = self
-        // Drive NSApp.appearance from the setting so the NATIVE window chrome
-        // (both main and Settings window titlebars/forms) tracks it. SwiftUI's
-        // `.preferredColorScheme` alone doesn't reliably revert the native
-        // titlebar when switching a fixed theme back to "follow system" (#94).
-        applyAppearance(SettingsManager.shared.appearance.colorScheme)
-        appearanceObserver = SettingsManager.shared.$appearance
-            .map(\.colorScheme)
-            .removeDuplicates()
-            .sink { [weak self] scheme in self?.applyAppearance(scheme) }
+        applyAppearance(store.settings.appearance.colorScheme)
         // Space toggles play/pause unless a text field is being edited.
-        keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+        keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            guard let self else { return event }
             let noModifiers = event.modifierFlags
                 .intersection([.command, .option, .control, .shift]).isEmpty
             let editingText = NSApp.keyWindow?.firstResponder is NSText
@@ -121,23 +108,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
             // Space: play/pause (unless typing)
             if event.keyCode == 49, noModifiers, !editingText {
-                Task { @MainActor in
-                    PlayerService.shared.togglePlayPause()
-                }
+                self.store.send(.player(.togglePlayPause))
                 return nil
             }
             // Esc: close the immersive now-playing page
-            if event.keyCode == 53, noModifiers, MainActor.assumeIsolated({ PlayerService.shared.showNowPlaying }) {
-                Task { @MainActor in
-                    PlayerService.shared.showNowPlaying = false
-                }
+            if event.keyCode == 53, noModifiers, self.store.isNowPlayingPresented {
+                self.store.send(.dismissNowPlaying)
                 return nil
             }
             return event
         }
     }
 
-    private func applyAppearance(_ scheme: ColorScheme?) {
+    func applyAppearance(_ scheme: ColorScheme?) {
         switch scheme {
         case .light: NSApp.appearance = NSAppearance(named: .aqua)
         case .dark: NSApp.appearance = NSAppearance(named: .darkAqua)
@@ -147,24 +130,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @MainActor
     func applicationDockMenu(_ sender: NSApplication) -> NSMenu? {
-        // Legacy bridge: the app shell still runs on PlayerService, so the
-        // store-driven menu reads a snapshot of it and dispatches back by hand.
-        // Both halves disappear once the shell runs on the store.
-        let legacy = PlayerService.shared
-        var state = PlayerFeature.State()
-        state.currentTrack = legacy.currentTrack
-        state.isPlaying = legacy.isPlaying
-        state.shuffleEnabled = legacy.shuffleEnabled
-        state.repeatMode = legacy.repeatMode
-        state.recentContexts = legacy.recentContexts
-        return DockMenu().makeMenu(from: state) { action in
+        DockMenu().makeMenu(from: store.player) { action in
             switch action {
-            case .togglePlayPause: legacy.togglePlayPause()
-            case .next: legacy.next()
-            case .previous: legacy.previous()
-            case .toggleShuffle: legacy.toggleShuffle()
-            case let .setRepeatMode(mode): legacy.repeatMode = mode
-            case let .playContext(context): legacy.play(context: context)
+            case .togglePlayPause: self.store.send(.player(.togglePlayPause))
+            case .next: self.store.send(.player(.next))
+            case .previous: self.store.send(.player(.previous))
+            case .toggleShuffle: self.store.send(.player(.toggleShuffle))
+            case let .setRepeatMode(mode): self.store.send(.player(.setRepeatMode(mode)))
+            case let .playContext(context): self.store.send(.player(.playContext(context)))
             default: break
             }
         }

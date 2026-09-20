@@ -1,13 +1,8 @@
+import ComposableArchitecture
 import SwiftUI
 
 struct SleepTimerMenu: View {
-    @ObservedObject private var player: PlayerService
-    @ObservedObject private var sleepTimer: SleepTimer
-
-    init(player: PlayerService) {
-        _player = ObservedObject(wrappedValue: player)
-        _sleepTimer = ObservedObject(wrappedValue: player.sleepTimer)
-    }
+    @Bindable var store: StoreOf<PlayerFeature>
 
     var body: some View {
         Menu {
@@ -19,32 +14,32 @@ struct SleepTimerMenu: View {
 
             ForEach([15, 30, 45, 60, 90], id: \.self) { minutes in
                 Button(String(localized: "\(minutes) 分钟")) {
-                    sleepTimer.schedule(afterMinutes: minutes)
+                    store.send(.sleepTimer(.schedule(minutes: minutes)))
                 }
-                .disabled(!player.hasCurrentTrack)
+                .disabled(!store.hasCurrentTrack)
             }
 
             Button {
-                sleepTimer.scheduleAtEndOfCurrentTrack()
+                store.send(.sleepTimer(.endOfCurrentTrack))
             } label: {
                 Label("当前歌曲结束时停止", systemImage: "music.note")
             }
-            .disabled(!player.hasCurrentTrack)
+            .disabled(!store.hasCurrentTrack)
 
-            if sleepTimer.state.isActive {
+            if store.sleepTimer.isActive {
                 Divider()
                 Button("取消睡眠定时", role: .destructive) {
-                    sleepTimer.cancel()
+                    store.send(.sleepTimer(.cancel))
                 }
             }
         } label: {
-            Label(menuTitle, systemImage: sleepTimer.state.isActive ? "timer.circle.fill" : "timer")
+            Label(menuTitle, systemImage: store.sleepTimer.isActive ? "timer.circle.fill" : "timer")
         }
-        .disabled(!player.hasCurrentTrack && !sleepTimer.state.isActive)
+        .disabled(!store.hasCurrentTrack && !store.sleepTimer.isActive)
     }
 
     private var menuTitle: String {
-        switch sleepTimer.state {
+        switch store.sleepTimer.mode {
         case .inactive:
             return String(localized: "睡眠定时")
         case .countdown:
@@ -58,7 +53,7 @@ struct SleepTimerMenu: View {
     }
 
     private var activeStatus: String? {
-        switch sleepTimer.state {
+        switch store.sleepTimer.mode {
         case .inactive:
             return nil
         case .countdown:
@@ -72,7 +67,7 @@ struct SleepTimerMenu: View {
     }
 
     private var remainingDuration: String {
-        guard case .countdown(let deadline) = sleepTimer.state else { return "" }
+        guard case .countdown(let deadline) = store.sleepTimer.mode else { return "" }
         return Formatters.duration(max(0, deadline.timeIntervalSinceNow))
     }
 }
