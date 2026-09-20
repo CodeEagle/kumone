@@ -11,12 +11,14 @@ let package = Package(
     ],
     dependencies: [
         .package(url: "https://github.com/sparkle-project/Sparkle", from: "2.9.5"),
+        .package(url: "https://github.com/pointfreeco/swift-composable-architecture", from: "1.26.2"),
     ],
     targets: [
         .target(
             name: "KumoneCore",
             dependencies: [
                 .product(name: "Sparkle", package: "Sparkle", condition: .when(platforms: [.macOS])),
+                .product(name: "ComposableArchitecture", package: "swift-composable-architecture"),
             ],
             path: "Sources/Kumone",
             exclude: ["Resources"],
