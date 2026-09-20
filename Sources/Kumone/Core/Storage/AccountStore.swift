@@ -103,8 +103,13 @@ final class AccountStore: ObservableObject {
 // MARK: - Toasts
 
 struct Toast: Identifiable, Equatable {
-    let id = UUID()
+    let id: UUID
     let message: String
+
+    init(id: UUID = UUID(), message: String) {
+        self.id = id
+        self.message = message
+    }
 }
 
 @MainActor

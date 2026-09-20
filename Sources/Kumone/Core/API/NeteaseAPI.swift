@@ -37,7 +37,7 @@ enum NeteaseAPI {
         "https://music.163.com/login?codekey=\(unikey)"
     }
 
-    struct QRCheckResponse: Decodable {
+    struct QRCheckResponse: Decodable, Equatable {
         let code: Int
         let message: String?
         let nickname: String?
