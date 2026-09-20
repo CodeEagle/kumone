@@ -3,10 +3,11 @@ import Dependencies
 import Foundation
 
 /// The composition root. Child features own their state and logic; this reducer
-/// only wires cross-feature effects: login → bootstrap, failures → toasts.
+/// only wires cross-feature effects: login → bootstrap, failures → toasts, and
+/// the settings/account values the player mirrors at resolve time.
 ///
-/// `player` and the content features (home / explore / search / detail pages)
-/// land here as they are ported.
+/// The content features (home / explore / search / detail pages) land here as
+/// they are ported.
 @Reducer
 struct AppFeature {
     @ObservableState
@@ -15,6 +16,7 @@ struct AppFeature {
         var settings = SettingsFeature.State()
         var account = AccountFeature.State()
         var login = LoginFeature.State()
+        var player = PlayerFeature.State()
         var isLoginPresented = false
     }
 
@@ -23,6 +25,7 @@ struct AppFeature {
         case settings(SettingsFeature.Action)
         case account(AccountFeature.Action)
         case login(LoginFeature.Action)
+        case player(PlayerFeature.Action)
 
         case presentLogin
         case dismissLogin
@@ -33,6 +36,25 @@ struct AppFeature {
         Scope(state: \.settings, action: \.settings) { SettingsFeature() }
         Scope(state: \.account, action: \.account) { AccountFeature() }
         Scope(state: \.login, action: \.login) { LoginFeature() }
+        Scope(state: \.player, action: \.player) { PlayerFeature() }
+
+        // Mirrors the values the player reads at URL-resolve time. Runs after the
+        // child scopes so it sees the updated sibling state, and handles every
+        // child action — the specific cases below return effects and would
+        // otherwise skip the sync.
+        Reduce { state, action in
+            switch action {
+            case .settings:
+                state.player.audioQuality = state.settings.audioQuality
+                state.player.enableUnblock = state.settings.enableUnblock
+            case .account:
+                state.player.isLoggedIn = state.account.isLoggedIn
+                state.player.vipType = state.account.vipType
+            default:
+                break
+            }
+            return .none
+        }
 
         Reduce { state, action in
             switch action {
@@ -57,6 +79,11 @@ struct AppFeature {
 
             case let .account(.toggleLikeFailed(error)):
                 return .send(.toasts(.presented(error.message)))
+
+            // The player surfaces this for the toast overlay; it carries no
+            // state of its own.
+            case let .player(.toast(message)):
+                return .send(.toasts(.presented(message)))
 
             default:
                 return .none

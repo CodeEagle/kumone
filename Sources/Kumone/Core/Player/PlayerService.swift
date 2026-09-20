@@ -1,7 +1,7 @@
 import AVFoundation
 import Foundation
 
-enum RepeatMode: String, CaseIterable {
+enum RepeatMode: String, CaseIterable, Equatable {
     case off, all, one
 
     var next: RepeatMode {

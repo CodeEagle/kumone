@@ -12,6 +12,10 @@ let package = Package(
     dependencies: [
         .package(url: "https://github.com/sparkle-project/Sparkle", from: "2.9.5"),
         .package(url: "https://github.com/pointfreeco/swift-composable-architecture", from: "1.26.2"),
+        // The playback engine: a self-contained AudioUnit/AVAudioEngine player
+        // (streaming decoder, EQ, gapless, Now Playing, remote commands) from the
+        // APlay repository.
+        .package(url: "https://github.com/CodeEagle/APlay.git", from: "2.1.0"),
     ],
     targets: [
         .target(
@@ -19,6 +23,7 @@ let package = Package(
             dependencies: [
                 .product(name: "Sparkle", package: "Sparkle", condition: .when(platforms: [.macOS])),
                 .product(name: "ComposableArchitecture", package: "swift-composable-architecture"),
+                .product(name: "APlay", package: "APlay"),
             ],
             path: "Sources/Kumone",
             exclude: ["Resources"],

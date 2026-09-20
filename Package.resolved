@@ -1,6 +1,15 @@
 {
-  "originHash" : "26d38b6abec2a4adfae1e456ac520355ebd9c3090ceaf1d1f6e2e81f89eb49a2",
+  "originHash" : "c9e22f9cbe6db228f458a131dd69334c6073352ec5834c50d1b274643c918280",
   "pins" : [
+    {
+      "identity" : "aplay",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/CodeEagle/APlay.git",
+      "state" : {
+        "revision" : "24ca56312bab713d028e7481fdc3f334614e4dea",
+        "version" : "2.1.0"
+      }
+    },
     {
       "identity" : "combine-schedulers",
       "kind" : "remoteSourceControl",

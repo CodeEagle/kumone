@@ -68,6 +68,11 @@ struct Track: Codable, Hashable, Identifiable {
         case tns, fee, mv, no, cd, noCopyrightRcmd, pc, privilege
     }
 
+}
+
+// MARK: - Codable
+
+extension Track {
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         id = try c.decode(Int.self, forKey: .id)

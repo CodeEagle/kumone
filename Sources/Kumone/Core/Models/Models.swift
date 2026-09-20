@@ -269,7 +269,7 @@ struct ToplistTrackPreview: Codable, Hashable {
 
 // MARK: - Lyrics
 
-struct LyricResponse: Decodable {
+struct LyricResponse {
     struct LyricBody: Decodable {
         let lyric: String?
     }
@@ -286,6 +286,9 @@ struct LyricResponse: Decodable {
     let transUser: LyricContributor?
     let nolyric: Bool?
     let uncollected: Bool?
+}
+
+extension LyricResponse: Decodable {
 }
 
 struct LyricContributor: Decodable {
@@ -309,6 +312,9 @@ struct SongURLData: Decodable, Hashable {
         case id, url, br, size, type, level, fee, freeTrialInfo, time
     }
 
+}
+
+extension SongURLData {
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         id = try c.decode(Int.self, forKey: .id)
