@@ -132,11 +132,11 @@ enum CarPlayTemplateFactory {
     /// template apps get an empty button unless they push their own list, which is what this
     /// template is for. The current track is pinned in its own section so the driver can see
     /// what's playing without hunting through the queue, and tapping any upcoming row jumps
-    /// straight to it via `PlayerService.jumpTo`.
+    /// straight to it via the player's `jumpTo`.
     ///
     /// - Parameters:
     ///   - current: The playing track, or nil when nothing is loaded.
-    ///   - upcoming: `PlayerService.upcomingTracks` — already ordered and shuffle-aware.
+    ///   - upcoming: The player's `upcomingTracks` — already ordered and shuffle-aware.
     ///   - onCurrentTap: Invoked when the pinned "now playing" row is tapped.
     ///   - onTrackTap: Invoked with the upcoming track the driver picked.
     static func queueTemplate(
@@ -287,7 +287,8 @@ extension CarPlayTemplateFactory {
 
 // MARK: - Library tab
 
-/// Data snapshot for the Library tab — the caller assembles it from `AccountStore` and passes it to the factory.
+/// Data snapshot for the Library tab — the caller assembles it from the
+/// account's playlists and passes it to the factory.
 struct CarPlayLibraryModel {
     let liked: PlaylistSummary?
     let created: [PlaylistSummary]

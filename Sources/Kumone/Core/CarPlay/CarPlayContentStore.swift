@@ -29,6 +29,9 @@ final class CarPlayContentStore {
     /// Cache lifetime in seconds.
     private let ttl: TimeInterval
 
+    /// The NetEase client used for playlist track resolution.
+    private let netease: NeteaseMusicClient
+
     private var recommendFetchedAt: Date = .distantPast
     private var curatedFetchedAt: Date = .distantPast
     private var officialFetchedAt: Date = .distantPast
@@ -42,8 +45,9 @@ final class CarPlayContentStore {
     private var artistsFetchedAt: Date = .distantPast
 
     /// Custom TTL constructor (defaults to 5 minutes; tests can pass a shorter value).
-    init(ttl: TimeInterval = 300) {
+    init(ttl: TimeInterval = 300, netease: NeteaseMusicClient = .liveValue) {
         self.ttl = ttl
+        self.netease = netease
     }
 
     // MARK: - Recommend
@@ -121,9 +125,10 @@ final class CarPlayContentStore {
     // MARK: - Recently played
 
     /// Loads the all-time recently-played tracks. We unwrap `.song` on each
-    /// `PlayRecordItem` so callers get a plain `[Track]`.
-    func fetchRecentsTracks(loggedIn: Bool, force: Bool = false) async {
-        guard loggedIn, let uid = AccountStore.shared.profile?.userId else {
+    /// `PlayRecordItem` so callers get a plain `[Track]`. The uid comes from the
+    /// shared store's account state, not from a singleton.
+    func fetchRecentsTracks(uid: Int?, loggedIn: Bool, force: Bool = false) async {
+        guard loggedIn, let uid else {
             recentsTracks = []
             return
         }
@@ -198,11 +203,11 @@ final class CarPlayContentStore {
 
     // MARK: - Playlist detail
 
-    /// Fetches the full track list for a playlist (with pagination baked into
-    /// `PlayerService.resolve`, so we just hand off to it).
+    /// Fetches the full track list for a playlist, reusing `PlayerFeature`'s
+    /// paginated resolver so the app and CarPlay see identical track lists.
     func fetchPlaylistTracks(id: Int, name: String) async -> [Track] {
-        guard let resolved = try? await PlayerService.shared.resolve(
-            .playlist(id: id, name: name)
+        guard let resolved = try? await PlayerFeature.resolve(
+            .playlist(id: id, name: name), using: netease
         ) else { return [] }
         return resolved.tracks
     }

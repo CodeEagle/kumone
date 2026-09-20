@@ -2,7 +2,9 @@ import ComposableArchitecture
 import SwiftUI
 
 struct SettingsView: View {
-    @Bindable var store: StoreOf<SettingsFeature>
+    // `@SwiftUI.Bindable` (qualified): an unqualified `@Bindable` is ambiguous
+    // between SwiftUI's wrapper and Perception's backport in this module.
+    @SwiftUI.Bindable var store: StoreOf<SettingsFeature>
     let appStore: StoreOf<AppFeature>
 
     @State private var cacheSize: String = String(localized: "计算中…")

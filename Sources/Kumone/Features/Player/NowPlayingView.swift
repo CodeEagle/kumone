@@ -110,11 +110,11 @@ struct NowPlayingView: View {
             showLyricsOnMobile = settings.nowPlayingMode == .immersive
             showQueueOnMobile = false
         }
-        .onChange(of: settings.nowPlayingMode) { _, _ in
+        .onChange(of: settings.nowPlayingMode) { _ in
             showLyricsOnMobile = settings.nowPlayingMode == .immersive
             showQueueOnMobile = false
         }
-        .onChange(of: player.currentTrack?.id) { _, _ in
+        .onChange(of: player.currentTrack?.id) { _ in
             if settings.nowPlayingMode == .minimal || settings.nowPlayingMode == .vinyl {
                 showLyricsOnMobile = false
             }
@@ -906,7 +906,7 @@ struct NowPlayingView: View {
                     // song already is instead of waiting for the next line.
                     adoptCursor(proxy: proxy)
                 }
-                .onChange(of: player.currentTrack?.id) { _, _ in
+                .onChange(of: player.currentTrack?.id) { _ in
                     activeIndex = nil
                 }
                 .simultaneousGesture(
@@ -1074,7 +1074,7 @@ private struct IOSImmersiveLyricsColumn: View {
                     .onAppear {
                         adoptCursor(proxy: proxy)
                     }
-                    .onChange(of: player.currentTrack?.id) { _, _ in
+                    .onChange(of: player.currentTrack?.id) { _ in
                         activeIndex = nil
                     }
                     .simultaneousGesture(
@@ -1304,7 +1304,9 @@ private struct CompactTrackHeader: View {
                         Divider()
 
                         #if os(iOS)
-                        SleepTimerMenu(player: player)
+                        if let appStore {
+                            SleepTimerMenu(store: appStore.scope(state: \.player, action: \.player))
+                        }
 
                         Divider()
                         #endif
@@ -1332,8 +1334,8 @@ private struct CompactTrackHeader: View {
         }
         .accessibilityElement(children: .contain)
         .sheet(isPresented: $showAddToPlaylist) {
-            if let track = player.currentTrack {
-                AddToPlaylistSheet(track: track)
+            if let track = player.currentTrack, let appStore {
+                AddToPlaylistSheet(track: track, appStore: appStore)
             }
         }
     }
@@ -1679,9 +1681,8 @@ private struct IOSMinimalLyricsColumn: View {
                                         selectionTimeoutTask?.cancel()
                                         selectionTimeoutTask = nil
                                         suppressesAutoScroll = true
-                                        appStore?.send(.player(.seek(line.time))) {
-                                            suppressesAutoScroll = false
-                                        }
+                                        appStore?.send(.player(.seek(line.time)))
+                                        suppressesAutoScroll = false
                                         activeIndex = line.id
                                         self.selectedIndex = nil
                                         nearestIndex = nil
@@ -1742,7 +1743,7 @@ private struct IOSMinimalLyricsColumn: View {
                                 proxy.scrollTo(index, anchor: .center)
                             }
                         }
-                        .onChange(of: player.currentTrack?.id) { _, _ in
+                        .onChange(of: player.currentTrack?.id) { _ in
                             activeIndex = nil
                             selectedIndex = nil
                             nearestIndex = nil
@@ -2004,8 +2005,8 @@ private struct MinimalTrackInfoRow: View {
             }
         }
         .sheet(isPresented: $showAddToPlaylist) {
-            if let track = player.currentTrack {
-                AddToPlaylistSheet(track: track)
+            if let track = player.currentTrack, let appStore {
+                AddToPlaylistSheet(track: track, appStore: appStore)
             }
         }
     }
@@ -2076,7 +2077,9 @@ private struct MinimalTrackInfoRow: View {
             Divider()
 
             #if os(iOS)
-            SleepTimerMenu(player: player)
+            if let appStore {
+                SleepTimerMenu(store: appStore.scope(state: \.player, action: \.player))
+            }
 
             Divider()
             #endif
@@ -2179,7 +2182,9 @@ private struct MinimalTransportControls: View {
             Color.clear
                 .frame(height: 44)
         } else {
-            Button(action: player.cyclePlaybackMode) {
+            Button {
+                appStore?.send(.player(.cyclePlaybackMode))
+            } label: {
                 Image(systemName: playbackModeIcon)
                     .font(.system(size: 19, weight: .semibold))
                     .foregroundStyle(playbackModeTint)

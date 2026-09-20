@@ -2,7 +2,7 @@ import ComposableArchitecture
 import SwiftUI
 
 struct SleepTimerMenu: View {
-    @Bindable var store: StoreOf<PlayerFeature>
+    @SwiftUI.Bindable var store: StoreOf<PlayerFeature>
 
     var body: some View {
         Menu {

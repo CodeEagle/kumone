@@ -34,6 +34,9 @@ struct AppFeature {
         var isLoginPresented = false
         /// The immersive Now Playing page (replaces `PlayerService.showNowPlaying`).
         var isNowPlayingPresented = false
+        /// Guards `onAppear` — iOS runs the main window and CarPlay in one
+        /// process over one shared store, and either scene may bootstrap it.
+        var isAppeared = false
     }
 
     enum Action: Equatable {
@@ -72,6 +75,11 @@ struct AppFeature {
         /// App launch: rehydrate settings, load the account, start the updater,
         /// and listen for system media commands.
         case onAppear
+
+        /// "心动模式": seeds `intelligenceList` with a random liked track. Both
+        /// the Home page and CarPlay send this; the guard lives here so neither
+        /// has to duplicate the preconditions.
+        case startHeartbeat
 
         /// A system Now Playing event (media keys, Control Center, lock screen,
         /// CarPlay) turned into an action the store can route.
@@ -140,6 +148,8 @@ struct AppFeature {
                 return .none
 
             case .onAppear:
+                guard !state.isAppeared else { return .none }
+                state.isAppeared = true
                 return .merge(
                     .send(.settings(.onAppear)),
                     .send(.account(.bootstrap)),
@@ -223,11 +233,13 @@ struct AppFeature {
             case let .account(.toggleLikeFailed(error)):
                 return .send(.toasts(.presented(error.message)))
 
-            // The player surfaces this for the toast overlay; it carries no
-            // state of its own.
             // The "心动模式" card: needs the account's liked list and a seed
-            // track, which only this composition root can see.
+            // track, which only this composition root can see. CarPlay reuses
+            // the same action.
             case .home(.delegate(.startHeartbeat)):
+                return .send(.startHeartbeat)
+
+            case .startHeartbeat:
                 guard let likedList = state.account.likedSongsPlaylist else { return .none }
                 guard let seed = state.account.likedTrackIDs.randomElement() else {
                     return .send(.toasts(.presented(String(localized: "先收藏一些喜欢的歌曲吧"))))

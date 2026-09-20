@@ -229,7 +229,7 @@ private final class SpectrumStore: @unchecked Sendable {
             },
             // Deliberately no unprepare: on a track change the outgoing tap tears
             // down after the incoming one is already feeding us, so clearing here
-            // would blank the new track's first frames. `PlayerService` resets
+            // would blank the new track's first frames. The player resets
             // explicitly at the points where silence is actually correct.
             unprepare: nil,
             process: { tap, numberFrames, _, bufferListInOut, numberFramesOut, flagsOut in

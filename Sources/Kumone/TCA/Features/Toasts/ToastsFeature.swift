@@ -48,3 +48,15 @@ struct ToastsFeature {
         }
     }
 }
+
+// MARK: - Model
+
+struct Toast: Identifiable, Equatable {
+    let id: UUID
+    let message: String
+
+    init(id: UUID = UUID(), message: String) {
+        self.id = id
+        self.message = message
+    }
+}

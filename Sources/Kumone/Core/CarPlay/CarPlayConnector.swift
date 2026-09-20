@@ -3,11 +3,15 @@
 
 #if os(iOS)
 import CarPlay
-import Combine
+import ComposableArchitecture
 import UIKit
 
 /// Owns the CarPlay connection lifecycle, the template hierarchy, and data loading.
 /// It's a singleton — activated when a CarPlay scene connects, cleaned up when it disconnects.
+///
+/// Reads and mutates the process-wide `IOSAppStore` so the main window and
+/// CarPlay stay in sync over one source of truth. There is no per-scene state:
+/// every tap is a `store.send`, and every rendered value comes from the store.
 @MainActor
 public final class CarPlayConnector: NSObject {
 
@@ -23,9 +27,12 @@ public final class CarPlayConnector: NSObject {
     private var libraryTab: CPListTemplate?
 
     private var content = CarPlayContentStore()
-    private var cancellables: Set<AnyCancellable> = []
     private var loadTask: Task<Void, Never>?
     private var loadGeneration = 0
+
+    /// The store values the templates render, snapshotted so a change can be
+    /// diffed into the smallest possible refresh.
+    private var snapshot = StoreSnapshot()
 
     // MARK: - Now Playing buttons
     // like / dislike are created once in didConnect and cached, because their visual state is
@@ -34,6 +41,8 @@ public final class CarPlayConnector: NSObject {
     // those two are rebuilt from scratch on every refresh.
     private var likeButton: CPNowPlayingAddToLibraryButton?
     private var dislikeButton: CPNowPlayingImageButton?
+
+    private var store: StoreOf<AppFeature> { IOSAppStore.store }
 
     override init() {
         super.init()
@@ -44,92 +53,11 @@ public final class CarPlayConnector: NSObject {
     /// Called when the CarPlay scene connects. Builds the root template and kicks off data loading.
     public func didConnect(interfaceController: CPInterfaceController, window: CPWindow) {
         self.interfaceController = interfaceController
-        cancellables.removeAll()
 
-        // Force PlayerService to initialize (sets up the audio session and remote commands).
-        _ = PlayerService.shared
-
-        // Login / logout → rebuild every tab from scratch.
-        AccountStore.shared.$profile
-            .dropFirst()
-            .removeDuplicates()
-            .sink { [weak self] _ in
-                self?.rebuildAllTabs()
-            }
-            .store(in: &cancellables)
-
-        // userPlaylists changes → only refresh the Library tab. (Also fires on logout when the list gets emptied.)
-        AccountStore.shared.$userPlaylists
-            .dropFirst()
-            .removeDuplicates()
-            .sink { [weak self] _ in
-                self?.refreshLibraryTab()
-            }
-            .store(in: &cancellables)
-
-        // FM mode toggle → flips the FM tab action button between "Start Roaming" and "Next", and shows/hides the dislike button on Now Playing.
-        PlayerService.shared.$isFMMode
-            .dropFirst()
-            .removeDuplicates()
-            .sink { [weak self] _ in
-                self?.refreshNowPlayingButtons()
-                self?.updateFMTab()
-            }
-            .store(in: &cancellables)
-
-        // Shuffle / repeat changes → rebuild those two buttons so their icons reflect the new mode.
-        // They can be toggled from the phone, the App UI or CarPlay itself, so CarPlay can't assume
-        // it is the only mutator and has to follow the published state.
-        PlayerService.shared.$shuffleEnabled
-            .dropFirst()
-            .removeDuplicates()
-            .sink { [weak self] _ in
-                self?.refreshNowPlayingButtons()
-            }
-            .store(in: &cancellables)
-
-        PlayerService.shared.$repeatMode
-            .dropFirst()
-            .removeDuplicates()
-            .sink { [weak self] _ in
-                self?.refreshNowPlayingButtons()
-            }
-            .store(in: &cancellables)
-
-        // Subscribe to isPlaying in addition to isFMMode: the action button label
-        // ("Next" vs "Resume Roaming") and the "Now Roaming" row both need to react
-        // when playback starts or stops. Watching only isFMMode is what caused the
-        // original sync bug — the button would stay stuck on "Start Roaming" forever
-        // even after FM was actually playing, because isFMMode flips to true
-        // synchronously inside startFM(), well before fmAdvance() has finished
-        // fetching tracks and startPlaying() has flipped isPlaying to true.
-        // Without this observer there's no later trigger to refresh the tab.
-        PlayerService.shared.$isPlaying
-            .dropFirst()
-            .removeDuplicates()
-            .sink { [weak self] _ in
-                self?.updateFMTab()
-            }
-            .store(in: &cancellables)
-
-        // Current track changes → sync the Now Playing "like" button's selected state.
-        PlayerService.shared.$currentTrack
-            .removeDuplicates(by: { $0?.id == $1?.id })
-            .sink { [weak self] track in
-                guard let self else { return }
-                let liked = track.map { AccountStore.shared.isLiked($0.id) } ?? false
-                self.likeButton?.isSelected = liked
-            }
-            .store(in: &cancellables)
-
-        // Liked-IDs changes (user toggled like somewhere else in the UI) → keep the Now Playing "like" button in sync.
-        AccountStore.shared.$likedTrackIDs
-            .sink { [weak self] _ in
-                guard let self,
-                      let track = PlayerService.shared.currentTrack else { return }
-                self.likeButton?.isSelected = AccountStore.shared.isLiked(track.id)
-            }
-            .store(in: &cancellables)
+        // Bootstraps the shared store (idempotent — the main window may already
+        // have done it): settings, account, updater and the media-command
+        // listener all come alive here.
+        store.send(.onAppear)
 
         // Configure the Now Playing buttons (persistent — live for the singleton's lifetime).
         configureNowPlayingButtons()
@@ -139,14 +67,20 @@ public final class CarPlayConnector: NSObject {
         tabBar = root
         interfaceController.setRootTemplate(root, animated: true, completion: nil)
 
-        // On cold start, finish account bootstrap first, then load all four tabs in their final logged-in/out state.
-        scheduleFullReload(bootstrapIfNeeded: true)
+        snapshot = makeSnapshot()
+        observeStore()
+
+        // On a warm connect (the app was already running) the account is known,
+        // so load straight into the final state. A cold start waits for the
+        // store's bootstrap to land — `refreshFromStore` fires the reload then.
+        if store.account.isBootstrapped {
+            scheduleFullReload()
+        }
     }
 
     /// Called when the CarPlay scene disconnects. Clears template references but doesn't stop playback.
     public func didDisconnect() {
         CPNowPlayingTemplate.shared.remove(self)
-        cancellables.removeAll()
         loadGeneration += 1
         loadTask?.cancel()
         loadTask = nil
@@ -156,6 +90,103 @@ public final class CarPlayConnector: NSObject {
         curatedTab = nil
         fmTab = nil
         libraryTab = nil
+    }
+
+    // MARK: - Store observation
+
+    /// A flat, equatable view of the store state the templates render. Diffing
+    /// it keeps a `progress` tick or a lyrics fetch from rebuilding buttons.
+    private struct StoreSnapshot: Equatable {
+        var isLoggedIn = false
+        var isBootstrapped = false
+        var profileID: Int? = nil
+        var userPlaylistIDs: [Int] = []
+        var isFMMode = false
+        var isPlaying = false
+        var shuffleEnabled = false
+        var repeatMode = RepeatMode.off
+        var currentTrackID: Int? = nil
+        var likedTrackIDs: Set<Int> = []
+    }
+
+    private func makeSnapshot() -> StoreSnapshot {
+        let account = store.account
+        let player = store.player
+        return StoreSnapshot(
+            isLoggedIn: account.isLoggedIn,
+            isBootstrapped: account.isBootstrapped,
+            profileID: account.profile?.userId,
+            userPlaylistIDs: account.userPlaylists.map(\.id),
+            isFMMode: player.isFMMode,
+            isPlaying: player.isPlaying,
+            shuffleEnabled: player.shuffleEnabled,
+            repeatMode: player.repeatMode,
+            currentTrackID: player.currentTrack?.id,
+            likedTrackIDs: account.likedTrackIDs
+        )
+    }
+
+    /// Tracks the store values the templates depend on. `withPerceptionTracking`
+    /// calls back exactly once, so the handler re-registers to keep watching.
+    private func observeStore() {
+        withPerceptionTracking {
+            _ = store.account.isLoggedIn
+            _ = store.account.isBootstrapped
+            _ = store.account.profile?.userId
+            _ = store.account.userPlaylists.map(\.id)
+            _ = store.account.likedTrackIDs
+            _ = store.player.isFMMode
+            _ = store.player.isPlaying
+            _ = store.player.shuffleEnabled
+            _ = store.player.repeatMode
+            _ = store.player.currentTrack?.id
+        } onChange: { [weak self] in
+            // The callback fires during willSet, so the read is deferred to the
+            // next main-actor turn, after the new state is committed.
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                self.refreshFromStore()
+                self.observeStore()
+            }
+        }
+    }
+
+    /// Diffs the store against the last rendered state and refreshes only what moved.
+    private func refreshFromStore() {
+        let next = makeSnapshot()
+        defer { snapshot = next }
+
+        // Login / logout / account switch / first bootstrap: rebuild every tab
+        // from scratch so an older account's data can't clobber a newer one's.
+        if next.isLoggedIn != snapshot.isLoggedIn
+            || next.profileID != snapshot.profileID
+            || next.isBootstrapped != snapshot.isBootstrapped
+        {
+            rebuildAllTabs()
+            refreshNowPlayingButtons()
+            updateFMTab()
+            updateLibraryTab()
+            return
+        }
+
+        if next.userPlaylistIDs != snapshot.userPlaylistIDs {
+            updateLibraryTab()
+        }
+
+        if next.isFMMode != snapshot.isFMMode || next.isPlaying != snapshot.isPlaying {
+            refreshNowPlayingButtons()
+            updateFMTab()
+        } else if next.shuffleEnabled != snapshot.shuffleEnabled
+                    || next.repeatMode != snapshot.repeatMode
+        {
+            refreshNowPlayingButtons()
+        }
+
+        if next.currentTrackID != snapshot.currentTrackID
+            || next.likedTrackIDs != snapshot.likedTrackIDs
+        {
+            syncLikeButton()
+        }
     }
 
     // MARK: - Root template
@@ -206,21 +237,21 @@ public final class CarPlayConnector: NSObject {
         nowPlaying.add(self)
 
         // "Like" button — uses the system's "add to library" styled button.
-        let like = CPNowPlayingAddToLibraryButton(handler: { _ in
-            guard let trackID = PlayerService.shared.currentTrack?.id else { return }
-            Task { await AccountStore.shared.toggleLike(trackID: trackID) }
+        let like = CPNowPlayingAddToLibraryButton(handler: { [weak self] _ in
+            guard let self,
+                  let trackID = self.store.player.currentTrack?.id else { return }
+            self.store.send(.account(.toggleLike(trackID)))
         })
         like.isEnabled = true
-        like.isSelected = PlayerService.shared.currentTrack
-            .map { AccountStore.shared.isLiked($0.id) } ?? false
+        like.isSelected = store.player.currentTrack.map { store.account.isLiked($0.id) } ?? false
         self.likeButton = like
 
         // "Dislike" button — custom SF Symbol icon, only shown and enabled while FM mode is on.
         let dislike = CPNowPlayingImageButton(
             image: UIImage(systemName: "hand.thumbsdown.fill")!,
-            handler: { _ in PlayerService.shared.fmTrash() }
+            handler: { [weak self] _ in self?.store.send(.player(.fmTrash)) }
         )
-        dislike.isEnabled = PlayerService.shared.isFMMode
+        dislike.isEnabled = store.player.isFMMode
         self.dislikeButton = dislike
 
         refreshNowPlayingButtons()
@@ -229,7 +260,7 @@ public final class CarPlayConnector: NSObject {
     /// Recomputes the whole Now Playing button row from current player state.
     private func refreshNowPlayingButtons() {
         guard let likeButton, let dislikeButton else { return }
-        let player = PlayerService.shared
+        let player = store.player
         let isFMMode = player.isFMMode
 
         dislikeButton.isEnabled = isFMMode
@@ -245,13 +276,19 @@ public final class CarPlayConnector: NSObject {
         CPNowPlayingTemplate.shared.updateNowPlayingButtons(buttons)
     }
 
+    /// Keeps the cached like button's selected state in sync with the store.
+    private func syncLikeButton() {
+        likeButton?.isSelected = store.player.currentTrack
+            .map { store.account.isLiked($0.id) } ?? false
+    }
+
     /// A tinted `shuffle` glyph — red when shuffle is on, muted when off.
     /// The tint has to be baked into the image (`.alwaysOriginal`) because
     /// CPNowPlayingImageButton exposes no selected/tint state of its own.
     private func makeShuffleButton(enabled: Bool) -> CPNowPlayingImageButton {
         let image = nowPlayingGlyph("shuffle", active: enabled)
-        return CPNowPlayingImageButton(image: image) { _ in
-            PlayerService.shared.toggleShuffle()
+        return CPNowPlayingImageButton(image: image) { [weak self] _ in
+            self?.store.send(.player(.toggleShuffle))
         }
     }
 
@@ -259,8 +296,8 @@ public final class CarPlayConnector: NSObject {
     private func makeRepeatButton(mode: RepeatMode) -> CPNowPlayingImageButton {
         let symbol = mode == .one ? "repeat.1" : "repeat"
         let image = nowPlayingGlyph(symbol, active: mode != .off)
-        return CPNowPlayingImageButton(image: image) { _ in
-            PlayerService.shared.cycleRepeatMode()
+        return CPNowPlayingImageButton(image: image) { [weak self] _ in
+            self?.store.send(.player(.cycleRepeatMode))
         }
     }
 
@@ -276,7 +313,7 @@ public final class CarPlayConnector: NSObject {
 
     /// Pushes the live playback queue when the driver taps the Up Next button.
     private func showQueue() {
-        let player = PlayerService.shared
+        let player = store.player
         let template = CarPlayTemplateFactory.queueTemplate(
             current: player.currentTrack,
             upcoming: player.upcomingTracks,
@@ -284,7 +321,7 @@ public final class CarPlayConnector: NSObject {
                 self?.interfaceController?.popTemplate(animated: true, completion: nil)
             },
             onTrackTap: { [weak self] track in
-                PlayerService.shared.jumpTo(track)
+                self?.store.send(.player(.jumpTo(track)))
                 self?.interfaceController?.popTemplate(animated: true, completion: nil)
             }
         )
@@ -294,7 +331,7 @@ public final class CarPlayConnector: NSObject {
     /// Opens the current track's album, falling back to its first artist when the track carries no
     /// album (cloud-disk uploads and some FM tracks decode with `album.id == 0`).
     private func showAlbumOrArtistOfCurrentTrack() {
-        guard let track = PlayerService.shared.currentTrack else { return }
+        guard let track = store.player.currentTrack else { return }
 
         if track.album.id > 0 {
             pushTracks(
@@ -322,14 +359,14 @@ public final class CarPlayConnector: NSObject {
 
     /// Loads all four tabs' data into an independent snapshot in parallel.
     /// The last three fetchers are guarded by `loggedIn` so logged-out callers don't hit a guaranteed 401.
-    private func loadAllTabs(into content: CarPlayContentStore, loggedIn: Bool) async {
+    private func loadAllTabs(into content: CarPlayContentStore, loggedIn: Bool, uid: Int?) async {
         async let r: Void = content.fetchRecommendPlaylists(loggedIn: loggedIn)
         async let c: Void = content.fetchCuratedPlaylists()
         async let o: Void = content.fetchOfficialPlaylists()
         async let ch: Void = content.fetchChinesePlaylists()
         async let t: Void = content.fetchToplists()
         async let d: Void = content.fetchDailyTracks(loggedIn: loggedIn)
-        async let e: Void = content.fetchRecentsTracks(loggedIn: loggedIn)
+        async let e: Void = content.fetchRecentsTracks(uid: uid, loggedIn: loggedIn)
         async let l: Void = content.fetchCloudTracks(loggedIn: loggedIn)
         async let rd: Void = content.fetchRadarPlaylists(loggedIn: loggedIn)
         async let al: Void = content.fetchNewAlbums()
@@ -339,22 +376,21 @@ public final class CarPlayConnector: NSObject {
     }
 
     /// Only the latest batch of requests is allowed to commit, so cold-start or account-switch races can't let an older account's data clobber a newer one.
-    private func scheduleFullReload(bootstrapIfNeeded: Bool) {
+    private func scheduleFullReload() {
         loadGeneration += 1
         let generation = loadGeneration
         loadTask?.cancel()
         loadTask = Task { @MainActor [weak self] in
             guard let self else { return }
-            if bootstrapIfNeeded, !AccountStore.shared.isBootstrapped {
-                await AccountStore.shared.bootstrap()
-            }
             guard !Task.isCancelled,
                   generation == loadGeneration,
                   interfaceController != nil else { return }
 
+            let account = store.account
             let nextContent = CarPlayContentStore()
-            let loggedIn = AccountStore.shared.isLoggedIn
-            await loadAllTabs(into: nextContent, loggedIn: loggedIn)
+            let loggedIn = account.isLoggedIn
+            let uid = account.profile?.userId
+            await loadAllTabs(into: nextContent, loggedIn: loggedIn, uid: uid)
             guard !Task.isCancelled,
                   generation == loadGeneration,
                   interfaceController != nil else { return }
@@ -377,7 +413,7 @@ public final class CarPlayConnector: NSObject {
     private func updateRecommendTab() {
         guard let recommendTab else { return }
         var sections: [CPListSection] = []
-        let loggedIn = AccountStore.shared.isLoggedIn
+        let loggedIn = store.account.isLoggedIn
 
         // 1. Today's picks — feature cards
         if loggedIn {
@@ -445,47 +481,15 @@ public final class CarPlayConnector: NSObject {
     /// Tap handler for the Recommend tab's top feature rows:
     /// - Daily → push the tracks list (reuses the Library tab's .daily entry)
     /// - Personal FM → start FM
-    /// - Heartbeat → use `likedSongsPlaylist` + `likedTrackIDs` to drive `intelligenceList` (same as HomeView)
+    /// - Heartbeat → the shared store owns the seed + fetch (same action as HomeView)
     private func handleRecommendFeatureTap(_ feature: CarPlayRecommendFeature) {
         switch feature {
         case .daily:
             pushLibraryEntry(.daily, liked: nil)
         case .fm:
-            PlayerService.shared.startFM()
+            store.send(.player(.startFM))
         case .heartbeat:
-            startHeartbeatMode()
-        }
-    }
-
-    /// Heartbeat mode: pick one random liked track as a seed, then ask
-    /// `intelligenceList` for a similar queue. Copied from `HomeView.startHeartbeatMode`
-    /// so we don't have to expose HomeView to CarPlay.
-    private func startHeartbeatMode() {
-        let account = AccountStore.shared
-        guard let likedList = account.likedSongsPlaylist else {
-            ToastCenter.shared.show(String(localized: "未找到我喜欢的音乐"))
-            return
-        }
-        Task {
-            guard let seed = account.likedTrackIDs.randomElement() else {
-                ToastCenter.shared.show(String(localized: "先收藏一些喜欢的歌曲吧"))
-                return
-            }
-            do {
-                let tracks = try await NeteaseAPI.intelligenceList(songID: seed, playlistID: likedList.id)
-                guard !tracks.isEmpty else {
-                    ToastCenter.shared.show(String(localized: "心动模式暂时不可用"))
-                    return
-                }
-                PlayerService.shared.play(
-                    tracks: tracks,
-                    source: .playlist(likedList.id),
-                    context: .heartbeat
-                )
-                ToastCenter.shared.show(String(localized: "已开启心动模式"))
-            } catch {
-                ToastCenter.shared.show(error.localizedDescription)
-            }
+            store.send(.startHeartbeat)
         }
     }
 
@@ -555,13 +559,13 @@ public final class CarPlayConnector: NSObject {
     /// to sign in to NetEase Music first.
     private func updateFMTab() {
         guard let fmTab else { return }
-        let loggedIn = AccountStore.shared.isLoggedIn
+        let loggedIn = store.account.isLoggedIn
         if !loggedIn {
             fmTab.updateSections([])
             fmTab.emptyViewTitleVariants = [String(localized: "请先登录网易云音乐")]
             return
         }
-        let player = PlayerService.shared
+        let player = store.player
         let sections = CarPlayTemplateFactory.fmSection(
             isFMMode: player.isFMMode,
             isPlaying: player.isPlaying,
@@ -574,33 +578,33 @@ public final class CarPlayConnector: NSObject {
 
     /// What happens when the driver taps the FM tab's action button, depending
     /// on what the player is doing right now:
-    /// - FM mode is off entirely → fire `startFM()` to begin a fresh roaming
+    /// - FM mode is off entirely → fire `startFM` to begin a fresh roaming
     ///   session (fetches recommendations from NetEase and starts playing).
-    /// - FM mode is on and we're playing → skip ahead via `fmNext()`. We
-    ///   intentionally don't reuse `next()` here because FM doesn't use the
+    /// - FM mode is on and we're playing → skip ahead via `fmNext`. We
+    ///   intentionally don't reuse `next` here because FM doesn't use the
     ///   normal queue — its tracks are pulled one batch at a time from
     ///   NetEase's recommendation API, and CPNowPlayingTemplate's built-in
     ///   "next" button doesn't know about that semantics. Putting the skip
     ///   right on the FM tab keeps the driver's intent obvious.
-    /// - FM mode is on but we're paused → just resume with `togglePlayPause()`.
-    ///   Using `startFM()` here would wipe the FM queue and start a brand-new
+    /// - FM mode is on but we're paused → just resume with `togglePlayPause`.
+    ///   Using `startFM` here would wipe the FM queue and start a brand-new
     ///   session, which is definitely not what the driver wants when they
     ///   just hit pause and are tapping to come back.
     private func handleFMTap() {
-        let player = PlayerService.shared
+        let player = store.player
         if !player.isFMMode {
-            player.startFM()
+            store.send(.player(.startFM))
         } else if player.isPlaying {
-            player.fmNext()
+            store.send(.player(.fmNext))
         } else {
-            player.togglePlayPause()
+            store.send(.player(.togglePlayPause))
         }
     }
 
-    /// Refreshes the Library tab: pulls `userPlaylists` from `AccountStore` and renders 3 sections.
+    /// Refreshes the Library tab: pulls the account's playlists from the store and renders 3 sections.
     private func updateLibraryTab() {
         guard let libraryTab else { return }
-        let account = AccountStore.shared
+        let account = store.account
         guard account.isLoggedIn else {
             libraryTab.updateSections([])
             libraryTab.emptyViewTitleVariants = [String(localized: "请先登录网易云音乐")]
@@ -654,29 +658,33 @@ public final class CarPlayConnector: NSObject {
             guard let liked else { return [] }
             return await content.fetchPlaylistTracks(id: liked.id, name: liked.name)
         case .daily:
-            await content.fetchDailyTracks(loggedIn: AccountStore.shared.isLoggedIn)
+            await content.fetchDailyTracks(loggedIn: store.account.isLoggedIn)
             return content.dailyTracks
         case .recents:
-            await content.fetchRecentsTracks(loggedIn: AccountStore.shared.isLoggedIn)
+            await content.fetchRecentsTracks(
+                uid: store.account.profile?.userId,
+                loggedIn: store.account.isLoggedIn
+            )
             return content.recentsTracks
         case .cloud:
-            await content.fetchCloudTracks(loggedIn: AccountStore.shared.isLoggedIn)
+            await content.fetchCloudTracks(loggedIn: store.account.isLoggedIn)
             return content.cloudTracks
         }
     }
 
-    /// "Play all" handler: routes through `play(context:)` so PlayerService drives its full resolve + load flow.
+    /// "Play all" handler: routes through `playContext` so the shared store drives
+    /// its full resolve + load flow.
     private func handlePlayAll(entry: CarPlayLibraryEntry, liked: PlaylistSummary?) {
         switch entry {
         case .liked:
             guard let liked else { return }
-            PlayerService.shared.play(context: .playlist(id: liked.id, name: liked.name))
+            store.send(.player(.playContext(.playlist(id: liked.id, name: liked.name))))
         case .daily:
-            PlayerService.shared.play(context: .daily)
+            store.send(.player(.playContext(.daily)))
         case .recents:
-            PlayerService.shared.play(context: .recents)
+            store.send(.player(.playContext(.recents)))
         case .cloud:
-            PlayerService.shared.play(context: .cloud)
+            store.send(.player(.playContext(.cloud)))
         }
     }
 
@@ -685,33 +693,33 @@ public final class CarPlayConnector: NSObject {
         switch entry {
         case .liked:
             guard let liked else { return }
-            PlayerService.shared.play(
+            store.send(.player(.play(
                 tracks: allTracks,
                 source: .playlist(liked.id),
                 startAt: track,
                 context: .playlist(id: liked.id, name: liked.name)
-            )
+            )))
         case .daily:
-            PlayerService.shared.play(
+            store.send(.player(.play(
                 tracks: allTracks,
                 source: .daily,
                 startAt: track,
                 context: .daily
-            )
+            )))
         case .recents:
-            PlayerService.shared.play(
+            store.send(.player(.play(
                 tracks: allTracks,
                 source: .none,
                 startAt: track,
                 context: .recents
-            )
+            )))
         case .cloud:
-            PlayerService.shared.play(
+            store.send(.player(.play(
                 tracks: allTracks,
                 source: .cloud,
                 startAt: track,
                 context: .cloud
-            )
+            )))
         }
     }
 
@@ -776,9 +784,13 @@ public final class CarPlayConnector: NSObject {
                     title: title,
                     trackCount: tracks.count,
                     tracks: tracks,
-                    onPlayAll: { PlayerService.shared.play(context: context) },
-                    onTrackTap: { track, allTracks in
-                        PlayerService.shared.play(tracks: allTracks, source: source, startAt: track, context: context)
+                    onPlayAll: { [weak self] in
+                        self?.store.send(.player(.playContext(context)))
+                    },
+                    onTrackTap: { [weak self] track, allTracks in
+                        self?.store.send(.player(.play(
+                            tracks: allTracks, source: source, startAt: track, context: context
+                        )))
                     }
                 )
                 loading.updateSections(detail.sections)
@@ -803,17 +815,17 @@ public final class CarPlayConnector: NSObject {
                     playlist: playlist,
                     tracks: tracks,
                     onPlayAll: {
-                        // Play all: route through PlayerService.play(context:) so we reuse the full load + play pipeline.
-                        PlayerService.shared.play(context: .playlist(id: playlist.id, name: playlist.name))
+                        // Play all: route through playContext so we reuse the full load + play pipeline.
+                        self.store.send(.player(.playContext(.playlist(id: playlist.id, name: playlist.name))))
                     },
                     onTrackTap: { track, allTracks in
                         // Single track tap: hand over the entire queue so next/prev still work.
-                        PlayerService.shared.play(
+                        self.store.send(.player(.play(
                             tracks: allTracks,
                             source: .playlist(playlist.id),
                             startAt: track,
                             context: .playlist(id: playlist.id, name: playlist.name)
-                        )
+                        )))
                     }
                 )
                 loading.updateSections(detail.sections)
@@ -837,15 +849,15 @@ public final class CarPlayConnector: NSObject {
                     toplist: toplist,
                     tracks: tracks,
                     onPlayAll: {
-                        PlayerService.shared.play(context: .playlist(id: toplist.id, name: toplist.name))
+                        self.store.send(.player(.playContext(.playlist(id: toplist.id, name: toplist.name))))
                     },
                     onTrackTap: { track, allTracks in
-                        PlayerService.shared.play(
+                        self.store.send(.player(.play(
                             tracks: allTracks,
                             source: .playlist(toplist.id),
                             startAt: track,
                             context: .playlist(id: toplist.id, name: toplist.name)
-                        )
+                        )))
                     }
                 )
                 loading.updateSections(detail.sections)
@@ -857,12 +869,7 @@ public final class CarPlayConnector: NSObject {
 
     /// When the account changes, rebuild all tab data (forces a full cache refresh).
     private func rebuildAllTabs() {
-        scheduleFullReload(bootstrapIfNeeded: false)
-    }
-
-    /// Library-tab-only refresh (fired when `userPlaylists` changes; doesn't trigger another network roundtrip).
-    private func refreshLibraryTab() {
-        Task { @MainActor in updateLibraryTab() }
+        scheduleFullReload()
     }
 }
 

@@ -3,7 +3,7 @@ import ComposableArchitecture
 import SwiftUI
 
 struct LoginSheet: View {
-    @Bindable var store: StoreOf<LoginFeature>
+    @SwiftUI.Bindable var store: StoreOf<LoginFeature>
     let appStore: StoreOf<AppFeature>
 
     @State private var qrImage: PlatformImage?
@@ -53,16 +53,16 @@ struct LoginSheet: View {
         .onDisappear {
             store.send(.dismiss)
         }
-        .onChange(of: store.qrLoginURL) { _, url in
+        .onChange(of: store.qrLoginURL) { url in
             qrImage = url.flatMap { Self.generateQR(from: $0) }
         }
         // Coming back from the NetEase app (single-device flow): if polling
         // died while we were in the background, pick it up again.
-        .onChange(of: scenePhase) { _, phase in
+        .onChange(of: scenePhase) { phase in
             guard phase == .active, store.mode == .qr else { return }
             if case .failed = store.phase { store.send(.onAppear) }
         }
-        .onChange(of: store.mode) { _, mode in
+        .onChange(of: store.mode) { mode in
             if mode == .qr, case .failed = store.phase { store.send(.onAppear) }
         }
     }

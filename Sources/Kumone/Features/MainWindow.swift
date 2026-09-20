@@ -2,7 +2,7 @@ import ComposableArchitecture
 import SwiftUI
 
 struct MainWindow: View {
-    @Bindable var store: StoreOf<AppFeature>
+    @SwiftUI.Bindable var store: StoreOf<AppFeature>
 #if os(macOS)
     @Environment(\.openWindow) private var openWindow
 #endif
@@ -95,7 +95,7 @@ struct MainWindow: View {
 #endif
             DesktopLyricsController.shared.sync(with: store.settings.showDesktopLyrics, store: store)
         }
-        .onChange(of: store.settings.showDesktopLyrics) { _, enabled in
+        .onChange(of: store.settings.showDesktopLyrics) { enabled in
             DesktopLyricsController.shared.sync(with: enabled, store: store)
         }
         #if os(macOS)
@@ -106,7 +106,7 @@ struct MainWindow: View {
         // Collapse the sidebar while the immersive page is open: the split
         // view's divider keeps its resize-cursor rect active even underneath
         // an overlay, leaking the drag cursor onto the now-playing page (#6).
-        .onChange(of: store.isNowPlayingPresented) { _, isPresented in
+        .onChange(of: store.isNowPlayingPresented) { isPresented in
             #if os(macOS)
             artworkStore.setArtworkNeeded(needsCurrentArtwork)
             #endif
@@ -118,7 +118,7 @@ struct MainWindow: View {
                 visibilityBeforeNowPlaying = nil
             }
         }
-        .onChange(of: store.player.currentTrack) { _, track in
+        .onChange(of: store.player.currentTrack) { track in
             artworkStore.update(trackID: track?.id, artworkURL: track?.album.picUrl)
         }
         .sheet(isPresented: loginBinding) {

@@ -193,7 +193,7 @@ struct SidebarView: View {
 #if os(iOS)
         .sheet(isPresented: $showSettings) {
             NavigationStack {
-                SettingsView(store: store.scope(state: \.settings, action: \.settings))
+                SettingsView(store: store.scope(state: \.settings, action: \.settings), appStore: store)
                     .navigationTitle("设置")
                     .navigationBarTitleDisplayMode(.inline)
                     .toolbar {

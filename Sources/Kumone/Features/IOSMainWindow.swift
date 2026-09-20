@@ -3,11 +3,19 @@ import SwiftUI
 
 #if os(iOS)
 public struct IOSMainWindow: View {
-    @StateObject private var store = Store(initialState: AppFeature.State()) { AppFeature() }
+    @SwiftUI.Bindable private var store = IOSAppStore.store
     @StateObject private var updater = IOSUpdater.shared
     @StateObject private var artworkStore = NowPlayingArtworkStore()
     @Namespace private var nowPlayingTransition
     @Environment(\.colorScheme) private var systemColorScheme
+
+    /// An inert, empty stack store: non-selected tabs render a rooted stack
+    /// without driving the app's shared detail path.
+    private static let emptyPathStore = Store(
+        initialState: StackState<AppFeature.Path.State>()
+    ) {
+        EmptyReducer<StackState<AppFeature.Path.State>, StackAction<AppFeature.Path.State, AppFeature.Path.Action>>()
+    }
 
     /// The app's intended scheme, read on this ancestor so the search-active
     /// tab environment can't invert it (#31).
@@ -294,9 +302,11 @@ public struct IOSMainWindow: View {
     ) -> some View {
         // The five tab stacks all share the app's single detail path; only the
         // selected tab may drive it, so sibling tabs stay rooted.
-        let path = selectedTab == tab
+        let path: Binding<Store<
+            StackState<AppFeature.Path.State>, StackAction<AppFeature.Path.State, AppFeature.Path.Action>
+        >> = selectedTab == tab
             ? $store.scope(\.path, action: \.path)
-            : .constant(StackState<AppFeature.Path.State>())
+            : .constant(Self.emptyPathStore)
         NavigationStack(path: path) {
             content()
         } destination: { pathStore in
