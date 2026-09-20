@@ -103,6 +103,8 @@ struct PlayerFeature {
         /// Single-button cycle for the iOS minimal transport row:
         /// sequential → loop all → loop one → shuffle → sequential.
         case cyclePlaybackMode
+        /// Sets the repeat mode directly (the Dock menu's submenu).
+        case setRepeatMode(RepeatMode)
         case setVolume(Float)
 
         // Resolution
@@ -375,6 +377,11 @@ struct PlayerFeature {
             case .cycleRepeatMode:
                 guard !state.isFMMode else { return .none }
                 state.repeatMode = state.repeatMode.next
+                return .none
+
+            case let .setRepeatMode(mode):
+                guard !state.isFMMode else { return .none }
+                state.repeatMode = mode
                 return .none
 
             case .cyclePlaybackMode:

@@ -147,7 +147,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @MainActor
     func applicationDockMenu(_ sender: NSApplication) -> NSMenu? {
-        DockMenu.shared.makeMenu()
+        // Legacy bridge: the app shell still runs on PlayerService, so the
+        // store-driven menu reads a snapshot of it and dispatches back by hand.
+        // Both halves disappear once the shell runs on the store.
+        let legacy = PlayerService.shared
+        var state = PlayerFeature.State()
+        state.currentTrack = legacy.currentTrack
+        state.isPlaying = legacy.isPlaying
+        state.shuffleEnabled = legacy.shuffleEnabled
+        state.repeatMode = legacy.repeatMode
+        state.recentContexts = legacy.recentContexts
+        return DockMenu().makeMenu(from: state) { action in
+            switch action {
+            case .togglePlayPause: legacy.togglePlayPause()
+            case .next: legacy.next()
+            case .previous: legacy.previous()
+            case .toggleShuffle: legacy.toggleShuffle()
+            case let .setRepeatMode(mode): legacy.repeatMode = mode
+            case let .playContext(context): legacy.play(context: context)
+            default: break
+            }
+        }
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {

@@ -68,6 +68,25 @@ extension PlaybackEngineClient: DependencyKey {
             isPlayingChanged: { engine.isPlayingChanged }
         )
     }()
+
+    // `@DependencyClient` (1.17) does not synthesize a `testValue`, and the
+    // `@DependencyEndpoint` defaults trap with "Unimplemented" when called. The
+    // engine's streams simply never deliver in tests; tests that assert on a
+    // command override the endpoint (or the whole client) per-store.
+    static let testValue = PlaybackEngineClient(
+        load: { _, _ in },
+        play: {},
+        pause: {},
+        seek: { _ in },
+        setVolume: { _ in },
+        clear: {},
+        updateMetadata: { _, _, _ in },
+        currentTime: { 0 },
+        timeTicks: { .never },
+        itemEnded: { .never },
+        bufferingChanged: { .never },
+        isPlayingChanged: { .never }
+    )
 }
 
 extension DependencyValues {

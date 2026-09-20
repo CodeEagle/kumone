@@ -44,6 +44,8 @@ struct SettingsFeature {
         case setDesktopLyricsCentered(Bool)
         case setShowMainWindowAmbientBackground(Bool)
         case setMainWindowAmbientBackgroundIntensity(Double)
+        /// The app menu / Settings "检查更新…" button.
+        case checkForUpdates
     }
 
     @Dependency(\.persistence) var persistence
@@ -114,14 +116,11 @@ struct SettingsFeature {
             case let .setAutoCheckUpdates(value):
                 state.autoCheckUpdates = value
                 persistence.setBool(value, Keys.autoCheckUpdates)
-                return .run { _ in
-                    await MainActor.run {
-                        #if os(macOS)
-                        UpdaterManager.shared.setAutomaticChecks(value)
-                        #endif
-                    }
-                }
+                return .none
 
+            // Routed to UpdaterFeature by AppFeature.
+            case .checkForUpdates:
+                return .none
             case let .setShowDesktopLyrics(value):
                 state.showDesktopLyrics = value
                 persistence.setBool(value, Keys.desktopLyrics)
