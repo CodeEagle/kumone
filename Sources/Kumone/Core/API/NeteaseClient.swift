@@ -134,7 +134,10 @@ final class NeteaseClient: @unchecked Sendable {
         request.setValue(Self.userAgent, forHTTPHeaderField: "User-Agent")
         request.setValue("https://music.163.com", forHTTPHeaderField: "Referer")
         request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
-        request.setValue(cookieHeader(extra: ["os": "pc", "appver": "3.1.17"], overrides: cookieOverrides),
+        // weapi is the web API: browsers send no `os` cookie. Sending `os=pc`
+        // makes NetEase validate write payloads (e.g. /artist/sub) against the
+        // desktop-client schema and reject them with 「参数错误」 (code 250).
+        request.setValue(cookieHeader(extra: [:], overrides: cookieOverrides),
                          forHTTPHeaderField: "Cookie")
         request.httpBody = Self.encodeForm(form)
         return try await perform(request)

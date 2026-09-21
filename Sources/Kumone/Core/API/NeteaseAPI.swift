@@ -489,7 +489,11 @@ enum NeteaseAPI {
     }
 
     static func artist(id: Int) async throws -> ArtistResponse {
-        try await weapi(ArtistResponse.self, "/v1/artist/\(id)")
+        let data = try await client.weapi("/v1/artist/\(id)")
+        // The artist object repeats `followed`: an anonymous cached value first,
+        // the session-specific value last. JSONDecoder keeps the first occurrence
+        // (always false), so drop the earlier ones like the web player's JSON.parse.
+        return try client.decoded(ArtistResponse.self, from: data.keepingLastJSONValue(ofKey: "followed"))
     }
 
     struct ArtistAlbumsResponse: Decodable {
@@ -605,5 +609,36 @@ enum NeteaseAPI {
         let resp = try await weapi(PersonalizedNewsongResponse.self, "/personalized/newsong",
                                    ["type": "recommend", "limit": limit, "areaId": 0])
         return resp.result.compactMap(\.song)
+    }
+}
+
+private extension Data {
+    /// Keeps only the last JSON occurrence of `key`, whose value is a boolean.
+    /// NetEase emits some objects twice: a cached anonymous copy followed by the
+    /// session-specific fields. Web clients implicitly take the last occurrence;
+    /// `JSONDecoder` takes the first, so drop the earlier ones before decoding.
+    func keepingLastJSONValue(ofKey key: String) -> Data {
+        guard let text = String(data: self, encoding: .utf8),
+              let regex = try? NSRegularExpression(pattern: "\"\(key)\"\\s*:\\s*(?:true|false)")
+        else { return self }
+        let matches = regex.matches(in: text, range: NSRange(text.startIndex..., in: text))
+        guard matches.count > 1 else { return self }
+        var result = ""
+        var cursor = text.startIndex
+        for match in matches.dropLast() {
+            let range = Range(match.range, in: text)!
+            var lower = range.lowerBound
+            var upper = range.upperBound
+            // Swallow exactly one adjacent separator so the object stays valid.
+            if cursor < lower, text[text.index(before: lower)] == "," {
+                lower = text.index(before: lower)
+            } else if upper < text.endIndex, text[upper] == "," {
+                upper = text.index(after: upper)
+            }
+            result += text[cursor..<lower]
+            cursor = upper
+        }
+        result += text[cursor...]
+        return Data(result.utf8)
     }
 }
