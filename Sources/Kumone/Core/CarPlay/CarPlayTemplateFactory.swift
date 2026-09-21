@@ -416,7 +416,7 @@ struct CarPlayRadarPlaylist: Identifiable, Hashable {
     let subtitle: String?
     let coverURL: String?
 
-    /// Must stay in sync with `HomeViewModel.radarPlaylistIDs`.
+    /// Must stay in sync with `HomeFeature.radarPlaylistIDs`.
     static let ids: [Int] = [
         3_136_952_023, // Personal radar
         2_829_883_282, // Chinese radar

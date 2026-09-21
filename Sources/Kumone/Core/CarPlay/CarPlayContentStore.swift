@@ -53,7 +53,7 @@ final class CarPlayContentStore {
     // MARK: - Recommend
 
     /// Loads the Recommend tab's playlists. Login-aware behavior mirrors
-    /// `HomeViewModel.fetchRecommendPlaylists` exactly so the two stay in sync.
+    /// `HomeFeature.fetchRecommendPlaylists` exactly so the two stay in sync.
     func fetchRecommendPlaylists(loggedIn: Bool, force: Bool = false) async {
         // TTL check
         if !force, Date().timeIntervalSince(recommendFetchedAt) < ttl, !recommendPlaylists.isEmpty { return }
