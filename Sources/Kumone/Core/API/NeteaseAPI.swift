@@ -5,9 +5,10 @@ enum NeteaseAPI {
     private static var client: NeteaseClient { .shared }
 
     private static func weapi<T: Decodable>(
-        _ type: T.Type, _ path: String, _ payload: [String: Any] = [:]
+        _ type: T.Type, _ path: String, _ payload: [String: Any] = [:],
+        cookieOverrides: [String: String] = [:]
     ) async throws -> T {
-        let data = try await client.weapi(path, payload)
+        let data = try await client.weapi(path, payload, cookieOverrides: cookieOverrides)
         return try client.decoded(T.self, from: data)
     }
 
@@ -507,8 +508,11 @@ enum NeteaseAPI {
     }
 
     static func subscribeArtist(id: Int, subscribe: Bool) async throws {
+        // `os=pc` makes NetEase validate this write against the desktop-client
+        // schema and reject it (code 250); the web API sends no `os` cookie.
         _ = try await weapi(CodeOnly.self, "/artist/\(subscribe ? "sub" : "unsub")",
-                            ["artistId": id, "artistIds": "[\(id)]"])
+                            ["artistId": id, "artistIds": "[\(id)]"],
+                            cookieOverrides: ["os": ""])
     }
 
     struct ToplistArtistResponse: Decodable {

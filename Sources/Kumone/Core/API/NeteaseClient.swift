@@ -94,12 +94,17 @@ final class NeteaseClient: @unchecked Sendable {
         }
     }
 
+    /// Builds the `Cookie` header. `extra` fills keys absent from the jar;
+    /// `overrides` force-set keys, and an empty value *removes* a key (used to
+    /// drop `os` for the few endpoints that reject the desktop-client schema).
     private func cookieHeader(extra: [String: String], overrides: [String: String] = [:]) -> String {
         cookieLock.lock()
         var all = cookies
         cookieLock.unlock()
         for (k, v) in extra where all[k] == nil { all[k] = v }
-        for (k, v) in overrides { all[k] = v }
+        for (k, v) in overrides {
+            if v.isEmpty { all.removeValue(forKey: k) } else { all[k] = v }
+        }
         return all.map { "\($0.key)=\($0.value)" }.joined(separator: "; ")
     }
 
@@ -134,10 +139,12 @@ final class NeteaseClient: @unchecked Sendable {
         request.setValue(Self.userAgent, forHTTPHeaderField: "User-Agent")
         request.setValue("https://music.163.com", forHTTPHeaderField: "Referer")
         request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
-        // weapi is the web API: browsers send no `os` cookie. Sending `os=pc`
-        // makes NetEase validate write payloads (e.g. /artist/sub) against the
-        // desktop-client schema and reject them with 「参数错误」 (code 250).
-        request.setValue(cookieHeader(extra: [:], overrides: cookieOverrides),
+        // `os=pc` is required by most write endpoints (e.g. /radio/like reject
+        // without it), but /artist/sub is validated against the desktop-client
+        // schema and rejected with 「参数错误」 (code 250) — that endpoint opts
+        // out per-request via cookieOverrides. web players send no `os` cookie,
+        // so it is only sent as an extra, never persisted.
+        request.setValue(cookieHeader(extra: ["os": "pc", "appver": "3.1.17"], overrides: cookieOverrides),
                          forHTTPHeaderField: "Cookie")
         request.httpBody = Self.encodeForm(form)
         return try await perform(request)
