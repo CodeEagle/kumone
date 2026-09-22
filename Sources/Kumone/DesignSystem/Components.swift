@@ -175,6 +175,8 @@ struct QualityTag: View {
     var body: some View {
         Text(text)
             .font(.system(size: 9, weight: .semibold))
+            .lineLimit(1)
+            .fixedSize(horizontal: true, vertical: false)
             .foregroundStyle(Theme.accent)
             .padding(.horizontal, 5)
             .padding(.vertical, 2)

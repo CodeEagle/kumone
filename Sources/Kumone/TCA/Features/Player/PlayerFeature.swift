@@ -1,6 +1,7 @@
 import ComposableArchitecture
 import Dependencies
 import Foundation
+import os
 
 /// The lyrics / queue side panel on macOS.
 enum RightPanel {
@@ -17,6 +18,13 @@ enum RightPanel {
 /// playlist/loop machinery is left unused on purpose.
 @Reducer
 struct PlayerFeature {
+    /// Transport-level events worth a system log line: the seek / end-of-item
+    /// races are timing-sensitive and only show up in the field, so the
+    /// decisions made here are recorded where `log show` can find them.
+    private static let log = Logger(
+        subsystem: "im.missuo.Kumone", category: "PlayerFeature"
+    )
+
     @ObservableState
     struct State: Equatable {
         var queue: [Track] = []
@@ -26,7 +34,31 @@ struct PlayerFeature {
         var currentTrack: Track?
         var source: PlaySource = .none
         var isPlaying = false
+        /// Whether the *user* wants playback in progress — set by transport
+        /// actions (play / pause / skip / stop), never by the engine's state
+        /// mirror. End-of-item, where APlay reports `isPlaying=false` before
+        /// `itemEnded` is processed, must not read as "the user paused": the
+        /// auto-advance and the next track's autostart both hang on this.
+        var playbackIntent = false
         var isBuffering = false
+        /// A jump whose playback never got going. When the engine reports
+        /// end-of-item while this is still set, the end was the jump — the
+        /// target overhung the real stream length (netease lyric timestamps
+        /// routinely do), or the ranged re-download a seek forces stalled long
+        /// enough for the engine's frozen-time end detection to trip. The queue
+        /// parks on that signal instead of advancing; a later `timeTick` past the
+        /// target clears it, so a genuine finish still advances.
+        var pendingSeekTarget: TimeInterval?
+        /// A grace window after a jump, during which any end-of-item is the jump
+        /// regardless of the playhead. The pending marker above is cleared as
+        /// soon as the playhead passes the target, and the position check below
+        /// needs a known duration — a track whose length was never reported has
+        /// neither, so the window is what carries that case.
+        var seekGuardUntil: Date?
+        /// How much of the stream APlay has buffered (0...1), for the progress
+        /// bar's preload fill. A network stream reports this for the whole
+        /// track, so it is only a *loading* indicator before playback starts.
+        var bufferProgress: Double = 0
         var progress: TimeInterval = 0
         var duration: TimeInterval = 0
         var servedQuality: String?
@@ -84,7 +116,7 @@ struct PlayerFeature {
         // Engine events
         case timeTick(TimeInterval)
         case itemEnded
-        case bufferingChanged(Bool)
+        case bufferingChanged(Double)
         case isPlayingChanged(Bool)
 
         // Transport
@@ -117,7 +149,7 @@ struct PlayerFeature {
         case togglePanel(RightPanel)
 
         // Resolution
-        case urlResolved(generation: Int, ResolvedSource)
+        case urlResolved(generation: Int, autostart: Bool, ResolvedSource)
         /// A third-party source was used; surfaced as a toast by AppFeature.
         case unblockApplied(String)
         case lyricsResponse(generation: Int, ParsedLyrics?)
@@ -211,7 +243,7 @@ struct PlayerFeature {
                         .run { [playback] _ in
                             playback.updateMetadata(
                                 title: track.name, artist: track.artistNames,
-                                album: track.album.name)
+                                album: track.album.name, cover: nil)
                         }
                     } ?? .none
                 )
@@ -224,6 +256,11 @@ struct PlayerFeature {
                 // the same pass, only publishes when the line actually changes.
                 if abs(seconds - state.progress) > 0.45 {
                     state.progress = seconds
+                }
+                // Playback has genuinely moved on from the last jump, so any
+                // end-of-item that follows is the song finishing.
+                if let target = state.pendingSeekTarget, seconds > target + 0.5 {
+                    state.pendingSeekTarget = nil
                 }
                 let cursor = state.lyrics?.activeIndex(at: seconds + 0.2)
                 if cursor != state.lyricsCursorIndex {
@@ -238,10 +275,55 @@ struct PlayerFeature {
                     state.progress = state.duration
                     state.lyricsCursorIndex = state.lyrics?.activeIndex(at: state.duration)
                     state.isPlaying = false
+                    state.playbackIntent = false
                     return .merge(scrobbleFinish, .send(.pause))
                 }
 
-                guard state.isPlaying else { return scrobbleFinish }
+                // An end that fires while a jump is still outstanding, while the
+                // jump's grace window is still open, or while the playhead is
+                // nowhere near the real end, is the jump, not the song finishing.
+                // Two things produce one: a lyric timestamp or a scrub landing
+                // past what the stream has buffered, so the engine clamps it to
+                // the tail and reports the end a second later; and the ranged
+                // re-download a jump forces stalling long enough for the
+                // engine's frozen-time end detection to fire. That second one
+                // can arrive late — after the playhead reached the jump target
+                // and the pending marker above was cleared — so the playhead
+                // position is checked as well. A genuine finish sits at the
+                // tail; anything two seconds short is the jump. A track whose
+                // duration was never reported has no tail to measure against,
+                // so the grace window is what covers it.
+                if let until = state.seekGuardUntil, date.now >= until {
+                    state.seekGuardUntil = nil
+                }
+                let bogusEnd = state.pendingSeekTarget != nil
+                    || state.seekGuardUntil != nil
+                    || (state.duration > 0 && state.progress < state.duration - 2)
+                if bogusEnd {
+                    let progress = state.progress
+                    let duration = state.duration
+                    let pending = state.pendingSeekTarget.map { String($0) } ?? "none"
+                    Self.log.info(
+                        "itemEnded ignored: jump or stall, progress=\(progress, format: .fixed(precision: 1)) duration=\(duration, format: .fixed(precision: 1)) pending=\(pending, privacy: .public)"
+                    )
+                    state.pendingSeekTarget = nil
+                    // The engine paused on its way to reporting this; pick it
+                    // back up where the jump landed rather than leaving the
+                    // track stopped.
+                    state.isPlaying = true
+                    state.playbackIntent = true
+                    return .merge(
+                        scrobbleStartEffect(&state),
+                        .run { [playback] _ in playback.play() }
+                    )
+                }
+
+                // The user's transport intent decides whether the queue keeps
+                // going — the engine's `isPlaying=false` at end-of-item is not
+                // a pause, and arrives in either order relative to this action.
+                guard state.playbackIntent else {
+                    return scrobbleFinish
+                }
 
                 if state.repeatMode == .one, !state.isFMMode {
                     state.scrobbled = false
@@ -257,9 +339,25 @@ struct PlayerFeature {
                         scrobbleStartEffect(&state)
                     )
                 }
+                let advProgress = state.progress
+                let advDuration = state.duration
+                let advIntent = state.playbackIntent
+                Self.log.info(
+                    "itemEnded advancing: progress=\(advProgress, format: .fixed(precision: 1)) duration=\(advDuration, format: .fixed(precision: 1)) intent=\(advIntent)"
+                )
                 return .merge(scrobbleFinish, .send(.advanceToNext(userInitiated: false)))
 
-            case let .bufferingChanged(buffering):
+            case let .bufferingChanged(progress):
+                // The stream reports progress continuously; only forward
+                // meaningful changes so the transport does not redraw twice
+                // per second for a number that barely moved.
+                guard abs(state.bufferProgress - progress) > 0.005 else { return .none }
+                state.bufferProgress = progress
+                // Buffering only reads as "loading" while the user is waiting on
+                // a track they asked to hear; a paused queue is not loading.
+                // (Deriving from `isPlaying` alone flips back and forth with the
+                // engine's end-of-item state events.)
+                let buffering = progress > 0 && progress < 1 && state.playbackIntent && !state.isPlaying
                 guard state.isBuffering != buffering else { return .none }
                 state.isBuffering = buffering
                 return .none
@@ -270,7 +368,18 @@ struct PlayerFeature {
                 // same event, so the guard keeps state from churning.
                 guard state.isPlaying != isPlaying else { return .none }
                 state.isPlaying = isPlaying
-                return scrobbleStartEffect(&state)
+                // Playback has begun: the preload fill is no longer a loading
+                // state, even before the next buffering event arrives.
+                if isPlaying, state.isBuffering { state.isBuffering = false }
+                // A start scrobble belongs to playback actually starting — the
+                // engine's `isPlaying=false` at end-of-item would otherwise
+                // record one for a track on its way out. `urlResolved` already
+                // records it when a track loads, so this only covers a start
+                // the load never saw.
+                return .merge(
+                    isPlaying ? scrobbleStartEffect(&state) : .none,
+                    isPlaying ? nowPlayingMetadataEffect(&state) : .none
+                )
 
             // MARK: - Queue entry points
 
@@ -278,6 +387,7 @@ struct PlayerFeature {
                 guard !tracks.isEmpty else { return .none }
                 if let context { state.recordRecent(context) }
                 state.isFMMode = false
+                state.playbackIntent = true
                 state.queue = tracks
                 state.source = source
                 state.playNextList = []
@@ -291,6 +401,7 @@ struct PlayerFeature {
                 return .send(.startPlaying(startTrack))
 
             case let .playTrack(track):
+                state.playbackIntent = true
                 if let index = state.activeQueue.firstIndex(where: { $0.id == track.id }) {
                     state.currentIndex = index
                     return .send(.startPlaying(track))
@@ -312,9 +423,11 @@ struct PlayerFeature {
                 guard state.engineHasItem else {
                     // A restored queue: the engine has nothing loaded, so the
                     // source has to be resolved again.
+                    state.playbackIntent = true
                     return .send(.startPlaying(track))
                 }
                 state.isPlaying = true
+                state.playbackIntent = true
                 return .merge(
                     .run { [playback] _ in playback.play() },
                     scrobbleStartEffect(&state)
@@ -322,6 +435,9 @@ struct PlayerFeature {
 
             case .pause:
                 state.isPlaying = false
+                state.playbackIntent = false
+                state.pendingSeekTarget = nil
+                state.seekGuardUntil = nil
                 return .run { [playback] _ in playback.pause() }
 
             case .next:
@@ -332,6 +448,7 @@ struct PlayerFeature {
                 if state.progress > 4 || state.activeQueue.isEmpty {
                     return .send(.seek(0))
                 }
+                state.playbackIntent = true
                 var index = state.currentIndex - 1
                 if index < 0 {
                     guard state.repeatMode == .all else { return .send(.seek(0)) }
@@ -341,11 +458,34 @@ struct PlayerFeature {
                 return .send(.startPlaying(state.activeQueue[index]))
 
             case let .seek(seconds):
-                state.progress = seconds
-                state.lyricsCursorIndex = state.lyrics?.activeIndex(at: seconds + 0.2)
-                return .run { [playback] _ in playback.seek(seconds) }
+                // A jump is an explicit transport gesture: the user wants this
+                // position playing. The intent belongs to the jump, not to
+                // whatever end-of-item event the engine emits next, and the
+                // target is pulled back from the very end because the lyric
+                // timestamps that produce one overhang the real stream length
+                // (APlay clamps such a jump to `duration - 1`, which ends the
+                // track a second later).
+                let duration = state.duration
+                let target = duration > 1
+                    ? min(max(seconds, 0), duration - 1.5)
+                    : max(seconds, 0)
+                state.progress = target
+                state.lyricsCursorIndex = state.lyrics?.activeIndex(at: target + 0.2)
+                state.playbackIntent = true
+                // The engine resumes on the jump itself — local files after a
+                // short delay, remote waves once enough of the range has
+                // arrived — so mirror it now and let `isPlayingChanged` confirm.
+                state.isPlaying = true
+                state.pendingSeekTarget = target
+                state.seekGuardUntil = date.now.addingTimeInterval(3)
+                let loggedDuration = state.duration
+                Self.log.info(
+                    "seek target=\(target, format: .fixed(precision: 1)) duration=\(loggedDuration, format: .fixed(precision: 1))"
+                )
+                return .run { [playback] _ in playback.seek(target) }
 
             case let .jumpTo(track):
+                state.playbackIntent = true
                 if let index = state.playNextList.firstIndex(where: { $0.id == track.id }) {
                     state.playNextList.removeSubrange(0...index)
                     return .send(.startPlaying(track))
@@ -429,8 +569,11 @@ struct PlayerFeature {
                 state.currentTrack = track
                 state.progress = 0
                 state.duration = track.duration
-                state.servedQuality = nil
-                state.unblockSource = nil
+                // Keep the previous quality badge until the new URL resolves.
+                // Clearing it here would empty the fixed 56pt slot in the bar's
+                // right section for a moment, which shifts the centered
+                // transport and makes the whole bar lurch on every skip.
+                // urlResolved overwrites both once the new track resolves.
                 state.isTrial = false
                 state.lyrics = nil
                 state.lyricsCursorIndex = nil
@@ -438,6 +581,9 @@ struct PlayerFeature {
                 state.startScrobbled = false
                 state.isPlaying = true
                 state.engineHasItem = false
+                state.bufferProgress = 0
+                state.pendingSeekTarget = nil
+                state.seekGuardUntil = nil
                 state.resolveGeneration += 1
                 let generation = state.resolveGeneration
                 state.persist(using: persistence)
@@ -446,9 +592,9 @@ struct PlayerFeature {
                     scrobbleFinish,
                     .run { [playback] _ in
                         playback.updateMetadata(
-                            title: track.name, artist: track.artistNames, album: track.album.name)
+                            title: track.name, artist: track.artistNames, album: track.album.name, cover: nil)
                     },
-                    resolveURLEffect(track: track, generation: generation, state: state),
+                    resolveURLEffect(track: track, generation: generation, autostart: state.playbackIntent, state: state),
                     .run { [netease] send in
                         let response = try? await netease.lyric(id: track.id)
                         await send(.lyricsResponse(
@@ -456,7 +602,7 @@ struct PlayerFeature {
                     }
                 )
 
-            case let .urlResolved(generation, resolved):
+            case let .urlResolved(generation, autostart, resolved):
                 guard generation == state.resolveGeneration else { return .none }
                 state.servedQuality = resolved.servedQuality
                 state.unblockSource = resolved.unblockSource
@@ -476,7 +622,11 @@ struct PlayerFeature {
 
                 state.consecutiveFailures = 0
                 state.engineHasItem = true
-                let autostart = state.isPlaying
+                // `autostart` was decided when the track was chosen — reading
+                // `state.isPlaying` here would race the end-of-item
+                // `isPlayingChanged(false)` of the previous track, which can
+                // land between `startPlaying` and this action and silently turn
+                // the load into a prepare-only one.
                 return .merge(
                     .run { [playback] _ in playback.load(url, autostart) },
                     scrobbleStartEffect(&state),
@@ -495,6 +645,7 @@ struct PlayerFeature {
                 return .none
 
             case let .advanceToNext(userInitiated):
+                if userInitiated { state.playbackIntent = true }
                 if state.isFMMode {
                     return .send(.fmAdvance)
                 }
@@ -518,12 +669,14 @@ struct PlayerFeature {
 
             case .stopPlayback:
                 state.isPlaying = false
+                state.playbackIntent = false
                 return .run { [playback] _ in playback.clear() }
 
             // MARK: - Personal FM
 
             case .startFM:
                 guard !(state.isFMMode && state.isPlaying) else { return .none }
+                state.playbackIntent = true
                 state.recordRecent(.fm)
                 state.isFMMode = true
                 state.shuffleEnabled = false
@@ -538,6 +691,7 @@ struct PlayerFeature {
 
             case .fmNext:
                 guard state.isFMMode else { return .none }
+                state.playbackIntent = true
                 return .send(.fmAdvance)
 
             case let .fmFetch(autostart):
@@ -571,6 +725,7 @@ struct PlayerFeature {
 
             case .fmTrash:
                 guard state.isFMMode, let track = state.currentTrack else { return .none }
+                state.playbackIntent = true
                 return .merge(
                     .send(.fmAdvance),
                     .run { [netease] _ in try? await netease.fmTrash(id: track.id) }
@@ -625,7 +780,7 @@ struct PlayerFeature {
 
     /// Resolves a playable URL for `track`, falling back to third-party sources
     /// when NetEase refuses or only offers a trial clip.
-    private func resolveURLEffect(track: Track, generation: Int, state: State) -> Effect<Action> {
+    private func resolveURLEffect(track: Track, generation: Int, autostart: Bool, state: State) -> Effect<Action> {
         .run { [netease, unblock] send in
             let quality = state.audioQuality
             var data = try? await netease.songURL(ids: [track.id], level: quality.rawValue).first
@@ -647,6 +802,7 @@ struct PlayerFeature {
             }
             await send(.urlResolved(
                 generation: generation,
+                autostart: autostart,
                 ResolvedSource(
                     url: url,
                     servedQuality: data?.level,
@@ -664,6 +820,35 @@ struct PlayerFeature {
         let sourceID = state.source.sourceID
         return .run { [netease] _ in
             await netease.scrobbleStart(trackID: trackID, sourceID: sourceID)
+        }
+    }
+
+    /// Re-pushes Now Playing metadata once playback has actually begun.
+    ///
+    /// The engine clears the Now Playing slot when it starts a track — `_play`
+    /// runs `resetFlag` → `remove` — and the metadata pushed at track selection
+    /// happens *before* the URL is resolved, so it is wiped before anything
+    /// sees it. By the time `isPlayingChanged(true)` arrives the slot is stable,
+    /// so the title/artist/album land for real, this time with the cover.
+    private func nowPlayingMetadataEffect(_ state: inout State) -> Effect<Action> {
+        guard let track = state.currentTrack else { return .none }
+        let title = track.name
+        let artist = track.artistNames
+        let album = track.album.name
+        let coverURL = track.album.picUrl.flatMap(URL.init(string:))
+        return .run { [playback] _ in
+            var cover: PlatformImage?
+            if let url = coverURL {
+                let request = URLRequest(url: url)
+                if let cached = URLCache.shared.cachedResponse(for: request)?.data,
+                   let image = PlatformImage(data: cached) {
+                    cover = image
+                } else if let data = try? await URLSession.shared.data(from: url).0,
+                          let image = PlatformImage(data: data) {
+                    cover = image
+                }
+            }
+            playback.updateMetadata(title: title, artist: artist, album: album, cover: cover)
         }
     }
 

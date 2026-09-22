@@ -1,6 +1,11 @@
 import SwiftUI
 import ComposableArchitecture
 
+/// Vertical position of the sharp lyric focus inside the lyrics viewport,
+/// as a fraction of the viewport height. Slightly above center so the
+/// currently-sung line sits in the upper-middle of the detail page.
+private let lyricFocusY: CGFloat = 0.44
+
 /// Immersive full-window now-playing page: artwork-tinted gradient backdrop,
 /// large artwork on the left, big synced lyrics on the right.
 struct NowPlayingView: View {
@@ -30,6 +35,29 @@ struct NowPlayingView: View {
     @State private var resumeTask: Task<Void, Never>?
     @State private var showLyricsOnMobile = false
     @State private var showQueueOnMobile = false
+    @State private var showVisualizer = false
+    /// The shader list is observed rather than read off the singleton: the
+    /// first `body` pass happens before `onAppear` runs the scan, so the
+    /// backdrop would resolve `nil` and never be asked again.
+    @StateObject private var shaderLibrary = ShaderLibrary.shared
+    /// Lyrics column viewport, in global coordinates: the positional blur
+    /// needs a center line and a falloff span.
+    @State private var viewportFrame: CGRect = .zero
+
+    /// Runs the current shader behind the now-playing content instead of the
+    /// flat gradient. Off by default: a backdrop should not move until the user
+    /// asks it to.
+    @AppStorage("visualizer.backdropEnabled") private var shaderBackdropEnabled = true
+    @AppStorage("visualizer.shaderName") private var storedShaderName: String = ""
+
+    /// The shader the backdrop and the full-screen overlay both use, resolved
+    /// once from the stored name and then kept in sync with the picker.
+    private var visualizerShader: ShaderDescriptor? {
+        if storedShaderName.isEmpty {
+            return shaderLibrary.available.first
+        }
+        return shaderLibrary.available.first { $0.name == storedShaderName }
+    }
 
     var body: some View {
         GeometryReader { geo in
@@ -63,22 +91,25 @@ struct NowPlayingView: View {
                 }
             }
             .overlay(alignment: .topTrailing) {
-                if isCompact, showsClassicChrome(isCompact: isCompact) {
-                    Button {
-                        withAnimation(AppAnimation.standard) {
-                            showLyricsOnMobile.toggle()
+                HStack(spacing: 10) {
+                    visualizerToggle
+                    if isCompact, showsClassicChrome(isCompact: isCompact) {
+                        Button {
+                            withAnimation(AppAnimation.standard) {
+                                showLyricsOnMobile.toggle()
+                            }
+                        } label: {
+                            Image(systemName: showLyricsOnMobile ? "music.note" : "quote.bubble")
+                                .font(.system(size: 14, weight: .semibold))
+                                .foregroundStyle(showLyricsOnMobile ? Theme.accent : .white.opacity(0.85))
+                                .frame(width: 36, height: 36)
+                                .background(.white.opacity(0.12), in: Circle())
                         }
-                    } label: {
-                        Image(systemName: showLyricsOnMobile ? "music.note" : "quote.bubble")
-                            .font(.system(size: 14, weight: .semibold))
-                            .foregroundStyle(showLyricsOnMobile ? Theme.accent : .white.opacity(0.85))
-                            .frame(width: 36, height: 36)
-                            .background(.white.opacity(0.12), in: Circle())
+                        .buttonStyle(.pressable)
                     }
-                    .buttonStyle(.pressable)
-                    .padding(.top, 20)
-                    .padding(.trailing, 20)
                 }
+                .padding(.top, 20)
+                .padding(.trailing, 20)
             }
             #if os(iOS)
             .overlay {
@@ -122,9 +153,48 @@ struct NowPlayingView: View {
         #endif
         #if os(macOS)
         .onExitCommand {
-            close()
+            if showVisualizer {
+                withAnimation(.easeInOut(duration: 0.25)) {
+                    showVisualizer = false
+                }
+            } else {
+                close()
+            }
         }
         #endif
+        .overlay {
+            if showVisualizer {
+                VisualizerOverlay(
+                    isPresented: $showVisualizer,
+                    palette: ShaderPaletteBuilder.make(from: colors),
+                    onShaderChanged: { shader in
+                        storedShaderName = shader?.name ?? ""
+                    }
+                )
+                .transition(.opacity)
+            }
+        }
+        .onAppear {
+            ShaderDirectory.ensureExists()
+            shaderLibrary.reload()
+        }
+    }
+
+    /// Opens the shader visualizer. The palette follows the artwork so the
+    /// shader's colors belong to the playing track.
+    private var visualizerToggle: some View {
+        Button {
+            withAnimation(.easeInOut(duration: 0.3)) {
+                showVisualizer.toggle()
+            }
+        } label: {
+            Image(systemName: "waveform.circle")
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(.white.opacity(0.85))
+                .frame(width: 36, height: 36)
+                .background(.white.opacity(0.12), in: Circle())
+        }
+        .buttonStyle(.pressable)
     }
 
     private var hasLyricsColumn: Bool {
@@ -164,7 +234,7 @@ struct NowPlayingView: View {
         activeIndex = index
         guard let index else { return }
         DispatchQueue.main.async {
-            proxy.scrollTo(index, anchor: .center)
+            proxy.scrollTo(index, anchor: UnitPoint(x: 0.5, y: lyricFocusY))
         }
     }
 
@@ -188,18 +258,39 @@ struct NowPlayingView: View {
 
     private var backdrop: some View {
         ZStack {
-            LinearGradient(
-                colors: [colors.primary, colors.secondary],
-                startPoint: .topLeading, endPoint: .bottomTrailing
-            )
-            RadialGradient(
-                colors: [.white.opacity(0.12), .clear],
-                center: .topLeading, startRadius: 0, endRadius: 700
-            )
-            LinearGradient(
-                colors: [.clear, .black.opacity(0.35)],
-                startPoint: .top, endPoint: .bottom
-            )
+            if shaderBackdropEnabled {
+                // The shader is the backdrop: it draws opaque, so it goes on
+                // top of the flat gradient and replaces it. The old order put
+                // the gradient *above* a 0.55-opacity shader, which buried the
+                // visuals under a solid album-color wash ("the yellow blur").
+                LinearGradient(
+                    colors: [colors.primary, colors.secondary],
+                    startPoint: .topLeading, endPoint: .bottomTrailing
+                )
+                ShaderContainerView(
+                    shader: visualizerShader,
+                    isPlaying: player.isPlaying,
+                    palette: ShaderPaletteBuilder.make(from: colors)
+                )
+                // Just enough bottom shading to keep the controls readable.
+                LinearGradient(
+                    colors: [.clear, .black.opacity(0.28)],
+                    startPoint: .top, endPoint: .bottom
+                )
+            } else {
+                LinearGradient(
+                    colors: [colors.primary, colors.secondary],
+                    startPoint: .topLeading, endPoint: .bottomTrailing
+                )
+                RadialGradient(
+                    colors: [.white.opacity(0.12), .clear],
+                    center: .topLeading, startRadius: 0, endRadius: 700
+                )
+                LinearGradient(
+                    colors: [.clear, .black.opacity(0.35)],
+                    startPoint: .top, endPoint: .bottom
+                )
+            }
         }
         .ignoresSafeArea()
         .animation(.easeInOut(duration: 0.8), value: colors)
@@ -872,12 +963,14 @@ struct NowPlayingView: View {
             ScrollViewReader { proxy in
                 ScrollView(showsIndicators: false) {
                     LazyVStack(alignment: .leading, spacing: 26) {
-                        Color.clear.frame(height: 200)
+                        Color.clear.frame(height: max(viewportFrame.height / 2 - 40, 200))
                         ForEach(lyrics.lines) { line in
-                            bigLyricLine(line, isActive: line.id == activeIndex)
+                            bigLyricLine(line, isActive: line.id == activeIndex,
+                                         center: viewportFrame.minY + viewportFrame.height * lyricFocusY,
+                                         span: viewportFrame.height / 2)
                                 .id(line.id)
                         }
-                        Color.clear.frame(height: 240)
+                        Color.clear.frame(height: max(viewportFrame.height / 2 - 40, 240))
                     }
                     .padding(.horizontal, 24)
                 }
@@ -892,12 +985,19 @@ struct NowPlayingView: View {
                         startPoint: .top, endPoint: .bottom
                     )
                 )
+                .background(
+                    GeometryReader { geo in
+                        Color.clear
+                            .onAppear { viewportFrame = geo.frame(in: .global) }
+                            .onChange(of: geo.frame(in: .global)) { viewportFrame = $0 }
+                    }
+                )
                 .onChange(of: player.lyricsCursorIndex) { index in
                     guard index != activeIndex else { return }
                     activeIndex = index
                     guard !isUserScrolling, let index else { return }
                     withAnimation(.spring(response: 0.8, dampingFraction: 0.85)) {
-                        proxy.scrollTo(index, anchor: .center)
+                        proxy.scrollTo(index, anchor: UnitPoint(x: 0.5, y: lyricFocusY))
                     }
                 }
                 .onAppear {
@@ -939,8 +1039,12 @@ struct NowPlayingView: View {
         }
     }
 
-    private func bigLyricLine(_ line: LyricLine, isActive: Bool) -> some View {
+    private func bigLyricLine(_ line: LyricLine, isActive: Bool, center: CGFloat, span: CGFloat) -> some View {
         Button {
+            // The click that brings an inactive app to the front is only an
+            // activation: a lyric line needs the app to have been active for a
+            // beat before it will jump the song.
+            guard LyricTapGate.shared.allowsTap else { return }
             appStore?.send(.player(.seek(line.time)))
         } label: {
             VStack(alignment: .leading, spacing: 5) {
@@ -963,7 +1067,7 @@ struct NowPlayingView: View {
             .multilineTextAlignment(.leading)
             .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(Rectangle())
-            .blur(radius: isActive ? 0 : 0.6)
+            .modifier(EdgeBlur(center: center, span: span))
             .scaleEffect(isActive ? 1.02 : 1, anchor: .leading)
         }
         .buttonStyle(.plain)
@@ -1031,6 +1135,51 @@ struct LyricMainText: View {
     }
 }
 
+/// Picker-style top/bottom blur: a line stays sharp at the viewport's center
+/// and blurs progressively toward the top and bottom edges, the falloff
+/// running 0 → `maxRadius` over `span` points on either side of `center`.
+///
+/// The lyrics column used to blur every line that was not the current one,
+/// which left a single hard step between sharp and soft. This replaces it
+/// with a positional ramp, so the blur follows where a line sits rather than
+/// which line it is — the current line ends up centered, and everything else
+/// softens away above and below it.
+struct EdgeBlur: ViewModifier {
+    /// Center line of the viewport, in global coordinates.
+    var center: CGFloat
+    /// Points from center at which the blur reaches `maxRadius`.
+    var span: CGFloat
+    /// Blur radius at the top/bottom edges.
+    var maxRadius: CGFloat = 8
+    /// Bottom falloff multiplier. Above 1 the blur rises more slowly below the
+    /// center than above it, so the *next* line stays readable while the top
+    /// of the list still fades out fully.
+    var bottomFalloff: CGFloat = 3.5
+
+    @State private var midY: CGFloat = .zero
+
+    func body(content: Content) -> some View {
+        content
+            .background(
+                GeometryReader { geo in
+                    Color.clear
+                        .onAppear { midY = geo.frame(in: .global).midY }
+                        .onChange(of: geo.frame(in: .global).midY) { midY = $0 }
+                }
+            )
+            .blur(radius: radius)
+    }
+
+    private var radius: CGFloat {
+        guard span > 0 else { return 0 }
+        let delta = midY - center
+        if delta <= 0 {
+            return min(-delta / span, 1) * maxRadius
+        }
+        return min(delta / (span * bottomFalloff), 1) * maxRadius
+    }
+}
+
 #if os(iOS)
 private struct IOSImmersiveLyricsColumn: View {
     @Environment(\.appStore) private var appStore: StoreOf<AppFeature>?
@@ -1042,6 +1191,8 @@ private struct IOSImmersiveLyricsColumn: View {
     @State private var activeIndex: Int?
     @State private var isUserScrolling = false
     @State private var resumeTask: Task<Void, Never>?
+    /// Viewport for the positional lyric blur.
+    @State private var viewportFrame: CGRect = .zero
 
     var body: some View {
         Group {
@@ -1049,26 +1200,35 @@ private struct IOSImmersiveLyricsColumn: View {
                 ScrollViewReader { proxy in
                     ScrollView(showsIndicators: false) {
                         LazyVStack(alignment: .leading, spacing: 22) {
-                            Color.clear.frame(height: 72)
+                            Color.clear.frame(height: max(viewportFrame.height / 2 - 40, 72))
                             ForEach(lyrics.lines) { line in
                                 lyricLine(
                                     line,
-                                    isActive: line.id == activeIndex
+                                    isActive: line.id == activeIndex,
+                                    center: viewportFrame.minY + viewportFrame.height * lyricFocusY,
+                                    span: viewportFrame.height / 2
                                 )
                                 .id(line.id)
                             }
-                            Color.clear.frame(height: 96)
+                            Color.clear.frame(height: max(viewportFrame.height / 2 - 40, 96))
                         }
                         .padding(.horizontal, 4)
                     }
                     .mask(edgeMask)
+                    .background(
+                        GeometryReader { geo in
+                            Color.clear
+                                .onAppear { viewportFrame = geo.frame(in: .global) }
+                                .onChange(of: geo.frame(in: .global)) { viewportFrame = $0 }
+                        }
+                    )
                     .accessibilityIdentifier("syncedLyricsScroll")
                     .onChange(of: player.lyricsCursorIndex) { index in
                         guard index != activeIndex else { return }
                         activeIndex = index
                         guard !isUserScrolling, let index else { return }
                         withAnimation(.timingCurve(0.22, 1, 0.36, 1, duration: 0.38)) {
-                            proxy.scrollTo(index, anchor: .center)
+                            proxy.scrollTo(index, anchor: UnitPoint(x: 0.5, y: lyricFocusY))
                         }
                     }
                     .onAppear {
@@ -1088,7 +1248,7 @@ private struct IOSImmersiveLyricsColumn: View {
                                     isUserScrolling = false
                                     if let activeIndex {
                                         withAnimation(.spring(response: 0.45, dampingFraction: 0.85)) {
-                                            proxy.scrollTo(activeIndex, anchor: .center)
+                                            proxy.scrollTo(activeIndex, anchor: UnitPoint(x: 0.5, y: lyricFocusY))
                                         }
                                     }
                                 }
@@ -1128,7 +1288,7 @@ private struct IOSImmersiveLyricsColumn: View {
         guard let index else { return }
         DispatchQueue.main.async {
             withAnimation(.spring(response: 0.5, dampingFraction: 0.85)) {
-                proxy.scrollTo(index, anchor: .center)
+                proxy.scrollTo(index, anchor: UnitPoint(x: 0.5, y: lyricFocusY))
             }
         }
     }
@@ -1146,8 +1306,9 @@ private struct IOSImmersiveLyricsColumn: View {
         )
     }
 
-    private func lyricLine(_ line: LyricLine, isActive: Bool) -> some View {
+    private func lyricLine(_ line: LyricLine, isActive: Bool, center: CGFloat, span: CGFloat) -> some View {
         Button {
+            guard LyricTapGate.shared.allowsTap else { return }
             appStore?.send(.player(.seek(line.time)))
         } label: {
             VStack(alignment: .leading, spacing: 5) {
@@ -1174,7 +1335,7 @@ private struct IOSImmersiveLyricsColumn: View {
             .multilineTextAlignment(.leading)
             .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(Rectangle())
-            .blur(radius: isActive ? 0 : 0.4)
+            .modifier(EdgeBlur(center: center, span: span))
             .scaleEffect(isActive ? 1.02 : 1.0, anchor: .leading)
         }
         .buttonStyle(.plain)
@@ -2374,6 +2535,15 @@ struct NowPlayingScrubber: View {
                     Capsule()
                         .fill(.white.opacity(0.25))
                         .frame(height: 4)
+                    // How much of the stream is already buffered, behind the
+                    // played position. A network stream keeps this below 1 for
+                    // the whole track, so it reads as a preload fill, not a
+                    // stuck loading bar.
+                    if player.bufferProgress > 0 {
+                        Capsule()
+                            .fill(.white.opacity(0.4))
+                            .frame(width: max(4, width * player.bufferProgress), height: 4)
+                    }
                     Capsule()
                         .fill(.white)
                         .frame(width: max(4, width * fraction), height: 4)

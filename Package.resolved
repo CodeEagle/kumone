@@ -1,13 +1,13 @@
 {
-  "originHash" : "c9e22f9cbe6db228f458a131dd69334c6073352ec5834c50d1b274643c918280",
+  "originHash" : "4ea894c9851cde2b2321819de439f0640625f9826e54e987aae75588f4e17a92",
   "pins" : [
     {
       "identity" : "aplay",
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/CodeEagle/APlay.git",
       "state" : {
-        "revision" : "24ca56312bab713d028e7481fdc3f334614e4dea",
-        "version" : "2.1.0"
+        "revision" : "f336e30af7183feb6ebf2266f2d0e1bcd6bb073b",
+        "version" : "2.1.4"
       }
     },
     {
@@ -24,8 +24,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/sparkle-project/Sparkle",
       "state" : {
-        "revision" : "79bc9e872948e47877e76f194cb0c8e0412b0b90",
-        "version" : "2.9.5"
+        "revision" : "eef1a539a373c1f1a320624b1130fc5de7b2e100",
+        "version" : "2.10.0"
       }
     },
     {

@@ -156,14 +156,28 @@ struct PlayerBar: View {
 
     private func optionsSection(compact: Bool) -> some View {
         HStack(spacing: 4) {
-            if !compact, let level = player.servedQuality,
-               let quality = AudioQuality(rawValue: level) {
-                QualityTag(text: quality.badge)
-                    .padding(.trailing, 2)
-            } else if !compact, player.unblockSource != nil {
-                QualityTag(text: String(localized: "音源"))
-                    .padding(.trailing, 2)
-                    .help("来自 \(player.unblockSource ?? "")")
+            // Reserve a constant-width slot for the quality tag: it is
+            // inserted/removed on every track change (servedQuality is
+            // cleared while resolving the next URL), which would otherwise
+            // widen/narrow this section and visibly shift the transport.
+            if !compact {
+                Group {
+                    if let level = player.servedQuality,
+                       let quality = AudioQuality(rawValue: level) {
+                        QualityTag(text: quality.badge)
+                    } else if player.unblockSource != nil {
+                        QualityTag(text: String(localized: "音源"))
+                            .help("来自 \(player.unblockSource ?? "")")
+                    } else {
+                        // An empty `if let` inside a fixed frame does NOT hold
+                        // its width in an HStack (verified: the slot collapses to
+                        // 0 and the whole right section jumps the first time a
+                        // quality badge appears). Color.clear keeps the 56pt.
+                        Color.clear
+                    }
+                }
+                .frame(width: 56, alignment: .leading)
+                .padding(.trailing, 2)
             }
             PlayerIconButton(
                 icon: "quote.bubble", size: 13,
@@ -173,7 +187,7 @@ struct PlayerBar: View {
             }
             .help("歌词")
             PlayerIconButton(
-                icon: "quote.bubble", size: 13,
+                icon: "inset.filled.bottomthird.square", size: 13,
                 isActive: appStore.settings.showDesktopLyrics
             ) {
                 appStore.send(.settings(.setShowDesktopLyrics(!appStore.settings.showDesktopLyrics)))
@@ -307,6 +321,14 @@ struct ScrubberLane: View {
                 Capsule()
                     .fill(colorScheme == .dark ? Color.white.opacity(0.18) : .black.opacity(0.15))
                     .frame(height: 3.5)
+                // How much of the stream is already buffered, behind the played
+                // position. A network stream keeps this below 1 for the whole
+                // track, so it reads as a preload fill, not a stuck bar.
+                if player.bufferProgress > 0 {
+                    Capsule()
+                        .fill(colorScheme == .dark ? Color.white.opacity(0.38) : .black.opacity(0.3))
+                        .frame(width: max(3.5, width * player.bufferProgress), height: 3.5)
+                }
                 Capsule()
                     .fill(Theme.accent)
                     .frame(width: max(3.5, width * fraction), height: 3.5)

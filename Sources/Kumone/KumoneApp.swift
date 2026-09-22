@@ -7,7 +7,8 @@ public struct KumoneApp: App {
 
     private var store: StoreOf<AppFeature> { appDelegate.store }
 
-    public init() {}
+    public init() {
+    }
 
     public var body: some Scene {
         Window("Kumone", id: "main") {

@@ -399,22 +399,36 @@ final class AppFeatureTests: XCTestCase {
     // MARK: - Now Playing commands
 
     func testNowPlayingTransportCommandsRouteToThePlayer() async {
+        let t0 = Date(timeIntervalSince1970: 1000)
         let store = TestStore(initialState: AppFeature.State()) {
             AppFeature()
+        } withDependencies: {
+            $0.date = .constant(t0)
         }
         // `next`/`previous` decompose inside the player: with an empty queue
         // `next` advances to nothing, and `previous` rewinds to zero.
         await store.send(.nowPlaying(.next))
         await store.receive(.player(.next))
-        await store.receive(.player(.advanceToNext(userInitiated: true)))
+        await store.receive(.player(.advanceToNext(userInitiated: true))) {
+            $0.player.playbackIntent = true
+        }
         await store.send(.nowPlaying(.previous))
         await store.receive(.player(.previous))
-        await store.receive(.player(.seek(0)))
+        await store.receive(.player(.seek(0))) {
+            $0.player.playbackIntent = true
+            $0.player.isPlaying = true
+            $0.player.pendingSeekTarget = 0
+            $0.player.seekGuardUntil = t0.addingTimeInterval(3)
+        }
         await store.send(.nowPlaying(.togglePlayPause))
         await store.receive(.player(.togglePlayPause))
         await store.send(.nowPlaying(.seek(42)))
         await store.receive(.player(.seek(42))) {
             $0.player.progress = 42
+            $0.player.playbackIntent = true
+            $0.player.isPlaying = true
+            $0.player.pendingSeekTarget = 42
+            $0.player.seekGuardUntil = t0.addingTimeInterval(3)
         }
     }
 

@@ -44,7 +44,7 @@ final class PlayerFeatureTests: XCTestCase {
             seek: { _ in },
             setVolume: { _ in },
             clear: {},
-            updateMetadata: { _, _, _ in },
+            updateMetadata: { _, _, _, _ in },
             currentTime: { 0 },
             timeTicks: { .never },
             itemEnded: { .never },
@@ -66,6 +66,7 @@ final class PlayerFeatureTests: XCTestCase {
         await store.send(.play(tracks: [Self.t1, Self.t2], source: .playlist(9), startAt: Self.t2, context: nil)) {
             $0.queue = [Self.t1, Self.t2]
             $0.source = .playlist(9)
+            $0.playbackIntent = true
             $0.currentIndex = 1
         }
         await store.receive(\.startPlaying) {
@@ -90,7 +91,9 @@ final class PlayerFeatureTests: XCTestCase {
         } withDependencies: {
             configureResolve(&$0)
         }
-        await store.send(.playTrack(Self.t1))
+        await store.send(.playTrack(Self.t1)) {
+            $0.playbackIntent = true
+        }
         await store.receive(\.play) {
             $0.queue = [Self.t1]
             $0.currentIndex = 0
@@ -120,6 +123,7 @@ final class PlayerFeatureTests: XCTestCase {
             configureResolve(&$0)
         }
         await store.send(.playTrack(Self.t2)) {
+            $0.playbackIntent = true
             $0.currentIndex = 1
         }
         await store.receive(\.startPlaying) {
@@ -168,7 +172,9 @@ final class PlayerFeatureTests: XCTestCase {
         state.engineHasItem = true
         let store = TestStore(initialState: state) { PlayerFeature() }
         await store.send(.next)
-        await store.receive(\.advanceToNext)
+        await store.receive(\.advanceToNext) {
+            $0.playbackIntent = true
+        }
         await store.receive(\.toast)
     }
 
@@ -183,6 +189,7 @@ final class PlayerFeatureTests: XCTestCase {
         }
         await store.send(.next)
         await store.receive(\.advanceToNext) {
+            $0.playbackIntent = true
             $0.currentIndex = 0
         }
         await store.receive(\.startPlaying) {
@@ -201,18 +208,252 @@ final class PlayerFeatureTests: XCTestCase {
         }
     }
 
+    // APlay reports `isPlaying=false` for the end-of-item transition, and that
+    // event can land before `itemEnded` (or after the next track's
+    // `startPlaying`). The queue must still advance, and the next track must
+    // still autostart — the load must not silently degrade to prepare-only.
+    func testItemEndedAdvancesPastTheEnginePauseEvent() async {
+        var state = PlayerFeature.State(queue: [Self.t1, Self.t2], currentIndex: 0)
+        state.currentTrack = Self.t1
+        state.isPlaying = true
+        state.playbackIntent = true
+        state.engineHasItem = true
+        nonisolated(unsafe) var loads: [(url: URL, autostart: Bool)] = []
+        let store = TestStore(initialState: state) { PlayerFeature() } withDependencies: {
+            configureResolve(&$0)
+            $0.playback.load = { url, autostart in loads.append((url, autostart)) }
+        }
+        // The engine's end-of-item pause arrives first.
+        await store.send(.isPlayingChanged(false)) {
+            $0.isPlaying = false
+        }
+        await store.send(.itemEnded)
+        await store.receive(\.advanceToNext) {
+            $0.currentIndex = 1
+        }
+        await store.receive(\.startPlaying) {
+            $0.currentTrack = Self.t2
+            $0.duration = Self.t2.duration
+            $0.isPlaying = true
+            $0.engineHasItem = false
+            $0.startScrobbled = false
+            $0.resolveGeneration = 1
+        }
+        await store.receive(\.lyricsResponse) {
+            $0.lyrics = LyricsParser.parse(Self.emptyLyrics())
+        }
+        await store.receive(\.urlResolved) {
+            $0.servedQuality = "exhigh"
+            $0.engineHasItem = true
+            $0.startScrobbled = true
+        }
+        XCTAssertEqual(loads.count, 1)
+        XCTAssertTrue(loads.first?.autostart == true)
+    }
+
+    // Netease lyrics routinely carry timestamps past the real stream length,
+    // and a jump is an explicit "keep playing" gesture: the target is pulled
+    // back from the very end so the engine's end-of-track detection cannot
+    // fire a second later, and the queue's intent follows the user, not the
+    // engine's state mirror.
+    func testSeekClampsPastDurationAndMarksIntent() async {
+        var state = PlayerFeature.State()
+        state.currentTrack = Self.t1
+        state.duration = 200
+        nonisolated(unsafe) var seekTargets: [TimeInterval] = []
+        let t0 = Date(timeIntervalSince1970: 1000)
+        let store = TestStore(initialState: state) { PlayerFeature() } withDependencies: {
+            configureResolve(&$0)
+            $0.date = .constant(t0)
+            $0.playback.seek = { seekTargets.append($0) }
+        }
+        await store.send(.seek(250)) {
+            $0.progress = 198.5
+            $0.playbackIntent = true
+            $0.isPlaying = true
+            $0.pendingSeekTarget = 198.5
+            $0.seekGuardUntil = t0.addingTimeInterval(3)
+        }
+        XCTAssertEqual(seekTargets, [198.5])
+    }
+
+    // A jump that lands past the real stream length — or one whose ranged
+    // re-download stalls long enough for the engine's frozen-time end
+    // detection to trip — reports end-of-item before playback ever moved on.
+    // That end is the jump, not the song finishing: playback picks back up
+    // where the jump landed instead of advancing the queue.
+    func testItemEndedRightAfterASeekResumes() async {
+        var state = PlayerFeature.State(queue: [Self.t1, Self.t2], currentIndex: 0)
+        state.currentTrack = Self.t1
+        state.duration = 200
+        state.isPlaying = true
+        state.playbackIntent = true
+        state.progress = 30
+        state.pendingSeekTarget = 30
+        state.engineHasItem = true
+        nonisolated(unsafe) var resumed = false
+        let store = TestStore(initialState: state) { PlayerFeature() } withDependencies: {
+            configureResolve(&$0)
+            $0.playback.play = { resumed = true }
+        }
+        await store.send(.itemEnded) {
+            $0.scrobbled = true
+            $0.pendingSeekTarget = nil
+            $0.startScrobbled = true
+        }
+        XCTAssertTrue(resumed)
+    }
+
+    // The real field sequence: a jump backwards, the playhead reaching the
+    // target (which clears the pending marker), a network stall that pauses the
+    // engine, and the frozen-time end detection firing *after* all of that.
+    // With the duration known, the position check still catches it.
+    func testLateItemEndedAfterASettledBackwardSeekResumes() async {
+        var state = PlayerFeature.State(queue: [Self.t1, Self.t2], currentIndex: 0)
+        state.currentTrack = Self.t1
+        state.duration = 200
+        state.isPlaying = true
+        state.playbackIntent = true
+        state.progress = 100
+        state.engineHasItem = true
+        nonisolated(unsafe) var resumed = false
+        let t0 = Date(timeIntervalSince1970: 1000)
+        let store = TestStore(initialState: state) { PlayerFeature() } withDependencies: {
+            configureResolve(&$0)
+            $0.date = .constant(t0)
+            $0.playback.seek = { _ in }
+            $0.playback.play = { resumed = true }
+        }
+        await store.send(.seek(30)) {
+            $0.progress = 30
+            $0.playbackIntent = true
+            $0.isPlaying = true
+            $0.pendingSeekTarget = 30
+            $0.seekGuardUntil = t0.addingTimeInterval(3)
+        }
+        await store.send(.timeTick(31)) {
+            $0.progress = 31
+            $0.pendingSeekTarget = nil
+        }
+        await store.send(.isPlayingChanged(false)) {
+            $0.isPlaying = false
+        }
+        await store.send(.itemEnded) {
+            $0.scrobbled = true
+            $0.startScrobbled = true
+            $0.isPlaying = true
+        }
+        XCTAssertTrue(resumed)
+    }
+
+    // Same sequence with the duration unknown — a track whose length the API
+    // never reported. The position check has nothing to compare against, so a
+    // late end used to slip past it and advance the queue: the field report of
+    // a seek that still skips. The jump's own grace window is what has to
+    // carry this case.
+    func testLateItemEndedWithUnknownDurationDoesNotAdvance() async {
+        var state = PlayerFeature.State(queue: [Self.t1, Self.t2], currentIndex: 0)
+        state.currentTrack = Self.t1
+        state.duration = 0
+        state.isPlaying = true
+        state.playbackIntent = true
+        state.progress = 100
+        state.engineHasItem = true
+        nonisolated(unsafe) var resumed = false
+        let t0 = Date(timeIntervalSince1970: 1000)
+        let store = TestStore(initialState: state) { PlayerFeature() } withDependencies: {
+            configureResolve(&$0)
+            $0.date = .constant(t0)
+            $0.playback.seek = { _ in }
+            $0.playback.play = { resumed = true }
+        }
+        await store.send(.seek(30)) {
+            $0.progress = 30
+            $0.playbackIntent = true
+            $0.isPlaying = true
+            $0.pendingSeekTarget = 30
+            $0.seekGuardUntil = t0.addingTimeInterval(3)
+        }
+        await store.send(.timeTick(31)) {
+            $0.progress = 31
+            $0.pendingSeekTarget = nil
+        }
+        await store.send(.isPlayingChanged(false)) {
+            $0.isPlaying = false
+        }
+        await store.send(.itemEnded) {
+            $0.scrobbled = true
+            $0.startScrobbled = true
+            $0.isPlaying = true
+        }
+        XCTAssertTrue(resumed)
+    }
+
+    // Once playback has genuinely moved on from a jump, a later end-of-item is
+    // the song finishing and the queue advances as normal.
+    func testTimeTickClearsASettledSeek() async {
+        var state = PlayerFeature.State(queue: [Self.t1, Self.t2], currentIndex: 0)
+        state.currentTrack = Self.t1
+        state.duration = 200
+        state.isPlaying = true
+        state.playbackIntent = true
+        state.progress = 30
+        state.pendingSeekTarget = 30
+        state.engineHasItem = true
+        let store = TestStore(initialState: state) { PlayerFeature() } withDependencies: {
+            configureResolve(&$0)
+        }
+        await store.send(.timeTick(199)) {
+            $0.progress = 199
+            $0.pendingSeekTarget = nil
+        }
+        await store.send(.itemEnded) {
+            $0.scrobbled = true
+        }
+        await store.receive(\.advanceToNext) {
+            $0.currentIndex = 1
+        }
+        await store.receive(\.startPlaying) {
+            $0.currentTrack = Self.t2
+            $0.duration = Self.t2.duration
+            $0.progress = 0
+            $0.lyrics = nil
+            $0.lyricsCursorIndex = nil
+            $0.scrobbled = false
+            $0.startScrobbled = false
+            $0.isPlaying = true
+            $0.engineHasItem = false
+            $0.bufferProgress = 0
+            $0.pendingSeekTarget = nil
+            $0.resolveGeneration = 1
+        }
+        await store.receive(\.lyricsResponse) {
+            $0.lyrics = LyricsParser.parse(Self.emptyLyrics())
+        }
+        await store.receive(\.urlResolved) {
+            $0.servedQuality = "exhigh"
+            $0.engineHasItem = true
+            $0.startScrobbled = true
+        }
+    }
+
     func testPreviousRestartsTrackWhenFarIn() async {
         var state = PlayerFeature.State(queue: [Self.t1, Self.t2], currentIndex: 1)
         state.currentTrack = Self.t2
         state.progress = 30
         state.isPlaying = true
         state.engineHasItem = true
+        let t0 = Date(timeIntervalSince1970: 1000)
         let store = TestStore(initialState: state) { PlayerFeature() } withDependencies: {
             configureResolve(&$0)
+            $0.date = .constant(t0)
         }
         await store.send(.previous)
         await store.receive(\.seek) {
             $0.progress = 0
+            $0.playbackIntent = true
+            $0.pendingSeekTarget = 0
+            $0.seekGuardUntil = t0.addingTimeInterval(3)
         }
     }
 
@@ -226,6 +467,7 @@ final class PlayerFeatureTests: XCTestCase {
             configureResolve(&$0)
         }
         await store.send(.previous) {
+            $0.playbackIntent = true
             $0.currentIndex = 0
         }
         await store.receive(\.startPlaying) {
@@ -258,6 +500,7 @@ final class PlayerFeatureTests: XCTestCase {
         }
         await store.receive(\.advanceToNext) {
             $0.playNextList = []
+            $0.playbackIntent = true
         }
         await store.receive(\.startPlaying) {
             $0.currentTrack = Self.t1
@@ -283,6 +526,7 @@ final class PlayerFeatureTests: XCTestCase {
         }
         await store.send(.jumpTo(Self.t1)) {
             $0.playNextList = [Self.t2]
+            $0.playbackIntent = true
         }
         await store.receive(\.startPlaying) {
             $0.currentTrack = Self.t1
@@ -318,7 +562,7 @@ final class PlayerFeatureTests: XCTestCase {
         let store = TestStore(initialState: state) { PlayerFeature() } withDependencies: {
             configureResolve(&$0)
         }
-        await store.send(.urlResolved(generation: 5, .init(url: nil, servedQuality: nil, isTrial: false, unblockSource: nil))) {
+        await store.send(.urlResolved(generation: 5, autostart: false, .init(url: nil, servedQuality: nil, isTrial: false, unblockSource: nil))) {
             $0.consecutiveFailures = 1
         }
         await store.receive(\.toast)
@@ -329,15 +573,17 @@ final class PlayerFeatureTests: XCTestCase {
         var state = PlayerFeature.State(queue: [Self.t1, Self.t2], currentIndex: 0)
         state.currentTrack = Self.t1
         state.isPlaying = true
+        state.playbackIntent = true
         state.resolveGeneration = 5
         let store = TestStore(initialState: state) { PlayerFeature() } withDependencies: {
             configureResolve(&$0)
         }
-        await store.send(.urlResolved(generation: 5, .init(url: nil, servedQuality: nil, isTrial: false, unblockSource: nil))) {
+        await store.send(.urlResolved(generation: 5, autostart: true, .init(url: nil, servedQuality: nil, isTrial: false, unblockSource: nil))) {
             $0.consecutiveFailures = 1
         }
         await store.receive(\.toast)
         await store.receive(\.advanceToNext) {
+            $0.playbackIntent = true
             $0.currentIndex = 1
         }
         await store.receive(\.startPlaying) {
@@ -374,6 +620,7 @@ final class PlayerFeatureTests: XCTestCase {
         }
         await store.send(.next)
         await store.receive(\.advanceToNext) {
+            $0.playbackIntent = true
             $0.currentIndex = 1
         }
         await store.receive(\.startPlaying) {
@@ -449,7 +696,9 @@ final class PlayerFeatureTests: XCTestCase {
             configureResolve(&$0)
             $0.netease.personalFM = { [Self.t1] }
         }
-        await store.send(.fmNext)
+        await store.send(.fmNext) {
+            $0.playbackIntent = true
+        }
         await store.receive(\.fmAdvance)
         await store.receive(\.fmFetch)
         await store.receive(\.fmResponse) {
@@ -491,6 +740,7 @@ final class PlayerFeatureTests: XCTestCase {
         await store.send(.play(tracks: [Self.t1], source: .none, startAt: nil,
                               context: .playlist(id: 1, name: "A"))) {
             $0.queue = [Self.t1]
+            $0.playbackIntent = true
             $0.currentIndex = 0
             $0.recentContexts = [.playlist(id: 1, name: "A"), .playlist(id: 2, name: "B")]
         }
@@ -523,6 +773,7 @@ final class PlayerFeatureTests: XCTestCase {
             }
             await store.send(.play(tracks: [Self.t1], source: .none, startAt: nil, context: nil)) {
                 $0.queue = [Self.t1]
+                $0.playbackIntent = true
                 $0.currentIndex = 0
             }
             await store.receive(\.startPlaying) {

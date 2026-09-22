@@ -151,6 +151,7 @@ struct AppFeature {
                 guard !state.isAppeared else { return .none }
                 state.isAppeared = true
                 return .merge(
+                    .send(.player(.onAppear)),
                     .send(.settings(.onAppear)),
                     .send(.account(.bootstrap)),
                     .send(.updater(.onAppear)),

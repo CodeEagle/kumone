@@ -24,9 +24,9 @@ struct PlaybackEngineClient {
     var setVolume: @Sendable (_ volume: Float) -> Void = { _ in }
     /// Stops playback (used when playback stops for good).
     var clear: @Sendable () -> Void = {}
-    /// Pushes the current track's title/artist/album onto the system's Now
-    /// Playing surface (lock screen, Control Center, AirPlay 2).
-    var updateMetadata: @Sendable (_ title: String, _ artist: String, _ album: String) -> Void = { _, _, _ in }
+    /// Pushes the current track's title/artist/album/cover onto the system's
+    /// Now Playing surface (lock screen, Control Center, AirPlay 2).
+    var updateMetadata: @Sendable (_ title: String, _ artist: String, _ album: String, _ cover: PlatformImage?) -> Void = { _, _, _, _ in }
 
     // MARK: - Reads
 
@@ -40,8 +40,9 @@ struct PlaybackEngineClient {
     var timeTicks: @Sendable () -> AsyncStream<TimeInterval> = { .never }
     /// Fired when the current item plays to its end.
     var itemEnded: @Sendable () -> AsyncStream<Void> = { .never }
-    /// Waiting-to-play → buffering state.
-    var bufferingChanged: @Sendable () -> AsyncStream<Bool> = { .never }
+    /// Waiting-to-play → buffering progress (0...1), reported continuously for
+    /// network streams. The transport's loading state is derived from it.
+    var bufferingChanged: @Sendable () -> AsyncStream<Double> = { .never }
     /// Playback state as the engine sees it — including the pauses it applies on
     /// its own (an iOS interruption, an unplugged route), which the reducer
     /// would otherwise never hear about.
@@ -60,7 +61,7 @@ extension PlaybackEngineClient: DependencyKey {
             seek: { seconds in engine.seek(to: seconds) },
             setVolume: { volume in engine.setVolume(volume) },
             clear: { engine.clear() },
-            updateMetadata: { title, artist, album in engine.updateMetadata(title: title, artist: artist, album: album) },
+            updateMetadata: { title, artist, album, cover in engine.updateMetadata(title: title, artist: artist, album: album, cover: cover) },
             currentTime: { engine.currentTime() },
             timeTicks: { engine.timeTicks },
             itemEnded: { engine.itemEnded },
@@ -80,7 +81,7 @@ extension PlaybackEngineClient: DependencyKey {
         seek: { _ in },
         setVolume: { _ in },
         clear: {},
-        updateMetadata: { _, _, _ in },
+        updateMetadata: { _, _, _, _ in },
         currentTime: { 0 },
         timeTicks: { .never },
         itemEnded: { .never },
@@ -108,13 +109,16 @@ extension DependencyValues {
 /// resumes itself and reports the change through `isPlayingChanged`.
 fileprivate final class PlaybackEngine: @unchecked Sendable {
     private let player: APlay
+    /// The engine's last reported playing state, so buffering events arriving
+    /// mid-playback can be ignored (a network stream buffers forever).
+    private var isPlaying = false
 
     fileprivate let timeTicks: AsyncStream<TimeInterval>
     private let timeTicksContinuation: AsyncStream<TimeInterval>.Continuation
     fileprivate let itemEnded: AsyncStream<Void>
     private let itemEndedContinuation: AsyncStream<Void>.Continuation
-    fileprivate let bufferingChanged: AsyncStream<Bool>
-    private let bufferingChangedContinuation: AsyncStream<Bool>.Continuation
+    fileprivate let bufferingChanged: AsyncStream<Double>
+    private let bufferingChangedContinuation: AsyncStream<Double>.Continuation
     fileprivate let isPlayingChanged: AsyncStream<Bool>
     private let isPlayingChangedContinuation: AsyncStream<Bool>.Continuation
 
@@ -130,10 +134,26 @@ fileprivate final class PlaybackEngine: @unchecked Sendable {
             enableRemoteCommandHandling: false
         )
         player = APlay(configuration: configuration)
+        // The reducer owns the queue: it loads one URL at a time and decides what
+        // follows. APlay's own list advance must stay out of it — with the
+        // default `.order` pattern a single-item list wraps back to the same
+        // URL, so an end-of-item the engine detects on its own (which a seek
+        // can spuriously produce while its ranged re-download stalls) reloads
+        // the current track from zero and reads as an unwanted skip.
+        // Stopping at the list end leaves every advance to the reducer.
+        player.loopPattern = .stopWhenAllPlayed(.order)
+
+        // The engine's PCM is the only audio source the spectrum ever sees, so
+        // the tap lives for the engine's lifetime and points straight at the
+        // shared spectrum store. It fires on the render thread; the store is
+        // lock-free and preallocated, exactly what that thread requires.
+        player.pcmTap = { (bufferList, frameCount, format) in
+            AudioSpectrum.shared.ingest(bufferList, frameCount: frameCount, format: format)
+        }
 
         (timeTicks, timeTicksContinuation) = AsyncStream.makeStream(of: TimeInterval.self)
         (itemEnded, itemEndedContinuation) = AsyncStream.makeStream(of: Void.self)
-        (bufferingChanged, bufferingChangedContinuation) = AsyncStream.makeStream(of: Bool.self)
+        (bufferingChanged, bufferingChangedContinuation) = AsyncStream.makeStream(of: Double.self)
         (isPlayingChanged, isPlayingChangedContinuation) = AsyncStream.makeStream(of: Bool.self)
 
         player.eventPipeline.delegate(to: Self.noop) { [weak self] _, event in
@@ -144,11 +164,20 @@ fileprivate final class PlaybackEngine: @unchecked Sendable {
             case .playEnded:
                 self.itemEndedContinuation.yield()
             case let .buffering(progress):
-                // A buffering progress strictly between 0 and 1 means data is
-                // still arriving; 1 is fully buffered and 0 is "not started".
-                self.bufferingChangedContinuation.yield(progress > 0 && progress < 1)
+                // A network stream buffers continuously: APlay reports a
+                // progress strictly between 0 and 1 for the whole track. The
+                // raw progress is forwarded; the reducer decides whether that
+                // counts as "loading" (it does only before playback starts).
+                self.bufferingChangedContinuation.yield(Double(progress))
             case let .state(state):
+                self.isPlaying = state.isPlaying
                 self.isPlayingChangedContinuation.yield(state.isPlaying)
+                // Playing is the reliable "this track is tapped" signal: by now
+                // the source is resolved and the render graph is pulling samples
+                // through the tap.
+                if state.isPlaying {
+                    AudioSpectrum.shared.markTapped()
+                }
             default:
                 break
             }
@@ -169,6 +198,10 @@ fileprivate final class PlaybackEngine: @unchecked Sendable {
     // MARK: - Commands
 
     func load(url: URL, autostart: Bool) {
+        // A track change starts in "preparing": the URL is still being resolved
+        // and no samples have arrived, so the shaders hold still rather than
+        // flashing the last track's frozen levels.
+        AudioSpectrum.shared.beginPreparing()
         if autostart {
             player.play(url)
         } else {
@@ -196,9 +229,10 @@ fileprivate final class PlaybackEngine: @unchecked Sendable {
 
     func clear() {
         player.pause()
+        AudioSpectrum.shared.markIdle()
     }
 
-    func updateMetadata(title: String, artist: String, album: String) {
-        player.metadataUpdate(title: title, album: album, artist: artist)
+    func updateMetadata(title: String, artist: String, album: String, cover: PlatformImage?) {
+        player.metadataUpdate(title: title, album: album, artist: artist, cover: cover)
     }
 }

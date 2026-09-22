@@ -130,6 +130,7 @@ struct MainWindow: View {
                 NowPlayingView(
                     onOpenDestination: openDestination
                 )
+                    .environment(\.appStore, store)
                     .environmentObject(artworkStore)
                     // Resolve the slide at the page boundary, including artwork
                     // inserted asynchronously while the transition is running.
@@ -139,6 +140,7 @@ struct MainWindow: View {
                 NowPlayingView(
                     onOpenDestination: openDestination
                 )
+                    .environment(\.appStore, store)
                     .transition(.move(edge: .bottom).combined(with: .opacity))
                 #endif
             }
