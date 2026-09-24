@@ -8,9 +8,6 @@ public struct MainWindow: View {
     }
 
     @SwiftUI.Bindable var store: StoreOf<AppFeature>
-#if os(macOS)
-    @Environment(\.openWindow) private var openWindow
-#endif
     @Environment(\.colorScheme) private var colorScheme
 
     #if os(macOS)
@@ -92,10 +89,6 @@ public struct MainWindow: View {
         .task {
             store.send(.onAppear)
 #if os(macOS)
-            // Keep this action in the app delegate: when the user closes the
-            // last WindowGroup window, there is no view left to receive a
-            // Dock reopen event directly.
-            AppDelegate.shared?.openMainWindow = { openWindow(id: "main") }
             artworkStore.setArtworkNeeded(needsCurrentArtwork)
 #endif
             DesktopLyricsController.shared.sync(with: store.settings.showDesktopLyrics, store: store)
@@ -293,11 +286,9 @@ public struct MainWindow: View {
 
 /// Grabs the single main `NSWindow` once it exists and installs a close
 /// interceptor: Cmd+W / the red button *hide* the window (`orderOut`) instead
-/// of destroying the single-instance `Window` scene. Destroying the scene left
-/// the app running with no way to reopen it (#60/#66/#70); hiding keeps the
-/// SwiftUI scene fully alive so `AppDelegate.applicationShouldHandleReopen`
-/// can front it again on a Dock click. Every other window-delegate callback is
-/// forwarded untouched to SwiftUI's own delegate.
+/// of destroying it. The native AppKit shell retains the window controller
+/// and restores the window on a Dock click. Every other window-delegate
+/// callback is forwarded untouched to the existing delegate.
 struct MainWindowConfigurator: NSViewRepresentable {
     let ambientConfiguration: MainWindowAmbientConfiguration
 
@@ -342,7 +333,6 @@ struct MainWindowConfigurator: NSViewRepresentable {
                 forwardee = window.delegate
                 window.delegate = self
             }
-            AppDelegate.shared?.mainWindow = window
         }
 
         func requestAmbientBackgroundConfiguration(
