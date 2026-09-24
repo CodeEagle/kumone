@@ -1,0 +1,4 @@
+#include "Shared.xcconfig"
+
+XROS_DEPLOYMENT_TARGET = 1.0
+TARGETED_DEVICE_FAMILY = 7

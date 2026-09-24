@@ -1,0 +1,4 @@
+#include "Shared.xcconfig"
+
+TVOS_DEPLOYMENT_TARGET = 17.0
+TARGETED_DEVICE_FAMILY = 3

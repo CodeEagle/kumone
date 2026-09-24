@@ -1,0 +1,11 @@
+#include "Shared.xcconfig"
+
+IPHONEOS_DEPLOYMENT_TARGET = 17.0
+TARGETED_DEVICE_FAMILY = 1,2
+KUMONE_INFOPLIST_FILE = Config/Generated/KumoneiOS-Info.plist
+// Empty by default; the optional CarPlay overlay supplies an entitlement file.
+KUMONE_ENTITLEMENTS_FILE =
+#include? "CarPlay.local.xcconfig"
+
+INFOPLIST_FILE = $(KUMONE_INFOPLIST_FILE)
+CODE_SIGN_ENTITLEMENTS = $(KUMONE_ENTITLEMENTS_FILE)

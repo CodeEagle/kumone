@@ -12,3 +12,7 @@ ios/Config/Generated/
 
 # Agent-harness state (pi coding-agent), not project content
 .pi/
+
+# agent working artifacts
+.git-agent/
+.plan/

@@ -1,0 +1,175 @@
+name: Kumone
+options:
+  minimumXcodeGenVersion: "2.44.1"
+  xcodeVersion: "27.0"
+  deploymentTarget:
+    macOS: "15.0"
+    iOS: "17.0"
+    tvOS: "17.0"
+    visionOS: "1.0"
+  developmentLanguage: zh-Hans
+  createIntermediateGroups: true
+configFiles:
+  Debug: Config/Debug.xcconfig
+  Release: Config/Release.xcconfig
+packages:
+  Kumone:
+    path: .
+  Sparkle:
+    url: https://github.com/sparkle-project/Sparkle
+    from: "2.10.0"
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    MARKETING_VERSION: "0.1.0"
+    CURRENT_PROJECT_VERSION: "1"
+    CODE_SIGN_STYLE: Automatic
+    GENERATE_INFOPLIST_FILE: NO
+targetTemplates:
+  CommonApp:
+    type: application
+    sources:
+      - path: Sources/KumoneShaders/Shaders
+        includes: ["*.metal"]
+        buildPhase: sources
+    dependencies:
+      - package: Kumone
+        product: KumoneCore
+      - package: Kumone
+        product: KumoneShaders
+    settings:
+      base:
+        MTL_HEADER_SEARCH_PATHS: "$(inherited) $(SRCROOT)/Sources/KumoneShaders/include"
+    info:
+      path: Config/Generated/${target_name}-Info.plist
+      properties:
+        CFBundleDisplayName: Kumone
+        CFBundleLocalizations: [zh-Hans, en]
+        NSAppTransportSecurity:
+          NSAllowsArbitraryLoads: true
+  UIKitApp:
+    sources:
+      - path: Apps/UIKitCommon
+    info:
+      properties:
+        UIApplicationSceneManifest:
+          UIApplicationSupportsMultipleScenes: false
+          UISceneConfigurations:
+            UIWindowSceneSessionRoleApplication:
+              - UISceneConfigurationName: Main
+                UISceneClassName: UIWindowScene
+                UISceneDelegateClassName: "$(PRODUCT_MODULE_NAME).SceneDelegate"
+        UIBackgroundModes: [audio]
+        UILaunchScreen: {}
+targets:
+  KumoneMac:
+    templates: [CommonApp]
+    platform: macOS
+    sources:
+      - path: Apps/Mac
+      - path: AppIcon.icon
+        type: file
+        buildPhase: resources
+    configFiles:
+      Debug: Config/macOS.xcconfig
+      Release: Config/macOS.xcconfig
+    dependencies:
+      - package: Kumone
+        product: KumoneTCA
+      - package: Sparkle
+        product: Sparkle
+    settings:
+      base:
+        PRODUCT_NAME: Kumone
+        PRODUCT_BUNDLE_IDENTIFIER: im.missuo.Kumone
+        ENABLE_APP_SANDBOX: NO
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        LD_RUNPATH_SEARCH_PATHS: "$(inherited) @executable_path/../Frameworks"
+      configs:
+        Debug:
+          ENABLE_HARDENED_RUNTIME: NO
+        Release:
+          ENABLE_HARDENED_RUNTIME: YES
+    info:
+      properties:
+        NSPrincipalClass: NSApplication
+        LSApplicationCategoryType: public.app-category.music
+        SUFeedURL: https://github.com/missuo/kumone/releases/latest/download/appcast.xml
+        SUPublicEDKey: RHEhllstUuuVrVDCPGrbhg/8LivSzpuZB9X3u3xdV5o=
+        SUEnableAutomaticChecks: true
+  KumoneiOS:
+    templates: [CommonApp, UIKitApp]
+    platform: iOS
+    sources:
+      - path: Apps/iOS
+      - path: AppIcon.icon
+        type: file
+        buildPhase: resources
+    configFiles:
+      Debug: Config/iOS.xcconfig
+      Release: Config/iOS.xcconfig
+    dependencies:
+      - package: Kumone
+        product: KumoneTCA
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: sb.moe.kumone
+        TARGETED_DEVICE_FAMILY: "1,2"
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        # Preserve the optional CarPlay override over XcodeGen's info.path setting.
+        INFOPLIST_FILE: "$(KUMONE_INFOPLIST_FILE)"
+        CODE_SIGN_ENTITLEMENTS: "$(KUMONE_ENTITLEMENTS_FILE)"
+    info:
+      properties:
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        UISupportedInterfaceOrientations~ipad:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationPortraitUpsideDown
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+  KumoneTV:
+    templates: [CommonApp, UIKitApp]
+    platform: tvOS
+    sources:
+      - path: Apps/TV
+    configFiles:
+      Debug: Config/tvOS.xcconfig
+      Release: Config/tvOS.xcconfig
+    dependencies:
+      - package: Kumone
+        product: KumoneTCA
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: sb.moe.kumone.tv
+        ASSETCATALOG_COMPILER_APPICON_NAME: "App Icon & Top Shelf Image"
+  KumoneVision:
+    templates: [CommonApp, UIKitApp]
+    platform: visionOS
+    sources:
+      - path: Apps/Vision
+    configFiles:
+      Debug: Config/visionOS.xcconfig
+      Release: Config/visionOS.xcconfig
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: sb.moe.kumone.vision
+    info:
+      properties:
+        UIApplicationSceneManifest:
+          UIApplicationPreferredDefaultSceneSessionRole: UIWindowSceneSessionRoleApplication
+schemes:
+  KumoneMac:
+    build:
+      targets: {KumoneMac: all}
+  KumoneiOS:
+    build:
+      targets: {KumoneiOS: all}
+  KumoneTV:
+    build:
+      targets: {KumoneTV: all}
+  KumoneVision:
+    build:
+      targets: {KumoneVision: all}
