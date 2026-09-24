@@ -8,9 +8,8 @@
 //  a step-discretized gradient. The per-cell randomizers are pure hash
 //  functions, so no auxiliary texture has to be bound.
 //
-//  Ported, the low band sets the grid scale, mids widen the orbits, the beat
-//  swells the dots, and loudness sets the orbit speed. The gradient is the
-//  host palette stretched across the original ten slots.
+//  Self-driven wander eases grid scale, orbit width and dot size, with a
+//  positive orbit rate. The host palette spans the original ten gradient slots.
 //
 
 #include "KumoneShaderTypes.h"
@@ -87,19 +86,18 @@ fragment float4 kumone_fragment_dot_orbit(Varying in [[stage_in]],
     float2 position = in.uv * u.resolution.y;
     float2 size = u.resolution;
 
-    // Audio: low sets the grid scale, mids widen the orbits, beat swells the
-    // dots, loudness sets the orbit speed.
-    float scale = 1.5 + u.low * 2.5;
-    float spreading = 0.4 + u.mid * 0.8;
-    float dotScale = 0.6 + u.beat * 1.0 + u.level * 0.4;
-    float speed = 0.5 + u.loudness * 1.2;
+    // Independent slow wander keeps the field self-driven.
+    float scale = 2.75 + (wander(u.time * 0.04, 0.0) - 0.5) * 2.0 * 1.25;
+    float spreading = 0.8 + (wander(u.time * 0.04, 1.7) - 0.5) * 2.0 * 0.4;
+    float dotScale = 1.3 + (wander(u.time * 0.04, 3.3) - 0.5) * 2.0 * 0.7;
 
     float minDim = max(min(size.x, size.y), 1.0);
     float2 uv = (position - 0.5 * size) / minDim;
     uv *= max(scale, 1e-4);
 
     const float firstFrameOffset = -10.0;
-    float t = u.time * speed + firstFrameOffset;
+    // Additive phase flow: amp = base / (0.05 * 8.0) keeps velocity positive; no reversal.
+    float t = u.time * 0.8 + wander(u.time * 0.05, 5.9) * 2.0 + firstFrameOffset;
 
     float3 voro = dotOrbitVoronoi(uv, t, spreading) + 1e-4;
 

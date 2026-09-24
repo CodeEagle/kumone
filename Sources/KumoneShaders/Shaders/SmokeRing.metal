@@ -9,9 +9,8 @@
 //  re-rolls instead of looping visibly. The distorted ring mask drives the
 //  alpha and a step-quantized colour gradient.
 //
-//  Ported, the low band sets the ring's radius, the beat pulses its thickness,
-//  mids set the noise frequency, loudness drives the re-roll speed, and the
-//  highs widen the inner fill. The gradient is the host palette.
+//  Self-driven wander eases ring radius, thickness, noise frequency and
+//  inner fill. The re-roll rate stays positive; the gradient is the host palette.
 //
 
 #include "KumoneShaderTypes.h"
@@ -79,13 +78,13 @@ fragment float4 kumone_fragment_smoke_ring(Varying in [[stage_in]],
     float2 position = in.uv * u.resolution.y;
     float2 size = u.resolution;
 
-    // Audio: low sets the radius, beat pulses the thickness, mids set the
-    // noise frequency, loudness re-rolls the smoke, highs widen the fill.
+    // Independent slow wander keeps the field self-driven.
     float scale = 1.0;
-    float radius = 0.35 + u.low * 0.5;
-    float thickness = 0.15 + u.beat * 0.35;
-    float innerShape = 1.0 + u.high * 2.0;
-    float noiseScale = 1.5 + u.mid * 3.5;
+    float radius = 0.6 + (wander(u.time * 0.04, 0.0) - 0.5) * 2.0 * 0.25;
+    // Gentle thickness breathing follows slow drift, without sustained beat swelling.
+    float thickness = 0.19 + (wander(u.time * 0.04, 1.7) - 0.5) * 2.0 * 0.04;
+    float innerShape = 2.0 + (wander(u.time * 0.04, 3.3) - 0.5) * 2.0 * 1.0;
+    float noiseScale = 3.25 + (wander(u.time * 0.04, 5.9) - 0.5) * 2.0 * 1.75;
     int iterations = 6;
     const float cycleDuration = 3.0;
 
@@ -93,7 +92,8 @@ fragment float4 kumone_fragment_smoke_ring(Varying in [[stage_in]],
     float2 uv = (position - 0.5 * size) / (0.5 * maxDim);
     uv /= max(scale, 0.001);
 
-    float t = u.time * (0.5 + u.loudness);
+    // Additive phase flow: amp = base / (0.05 * 8.0) keeps velocity positive; no reversal.
+    float t = u.time * 0.75 + wander(u.time * 0.05, 8.1) * 1.875;
 
     // Two phase-shifted time loops + a cross-fade so the smoke never visibly
     // repeats.

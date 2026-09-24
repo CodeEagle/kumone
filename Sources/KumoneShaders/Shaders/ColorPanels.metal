@@ -10,10 +10,8 @@
 //  panel we're on. Panels spawn in two interleaved sets so the wheel appears
 //  continuous.
 //
-//  Ported, the low band zooms the wheel, mids set the panel density, highs
-//  control the fade near the axis and the viewer, loudness sets the rotation
-//  speed, and the beat skews the panel edges. The panel colours come from the
-//  host palette.
+//  Self-driven wander eases wheel scale, density, edge skew and fades;
+//  the rotation rate stays positive. Panel colours come from the host palette.
 //
 
 #include "KumoneShaderTypes.h"
@@ -86,14 +84,13 @@ fragment float4 kumone_fragment_color_panels(Varying in [[stage_in]],
     float2 position = in.uv * u.resolution.y;
     float2 size = u.resolution;
 
-    // Audio: low zooms the wheel, mids set the density, highs set the fades,
-    // loudness rotates, beat skews the edges.
-    float scale = 1.0 + u.low * 0.6;
-    float density = 1.2 + u.mid * 1.5;
-    float angle1 = -0.2 + u.beat * 0.8;
-    float angle2 = 0.2 - u.beat * 0.8;
-    float fadeIn = 0.35 + u.high * 0.5;
-    float fadeOut = 0.5 + u.high * 0.4;
+    // Independent slow wander keeps the field self-driven.
+    float scale = 1.3 + (wander(u.time * 0.04, 0.0) - 0.5) * 2.0 * 0.3;
+    float density = 1.95 + (wander(u.time * 0.04, 1.7) - 0.5) * 2.0 * 0.75;
+    float angle1 = 0.2 + (wander(u.time * 0.04, 3.3) - 0.5) * 2.0 * 0.4;
+    float angle2 = -0.2 + (wander(u.time * 0.04, 5.9) - 0.5) * 2.0 * 0.4;
+    float fadeIn = 0.6 + (wander(u.time * 0.04, 8.1) - 0.5) * 2.0 * 0.25;
+    float fadeOut = 0.7 + (wander(u.time * 0.04, 10.7) - 0.5) * 2.0 * 0.2;
     const float panelLength = 1.0;
     const float blur = 0.06;
     const float gradient = 0.5;
@@ -107,7 +104,8 @@ fragment float4 kumone_fragment_color_panels(Varying in [[stage_in]],
     uv /= max(scale, 0.001);
     uv *= 1.25;
 
-    float t = 0.02 * u.time * (0.4 + u.loudness * 1.6);
+    // Additive phase flow: amp = base / (0.05 * 8.0) keeps velocity positive; no reversal.
+    float t = 0.02 * (u.time * 0.9 + wander(u.time * 0.05, 13.3) * 2.25);
     t = fract(t);
     bool reverseTime = (t < 0.5);
 

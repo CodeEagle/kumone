@@ -22,19 +22,16 @@ SWDots family).
 | `ColorPanels.metal` — Color_panels | `SWColorPanels.metal` |
 | `DotOrbit.metal` — Dot_orbit | `SWDotOrbit.metal` |
 | `DotShape.metal` — Dot_shape | `SWDotsPlasma.metal` (stands in for the Canvas-only "Dot Sphere") |
-| `Dots.metal` — Dots | `SWDotsWavy.metal` |
 | `InkSmoke.metal` — Ink_smoke | `SWInkSmoke.metal` |
 | `Metaballs.metal` — Metaballs | `SWMetaballs.metal` |
 | `NeuroNoise.metal` — Neuro_noise | `SWNeuroNoise.metal` |
 | `SimplexNoise.metal` — Simplex_noise | `SWSimplexNoise.metal` |
 | `SmokeRing.metal` — Smoke_ring | `SWSmokeRing.metal` |
-| `StarNest.metal` — Star_nest | `SWStarNest.metal` (adapted from "Star Nest" by Pablo Roman Andrioli, MIT) |
 | `Swirl.metal` — Swirl | `SWSwirl.metal` |
 | `Voronoi.metal` | `SWVoronoi.metal` |
 
-`SimplexNoise.metal`, `Swirl.metal` and `StarNest.metal` embed Ashima Arts'
-2D simplex noise (public domain) and Kali's Star Nest, both carried over from
-their ShipSwift sources.
+`SimplexNoise.metal` and `Swirl.metal` embed Ashima Arts'
+2D simplex noise (public domain), carried over from their ShipSwift sources.
 
 ---
 

@@ -5,9 +5,8 @@
 //  MIT — see ACKNOWLEDGEMENTS).
 //
 //  The originals march up to eight blobs around the field with a smooth
-//  metaball merge. Ported, the low band sizes them and the beat pumps them, the
-//  mids add companions, and loudness quickens the drift — so a bass drop makes
-//  the blobs swell and kiss. The host's four-color palette is stretched into
+//  metaball merge. Self-driven wander eases blob size and count, with a
+//  positive drift rate. The host's four-color palette is stretched into
 //  the original's eight slots.
 //
 //  Entry point: kumone_fragment_metaballs — orbiting blobs.
@@ -62,17 +61,16 @@ fragment float4 kumone_fragment_metaballs(Varying in [[stage_in]],
     float2 uv = in.uv / aspect;                  // 0..1 square coordinates
     float2 aspectScale = aspect;
 
-    // Audio: low sizes the balls and the beat pumps them, mids add companions,
-    // loudness speeds the drift.
-    float speed = 0.35 + u.loudness * 0.5;
-    float count = 5.0 + u.mid * 3.0;
-    float size  = 0.40 + u.low * 0.35 + u.beat * 0.2;
+    // Independent slow wander keeps the field self-driven.
+    float count = 6.5 + (wander(u.time * 0.04, 1.7) - 0.5) * 2.0 * 1.5;
+    float size  = 0.675 + (wander(u.time * 0.04, 3.3) - 0.5) * 2.0 * 0.275;
 
     float3 colors[8];
     metaballsPalette(u, colors);
     int colorsCountInt = 5;
 
-    float t = 0.2 * (time * speed + 2503.4);
+    // Additive phase flow: amp = base / (0.05 * 8.0) keeps velocity positive; no reversal.
+    float t = 0.2 * (time * 0.45 + wander(u.time * 0.05, 0.0) * 1.125 + 2503.4);
     float countClamped = min(max(count, 1.0), 8.0);
     int countCeil = int(ceil(countClamped));
 

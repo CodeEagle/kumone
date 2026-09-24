@@ -11,13 +11,10 @@
 //  two edges, then maps across up to ten colours with `fwidth()`-based
 //  anti-aliasing at every boundary.
 //
-//  Ported, loudness sets the spin rate and the beat shakes the spiral — a
-//  fast small jitter on the angle, plus simplex noise on the band edges. The
-//  geometry itself (scale, band count, twist, centre radius) is fixed: every
-//  band-driven size eases back when the band does, which reads as the spiral
-//  unwinding, so only monotonic motion and the beat's trembling are allowed.
-//  The palette is the host's four colours stretched across the original's
-//  ten slots.
+//  Self-driven wander eases a positive spin rate and gentle simplex breathing,
+//  without continuous angular tremble. Scale, band count, twist and
+//  centre radius stay fixed; inward phase flow stays positive. The host's four
+//  palette colours are stretched across the original's ten slots.
 //
 
 #include "KumoneShaderTypes.h"
@@ -68,16 +65,12 @@ fragment float4 kumone_fragment_swirl(Varying in [[stage_in]],
     float2 position = in.uv * u.resolution.y;
     float2 size = u.resolution;
 
-    // The spiral's geometry is fixed. Anything the bands drove here — scale,
-    // band count, twist, centre radius — eases back when the band does, and
-    // that reads as the spiral unwinding or pumping, i.e. running in reverse.
-    // The spin below is monotonic, so it can never rewind; the beat is the
-    // only audio input allowed to move anything, and only to shake it.
+    // Fixed spiral geometry; slow phase drift and gentle breathing only.
     float scale = 1.0;
     float bandCount = 7.0;
     float twistRaw = 0.55;
     float center = 0.45;
-    float noiseStrength = 0.5 * u.beat;
+    float noiseStrength = 0.06 + (wander(u.time * 0.04, 0.0) - 0.5) * 2.0 * 0.04;
     const float noiseFrequency = 0.5;
     const float softness = 0.35;
     const float proportion = 0.5;
@@ -88,26 +81,18 @@ fragment float4 kumone_fragment_swirl(Varying in [[stage_in]],
     float2 uv = (position - 0.5 * size) / (0.5 * maxDim);
     uv /= max(scale, 0.001);
 
-    // Continuous spin: `t` only ever grows, so the spiral turns one way
-    // forever. A firm base rate keeps it visibly advancing even when the music
-    // is quiet — a slow spin reads as drifting, not turning — and loudness
-    // rides the rate without ever reversing it.
-    float t = u.time * (0.45 + u.loudness * 0.5);
+    // Additive phase flow: amp = base / (0.05 * 8.0) keeps velocity positive; no reversal.
+    float t = u.time * 0.6 + wander(u.time * 0.05, 1.7) * 1.5;
 
     // An inward phase flow: a slow monotonic term on the band offset makes the
     // arms travel along the gradient instead of only rotating in place, so the
     // field reads as a vortex pulling inward. Monotonic, so it cannot rewind.
     float flow = u.time * 0.03;
 
-    // The beat shakes the spiral: a fast, small, back-and-forth jitter on the
-    // angle. The amplitude stays well under the per-frame spin, otherwise the
-    // trembling swamps the rotation and the whole field reads as oscillating
-    // in place rather than turning.
-    float jitter = u.beat * sin(u.time * 15.0) * 0.18;
-
     float l = max(1e-4, length(uv));
 
-    float angle = ceil(bandCount) * atan2(uv.y, uv.x) + t + jitter;
+    // Slow phase drift turns the spiral smoothly, without continuous jitter.
+    float angle = ceil(bandCount) * atan2(uv.y, uv.x) + t;
     float angleNorm = angle / TWO_PI;
     float twist  = 3.0 * clamp(twistRaw, 0.0, 1.0);
     float offset = pow(l, -twist) + angleNorm + flow;
@@ -116,7 +101,7 @@ fragment float4 kumone_fragment_swirl(Varying in [[stage_in]],
     float shape = fract(offset);
     shape = 1.0 - abs(2.0 * shape - 1.0);
 
-    // Optional simplex distortion, driven by the beat.
+    // Narrow distortion strength keeps the edges gently breathing as they drift.
     shape += noiseStrength * swirlSNoise(15.0 * pow(noiseFrequency, 2.0) * uv);
 
     // Mask out a tiny disc at the origin (the atan2(0,0) singularity).

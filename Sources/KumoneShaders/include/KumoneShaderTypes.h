@@ -66,3 +66,12 @@ static inline float fbm(float2 p) {
     }
     return v;
 }
+
+// Self-driven wander: `fbm` read along a line that advances with `t`. The
+// underlying value noise is smoothstep-interpolated, so a parameter keyed on
+// this eases slowly between random levels — organic random motion that never
+// reacts to the audio. `seed` offsets the sampling line so each parameter
+// wanders independently of the others.
+static inline float wander(float t, float seed) {
+    return fbm(float2(t, seed));
+}

@@ -9,9 +9,8 @@
 //  a final fbm sampled at the double-warped point. Four ink colors are mixed
 //  by `f`, `q.x` and `r2.y`, then a wispy highlight is added where `f` peaks.
 //
-//  Ported, the low band sets the field's scale, mids strengthen the domain
-//  warp, loudness drives the drift, and the highs plus the beat light the
-//  wispy highlights. The four inks are the host palette.
+//  Self-driven wander eases field scale, domain warp and wispy highlights.
+//  The drift rate stays positive. The four inks are the host palette.
 //
 
 #include "KumoneShaderTypes.h"
@@ -51,16 +50,15 @@ fragment float4 kumone_fragment_ink_smoke(Varying in [[stage_in]],
     float2 position = in.uv * u.resolution.y;
     float2 size = u.resolution;
 
-    // Audio: low opens the scale, mids deepen the warp, loudness sets the
-    // drift, highs and beat light the highlights.
-    float scale = 1.2 + u.low * 1.8;
-    float warp = 0.5 + u.mid * 1.4;
-    float speed = 0.5 + u.loudness * 1.0;
-    float highlight = 0.5 + u.high * 0.8 + u.beat * 0.6;
+    // Independent slow wander keeps the field self-driven.
+    float scale = 2.1 + (wander(u.time * 0.04, 0.0) - 0.5) * 2.0 * 0.9;
+    float warp = 1.2 + (wander(u.time * 0.04, 1.7) - 0.5) * 2.0 * 0.7;
+    float highlight = 1.2 + (wander(u.time * 0.04, 5.9) - 0.5) * 2.0 * 0.7;
 
     float2 uv = (position * 2.0 - size) / min(size.x, size.y);
 
-    float  t = u.time * speed * 0.2;
+    // Additive phase flow: amp = base / (0.05 * 8.0) keeps velocity positive; no reversal.
+    float  t = 0.2 * (u.time * 0.75 + wander(u.time * 0.05, 3.3) * 1.875);
     float2 p = uv * max(scale, 0.0001);
 
     // Two-stage domain warp.

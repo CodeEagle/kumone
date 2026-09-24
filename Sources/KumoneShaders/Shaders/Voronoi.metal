@@ -4,10 +4,9 @@
 //  Ported from ShipSwift's `SWVoronoi.metal` (github.com/signerlabs/ShipSwift,
 //  MIT — see ACKNOWLEDGEMENTS).
 //
-//  Cellular noise with a quantized palette and a glowing ridge. Ported, the low
-//  band zooms the pattern, mids distort the cell centers, and the beat flashes
-//  the borders — the ridges light up on the kick. The host's four-color palette
-//  fills the original's five slots.
+//  Cellular noise with a quantized palette and a glowing ridge. Self-driven
+//  wander eases scale, cell distortion, ridge glow and border width; the cell
+//  motion rate stays positive. The host's four-color palette fills five slots.
 //
 
 #include "KumoneShaderTypes.h"
@@ -67,13 +66,13 @@ fragment float4 kumone_fragment_voronoi(Varying in [[stage_in]],
     // Centered, isotropic coordinates measured in min-dimension units.
     float2 uv = (in.uv - 0.5 * aspect) * (u.resolution.y / minDim);
 
-    // Audio: low zooms, mids stir the cell centers, loudness sets the pace.
-    float scale = 2.2 + u.low * 1.5;
-    float speed = 0.25 + u.loudness * 0.3;
-    float distortion = 0.15 + u.mid * 0.3;
+    // Independent slow wander keeps the field self-driven.
+    float scale = 2.95 + (wander(u.time * 0.04, 0.0) - 0.5) * 2.0 * 0.75;
+    float distortion = 0.3 + (wander(u.time * 0.04, 3.3) - 0.5) * 2.0 * 0.15;
     uv *= max(scale, 1e-4);
 
-    float t = time * speed;
+    // Additive phase flow: amp = base / (0.05 * 8.0) keeps velocity positive; no reversal.
+    float t = time * 0.3 + wander(u.time * 0.05, 1.7) * 0.75;
     float4 v = voronoiCells(uv, t, saturate(distortion));
 
     // The five palette slots from the host's four colors.
@@ -110,16 +109,16 @@ fragment float4 kumone_fragment_voronoi(Varying in [[stage_in]],
     float3 cellColor = gradient;
     float cellOpacity = 1.0;
 
-    // Ridge glow, strengthened by the highs.
-    float glow = 0.35 + u.high * 0.6;
+    // Ridge glow with slowly wandering intensity.
+    float glow = 0.65 + (wander(u.time * 0.04, 5.9) - 0.5) * 2.0 * 0.3;
     float glows = length(v.yz * saturate(glow));
     glows = pow(glows, 1.5);
     float3 glowRGB = u.paletteAccent.rgb * 0.6;
     float3 col = mix(cellColor, glowRGB, glows);
     float opacity = cellOpacity + glows;
 
-    // Borders widen and brighten on the beat.
-    float gap = 0.012 + u.beat * 0.05;
+    // Narrow borders breathe with slow drift, without sustained beat emphasis.
+    float gap = 0.016 + (wander(u.time * 0.04, 8.1) - 0.5) * 2.0 * 0.004;
     float edge = v.x;
     float smoothEdge = 0.02 / (2.0 * max(scale, 1e-4)) * (1.0 + 0.5 * saturate(gap));
     edge = smoothstep(saturate(gap) - smoothEdge, saturate(gap) + smoothEdge, edge);

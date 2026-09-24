@@ -1,5 +1,4 @@
 import Foundation
-import SwiftUI
 import XCTest
 
 @testable import KumoneCore
@@ -30,18 +29,18 @@ final class ShaderUniformsTests: XCTestCase {
 
     func testPaletteBuilderDerivesAccentAndBackground() {
         let colors = ArtworkColors(
-            primary: Color(red: 0.8, green: 0.2, blue: 0.3),
-            secondary: Color(red: 0.1, green: 0.1, blue: 0.15)
+            primary: SIMD4<Float>(0.8, 0.2, 0.3, 1),
+            secondary: SIMD4<Float>(0.1, 0.1, 0.15, 1)
         )
         let palette = ShaderPaletteBuilder.make(from: colors)
 
-        // Accent is the primary lifted toward white.
+        // Accent lifts brightness while preserving channel ratios.
         XCTAssertGreaterThan(palette.accent.x, palette.primary.x)
         // Background is the secondary deepened toward black.
         XCTAssertLessThan(palette.background.x, palette.secondary.x)
-        // Primary and secondary pass through unchanged.
-        XCTAssertEqual(palette.primary.x, Float(0.8), accuracy: 1e-4)
-        XCTAssertEqual(palette.secondary.x, Float(0.1), accuracy: 1e-4)
+        // sRGB inputs are decoded for the sRGB render target.
+        XCTAssertEqual(palette.primary.x, Float(0.603827), accuracy: 1e-4)
+        XCTAssertEqual(palette.secondary.x, Float(0.010023), accuracy: 1e-4)
     }
 
     func testPaletteBuilderHandlesFallbackColors() {
@@ -53,4 +52,66 @@ final class ShaderUniformsTests: XCTestCase {
             XCTAssertFalse(component.z.isNaN)
         }
     }
+
+    func testRedAccentDoesNotTurnWhite() {
+        let palette = ShaderPaletteBuilder.make(from: ArtworkColors(
+            primary: SIMD4<Float>(0.8, 0.1, 0.05, 1),
+            secondary: SIMD4<Float>(0.1, 0.1, 0.1, 1)
+        ))
+        XCTAssertLessThan(palette.accent.y, 0.02)
+        XCTAssertLessThan(palette.accent.z, 0.01)
+        XCTAssertEqual(palette.accent.y / palette.accent.x,
+                       palette.primary.y / palette.primary.x, accuracy: 1e-5)
+    }
+
+    @MainActor
+    func testCoverColorsPreserveRedAndBlueInsteadOfInventingPurple() throws {
+        let colors = try extractCover(primary: (255, 0, 0, 255), secondary: (0, 0, 255, 255))
+        let palette = ShaderPaletteBuilder.make(from: colors)
+        XCTAssertEqual(palette.primary.x, 1, accuracy: 0.01)
+        XCTAssertEqual(palette.primary.z, 0, accuracy: 0.01)
+        XCTAssertEqual(palette.secondary.x, 0, accuracy: 0.01)
+        XCTAssertEqual(palette.secondary.z, 1, accuracy: 0.01)
+        // The pre-existing ambient UI still gets its intentionally dimmed color.
+        XCTAssertNotEqual(colors.primary, colors.shaderPrimary)
+    }
+
+    @MainActor
+    func testGrayCoverStaysNeutralAndRetainsBrightness() throws {
+        let colors = try extractCover(primary: (204, 204, 204, 255), secondary: (204, 204, 204, 255))
+        let palette = ShaderPaletteBuilder.make(from: colors)
+        XCTAssertEqual(palette.primary.x, 0.603827, accuracy: 0.01)
+        XCTAssertEqual(palette.primary.x, palette.primary.y, accuracy: 1e-5)
+        XCTAssertEqual(palette.primary.y, palette.primary.z, accuracy: 1e-5)
+        XCTAssertEqual(palette.accent.x, palette.accent.y, accuracy: 1e-5)
+        XCTAssertEqual(palette.primary, palette.secondary)
+    }
+
+    @MainActor
+    func testTransparentCoverUsesFallback() throws {
+        let colors = try extractCover(primary: (0, 0, 0, 0), secondary: (0, 0, 0, 0))
+        XCTAssertEqual(colors, .fallback)
+    }
+
+    @MainActor
+    private func extractCover(
+        primary: (UInt8, UInt8, UInt8, UInt8), secondary: (UInt8, UInt8, UInt8, UInt8)
+    ) throws -> ArtworkColors {
+        var bytes: [UInt8] = []
+        for _ in 0..<10 {
+            for x in 0..<10 {
+                let pixel = x < 7 ? primary : secondary
+                bytes.append(contentsOf: [pixel.0, pixel.1, pixel.2, pixel.3])
+            }
+        }
+        let provider = try XCTUnwrap(CGDataProvider(data: Data(bytes) as CFData))
+        let image = try XCTUnwrap(CGImage(
+            width: 10, height: 10, bitsPerComponent: 8, bitsPerPixel: 32,
+            bytesPerRow: 40, space: CGColorSpace(name: CGColorSpace.sRGB)!,
+            bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue),
+            provider: provider, decode: nil, shouldInterpolate: false, intent: .defaultIntent
+        ))
+        return ArtworkPalette.extract(from: image, cacheKey: UUID().uuidString)
+    }
+
 }

@@ -12,9 +12,8 @@
 //  A sin-stack plasma lights a flat (non-perspective) dot grid; each dot reads
 //  the plasma intensity at its cell centre and tones up accordingly.
 //
-//  Ported, the mid band sets the plasma's spatial frequency, the beat pulses
-//  the dot size, the overall level sets the brightness, and loudness sets the
-//  flow speed.
+//  Self-driven wander eases plasma spatial frequency, dot size and brightness.
+//  The plasma flow rate stays positive.
 //
 
 #include "KumoneShaderTypes.h"
@@ -25,21 +24,28 @@ fragment float4 kumone_fragment_dot_shape(Varying in [[stage_in]],
     float2 position = in.uv * u.resolution.y;
     float2 size = u.resolution;
 
-    // Audio: mids set the plasma frequency, beat pulses the dots, level sets
-    // the brightness, loudness flows the plasma.
-    float patternScale = 1.0 + u.mid * 2.5;
-    float dotSize = 1.0 + u.beat * 0.8;
-    float brightness = 0.7 + 0.8 * u.level;
-    float speed = 0.5 + u.loudness * 1.0;
-    const float gridDensity = 1.0;
+    // Independent slow wander keeps the field self-driven.
+    float patternScale = 2.25 + (wander(u.time * 0.04, 0.0) - 0.5) * 2.0 * 1.25;
+    float dotSize = 1.4 + (wander(u.time * 0.04, 1.7) - 0.5) * 2.0 * 0.4;
+    float brightness = 1.1 + (wander(u.time * 0.04, 3.3) - 0.5) * 2.0 * 0.4;
+    float gridDensity = 0.85 + (wander(u.time * 0.018, 8.1) - 0.5) * 2.0 * 0.3;
+    float shapeMix = 0.5 + (wander(u.time * 0.025, 11.2) - 0.5) * 2.0 * 0.5;
+    float aspect = 1.0 + (wander(u.time * 0.02, 14.6) - 0.5) * 2.0 * 0.35;
     const float vignette = 1.0;
 
     float2 uv = (position - 0.5 * size) / size.y;
-    float t = u.time * speed;
+    // Additive angular phase keeps rotation progressing while its offset eases.
+    float angle = u.time * 0.025 + wander(u.time * 0.008, 18.3) * 0.2;
+    float c = cos(angle), s = sin(angle);
+    uv = float2(c * uv.x - s * uv.y, s * uv.x + c * uv.y);
+    // Additive phase flow: amp = base / (0.05 * 8.0) keeps velocity positive; no reversal.
+    float t = u.time * 0.75 + wander(u.time * 0.05, 5.9) * 1.875;
 
     float grid      = 0.018 / max(gridDensity, 0.01);
     float2 cell      = round(uv / grid) * grid;
-    float distToDot = length(uv - cell);
+    float2 local = (uv - cell) * float2(aspect, 1.0 / aspect);
+    // Continuously morph between circular and rounded-square dots.
+    float distToDot = mix(length(local), max(abs(local.x), abs(local.y)), shapeMix);
     float pxR       = (1.6 / size.y) * dotSize;
     float mask      = smoothstep(pxR * 1.4, pxR * 0.6, distToDot);
 

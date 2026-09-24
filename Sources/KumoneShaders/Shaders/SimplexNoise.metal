@@ -10,9 +10,9 @@
 //  anti-aliasing on each band boundary, and a wrap zone so the first and
 //  last colours blend smoothly across the gradient seam.
 //
-//  Ported, the low band zooms the field, mids set the band softness, loudness
-//  drifts the noise upward, and the beat adds a slow pulse to the shape. The
-//  palette is the host's four colours stretched across the original's slots.
+//  Self-driven wander eases field scale, band softness and shape offset;
+//  the upward drift rate stays positive. The host's four palette colours
+//  are stretched across the original's slots.
 //
 
 #include "KumoneShaderTypes.h"
@@ -73,23 +73,23 @@ fragment float4 kumone_fragment_simplex_noise(Varying in [[stage_in]],
     float2 position = in.uv * u.resolution.y;
     float2 size = u.resolution;
 
-    // Audio: low zooms the field, mids soften the bands, loudness drifts the
-    // noise, beat pulses the shape.
-    float scale = 0.5 + u.low * 1.2;
-    float softness = 0.2 + u.mid * 0.7;
-    float beatPulse = u.beat * 0.25;
+    // Independent slow wander keeps the field self-driven.
+    float scale = 1.1 + (wander(u.time * 0.04, 0.0) - 0.5) * 2.0 * 0.6;
+    float softness = 0.55 + (wander(u.time * 0.04, 1.7) - 0.5) * 2.0 * 0.35;
+    float shapeOffset = 0.125 + (wander(u.time * 0.04, 3.3) - 0.5) * 2.0 * 0.125;
 
     float minDim = max(min(size.x, size.y), 1.0);
     float2 uv = (position - 0.5 * size) / minDim;
     uv /= max(scale, 0.001);
     uv *= 0.1;
 
-    float t = 0.2 * u.time * (0.6 + u.loudness);
+    // Additive phase flow: amp = base / (0.05 * 8.0) keeps velocity positive; no reversal.
+    float t = 0.2 * (u.time * 0.85 + wander(u.time * 0.05, 5.9) * 2.125);
 
     float noise  = 0.5 * simplexSNoise(uv - float2(0.0, 0.30 * t));
     noise       += 0.5 * simplexSNoise(2.0 * uv + float2(0.0, 0.32 * t));
 
-    float shape = 0.5 + 0.5 * noise + beatPulse;
+    float shape = 0.5 + 0.5 * noise + shapeOffset;
     shape = clamp(shape, 0.0, 1.0);
 
     // The host's four colours in the original's five gradient slots.

@@ -9,9 +9,8 @@
 //  accumulation. The sine accumulator threads "memory" of the previous layer
 //  into the next, which is what makes the web look organic.
 //
-//  Ported, the low band zooms the field, mids sharpen the contrast toward the
-//  web's filaments, loudness sets the flow speed, and the overall level sets
-//  the brightness. The front/mid/back colours come from the palette.
+//  Self-driven wander eases field scale, filament contrast and brightness;
+//  the flow rate stays positive. Front/mid/back colours come from the palette.
 //
 
 #include "KumoneShaderTypes.h"
@@ -46,18 +45,17 @@ fragment float4 kumone_fragment_neuro_noise(Varying in [[stage_in]],
     float2 position = in.uv * u.resolution.y;
     float2 size = u.resolution;
 
-    // Audio: low zooms the web, mids sharpen the filaments, loudness sets the
-    // flow, level drives the brightness.
-    float scale = 0.35 + u.low * 0.8;
-    float contrast = 0.25 + u.mid * 0.6;
-    float speed = 0.5 + u.loudness * 1.2;
-    float brightness = 0.5 + u.level * 1.2;
+    // Independent slow wander keeps the field self-driven.
+    float scale = 0.75 + (wander(u.time * 0.04, 0.0) - 0.5) * 2.0 * 0.4;
+    float contrast = 0.55 + (wander(u.time * 0.04, 1.7) - 0.5) * 2.0 * 0.3;
+    float brightness = 1.1 + (wander(u.time * 0.04, 5.9) - 0.5) * 2.0 * 0.6;
 
     float minDim = max(min(size.x, size.y), 1.0);
     float2 uv = (position - 0.5 * size) / minDim;
     uv *= max(scale, 1e-4);
 
-    float t = 0.5 * speed * u.time;
+    // Additive phase flow: amp = base / (0.05 * 8.0) keeps velocity positive; no reversal.
+    float t = 0.5 * (u.time * 0.8 + wander(u.time * 0.05, 3.3) * 2.0);
     float noise = neuroShape(uv, t);
 
     // Brightness / contrast curve.
