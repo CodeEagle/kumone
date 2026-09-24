@@ -4,10 +4,12 @@ import PackageDescription
 let package = Package(
     name: "Kumone",
     defaultLocalization: "zh-Hans",
-    platforms: [.macOS("15.0"), .iOS("17.0")],
+    platforms: [.macOS("15.0"), .iOS("17.0"), .tvOS("17.0"), .visionOS("1.0")],
     products: [
-        .executable(name: "Kumone", targets: ["KumoneLauncher"]),
+        .executable(name: "Kumone", targets: ["KumoneMac"]),
         .library(name: "KumoneCore", targets: ["KumoneCore"]),
+        .library(name: "KumoneShaders", targets: ["KumoneShaders"]),
+        .library(name: "KumoneTCA", targets: ["KumoneTCA"]),
         .plugin(name: "KumoneMetalCompiler", targets: ["KumoneMetalCompiler"]),
     ],
     dependencies: [
@@ -21,7 +23,10 @@ let package = Package(
         // Now Playing info + playback state, so the system routes headset and
         // media-key events to the app. 2.1.4 adds the realtime PCM tap
         // (`APlay.pcmTap`) that drives the audio spectrum behind the shaders.
-        .package(url: "https://github.com/CodeEagle/APlay.git", from: "2.1.4"),
+        // 2.1.5 drives autoplay resume off decoded audio instead of download
+        // progress or a 0.5s delay, so a seek back to an early position (below
+        // the old whole-stream threshold) no longer leaves the player paused.
+        .package(url: "https://github.com/CodeEagle/APlay.git", from: "2.1.5"),
     ],
     targets: [
         // Compiles the .metal sources in Sources/KumoneShaders/Shaders into a
@@ -46,22 +51,32 @@ let package = Package(
             dependencies: [
                 "KumoneShaders",
                 .product(name: "Sparkle", package: "Sparkle", condition: .when(platforms: [.macOS])),
-                .product(name: "ComposableArchitecture", package: "swift-composable-architecture"),
                 .product(name: "APlay", package: "APlay"),
             ],
-            path: "Sources/Kumone",
-            exclude: ["Resources"],
+            path: "Sources/KumoneCore",
+            swiftSettings: [
+                .swiftLanguageMode(.v5),
+            ]
+        ),
+        .target(
+            name: "KumoneTCA",
+            dependencies: [
+                "KumoneCore",
+                .product(name: "ComposableArchitecture", package: "swift-composable-architecture"),
+            ],
+            path: "Sources/KumoneTCA",
             swiftSettings: [
                 .swiftLanguageMode(.v5),
             ]
         ),
         .executableTarget(
-            name: "KumoneLauncher",
+            name: "KumoneMac",
             dependencies: [
                 "KumoneCore",
+                "KumoneTCA",
                 .product(name: "Sparkle", package: "Sparkle", condition: .when(platforms: [.macOS])),
             ],
-            path: "Sources/KumoneLauncher",
+            path: "Apps/Mac",
             swiftSettings: [
                 .swiftLanguageMode(.v5),
             ],
@@ -74,6 +89,16 @@ let package = Package(
             name: "KumoneCoreTests",
             dependencies: ["KumoneCore", "KumoneShaders"],
             path: "Tests/KumoneCoreTests"
+        ),
+        .testTarget(
+            name: "KumoneTCATests",
+            dependencies: ["KumoneCore", "KumoneTCA", "KumoneShaders"],
+            path: "Tests/KumoneTCATests"
+        ),
+        .testTarget(
+            name: "KumoneMacTests",
+            dependencies: ["KumoneCore", "KumoneTCA", "KumoneMac"],
+            path: "Tests/KumoneMacTests"
         ),
     ]
 )

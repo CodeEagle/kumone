@@ -1,13 +1,13 @@
 {
-  "originHash" : "4ea894c9851cde2b2321819de439f0640625f9826e54e987aae75588f4e17a92",
+  "originHash" : "0998947e3f76ec7dae0064596902a84f5357681d7ea298e359cd4414865b57b3",
   "pins" : [
     {
       "identity" : "aplay",
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/CodeEagle/APlay.git",
       "state" : {
-        "revision" : "f336e30af7183feb6ebf2266f2d0e1bcd6bb073b",
-        "version" : "2.1.4"
+        "revision" : "f7a833b84f30aa5bbb5940900e979aba8f7bb70c",
+        "version" : "2.1.5"
       }
     },
     {
