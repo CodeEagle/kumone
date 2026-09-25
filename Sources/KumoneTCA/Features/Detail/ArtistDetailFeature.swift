@@ -50,7 +50,7 @@ public struct ArtistDetailFeature {
         case subscriptionChanged
     }
 
-    @Dependency(\.netease) public var netease
+    @Dependency(\.musicProvider) public var provider
 
     /// `size` counts the tracks on a release; anything with one track is an
     /// EP or a single.
@@ -96,9 +96,9 @@ public struct ArtistDetailFeature {
                 let followed = !state.isFollowed
                 state.isFollowed = followed
                 let artistID = state.artistID
-                return .run { [netease] send in
+                return .run { [provider] send in
                     do {
-                        try await netease.subscribeArtist(id: artistID, subscribe: followed)
+                        try await provider.subscribeArtist(MusicID(artistID), subscribe: followed)
                         await send(.delegate(.subscriptionChanged))
                         await send(.delegate(.toast(
                             followed
@@ -124,16 +124,16 @@ public struct ArtistDetailFeature {
         state.loadState = .loading
         let artistID = state.artistID
         let loggedIn = state.isLoggedIn
-        return .run { [netease] send in
+        return .run { [provider] send in
             do {
-                let response = try await netease.artist(id: artistID)
+                let response = try await provider.artist(id: MusicID(artistID))
                 await send(.artistResponse(artist: response.artist, hotSongs: response.hotSongs))
 
-                if let result = try? await netease.artistAlbums(id: artistID, limit: 60, offset: 0) {
-                    await send(.albumsResponse(result.hotAlbums))
+                if let result = try? await provider.artistAlbums(id: MusicID(artistID), limit: 60, offset: 0) {
+                    await send(.albumsResponse(result.albums))
                 }
                 if loggedIn {
-                    let similar = (try? await netease.similarArtists(id: artistID)) ?? []
+                    let similar = (try? await provider.similarArtists(id: MusicID(artistID))) ?? []
                     await send(.similarResponse(similar))
                 }
             } catch {

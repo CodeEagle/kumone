@@ -1,6 +1,7 @@
 import ComposableArchitecture
 import Dependencies
 import Foundation
+import KumoneCore
 
 /// The composition root. Child features own their state and logic; this reducer
 /// only wires cross-feature effects: the sidebar selection, the detail stack,
@@ -111,7 +112,7 @@ public struct AppFeature {
     }
 
     @Dependency(\.nowPlaying) public var nowPlaying
-    @Dependency(\.netease) public var netease
+    @Dependency(\.intelligence) public var intelligence
 
     public var body: some ReducerOf<Self> {
         Scope(state: \.toasts, action: \.toasts) { ToastsFeature() }
@@ -258,9 +259,11 @@ public struct AppFeature {
                     return .send(.toasts(.presented(String(localized: "先收藏一些喜欢的歌曲吧"))))
                 }
                 let playlistID = likedList.id
-                return .run { [netease] send in
+                return .run { [intelligence] send in
                     do {
-                        let tracks = try await netease.intelligenceList(songID: seed, playlistID: playlistID)
+                        let tracks = try await intelligence?.intelligenceList(
+                            songID: MusicID(seed), playlistID: MusicID(playlistID)
+                        ) ?? []
                         guard !tracks.isEmpty else {
                             await send(.toasts(.presented(String(localized: "心动模式暂时不可用"))))
                             return

@@ -59,7 +59,6 @@ public struct ExploreFeature {
         public var highQualityBefore = 0
     }
 
-    @Dependency(\.netease) public var netease
     @Dependency(\.musicProvider) public var provider
 
     /// The chip row. "官方" is a real API category, not a synonym for "全部".
@@ -119,24 +118,44 @@ public struct ExploreFeature {
                 return .none
 
             case let .playPlaylist(id):
-                return .run { [netease] send in
-                    guard let detail = try? await netease.playlistDetail(id: id) else { return }
-                    var tracks = detail.playlist.tracks
+                return .run { [provider] send in
+                    guard let detail = try? await provider.playlistDetail(id: MusicID(id)) else { return }
+                    var tracks = detail.tracks
                     if tracks.isEmpty {
-                        let ids = detail.playlist.trackIds.map(\.id)
-                        tracks = (try? await netease.songDetails(ids: Array(ids.prefix(500))))?.songs ?? []
+                        let ids = detail.trackIds.map(\.id)
+                        tracks = (try? await provider.songDetails(ids: ids.prefix(500).map { MusicID($0) })) ?? []
                     }
                     await send(.delegate(.play(
                         tracks: tracks,
                         source: .playlist(id),
-                        context: .playlist(id: id, name: detail.playlist.name))))
+                        context: .playlist(id: id, name: detail.name))))
                 }
             }
         }
     }
 
+    // Preserve the existing view models; Chart has no track previews or track count.
+    private struct ChartPayload: Encodable {
+        let id: Int
+        let name: String
+        let coverImgUrl: String?
+        let updateFrequency: String?
+        let playCount: Int
+    }
+
+    private static func decodeChart<T: Decodable>(_ chart: Chart, as type: T.Type) throws -> T {
+        guard let id = Int(chart.id.sourceID) else {
+            throw DecodingError.dataCorrupted(.init(
+                codingPath: [], debugDescription: "Chart ID is not an integer: \(chart.id.sourceID)"))
+        }
+        let payload = ChartPayload(
+            id: id, name: chart.name, coverImgUrl: chart.coverURL?.absoluteString,
+            updateFrequency: chart.updateFrequency, playCount: chart.playCount)
+        return try JSONDecoder().decode(type, from: JSONEncoder().encode(payload))
+    }
+
     private func loadEffect(state: State) -> Effect<Action> {
-        .run { [netease, provider] send in
+        .run { [provider] send in
             let category = state.selectedCategory
             let offset = state.offset
             let before = state.highQualityBefore
@@ -145,8 +164,8 @@ public struct ExploreFeature {
 
             switch category {
             case "排行榜":
-                let lists = (try? await netease.toplists()) ?? []
-                await send(.pageLoaded(.toplists(lists)))
+                let lists = (try? await provider.toplists()) ?? []
+                await send(.pageLoaded(.toplists(lists.compactMap { try? Self.decodeChart($0, as: ToplistItem.self) })))
 
             case "推荐歌单":
                 let lists = (try? await provider.personalizedPlaylists(limit: 100)) ?? []
@@ -154,26 +173,26 @@ public struct ExploreFeature {
                     appended: lists.deduped(against: seen), hasMore: false, cursor: cursor)))
 
             case "精品歌单":
-                let result = try? await netease.highQualityPlaylists(
+                let result = try? await provider.highQualityPlaylists(
                     category: "全部", limit: Self.pageSize, before: before)
                 if let result {
                     await send(.pageLoaded(.playlists(
                         appended: result.playlists.deduped(against: seen),
-                        hasMore: result.more ?? false,
-                        cursor: Cursor(offset: offset, highQualityBefore: result.lasttime ?? 0))))
+                        hasMore: result.hasMore,
+                        cursor: Cursor(offset: offset, highQualityBefore: result.lastTime ?? 0))))
                 } else {
                     await send(.pageLoaded(.playlists(
                         appended: [], hasMore: false, cursor: cursor)))
                 }
 
             default:
-                let result = try? await netease.topPlaylists(
+                let result = try? await provider.topPlaylists(
                     category: category, order: "hot", limit: Self.pageSize, offset: offset)
                 if let result {
                     let nextOffset = offset + Self.pageSize
                     await send(.pageLoaded(.playlists(
-                        appended: result.playlists.deduped(against: seen),
-                        hasMore: (result.more ?? false) && nextOffset < Self.maxOffset,
+                        appended: result.charts.compactMap { try? Self.decodeChart($0, as: PlaylistSummary.self) }.deduped(against: seen),
+                        hasMore: result.hasMore && nextOffset < Self.maxOffset,
                         cursor: Cursor(offset: nextOffset, highQualityBefore: before))))
                 } else {
                     await send(.pageLoaded(.playlists(

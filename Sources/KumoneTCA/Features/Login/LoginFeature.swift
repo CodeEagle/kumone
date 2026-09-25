@@ -72,7 +72,6 @@ public struct LoginFeature {
         case smsCooldown
     }
 
-    @Dependency(\.netease) public var api
     @Dependency(\.musicProvider) public var provider
     @Dependency(\.continuousClock) public var clock
 
@@ -122,9 +121,12 @@ public struct LoginFeature {
                         while !Task.isCancelled {
                             try await clock.sleep(for: .seconds(1.2))
                             do {
-                                let check = try await api.qrCheck(unikey: key)
+                                let check = try await provider.qrCheck(key)
                                 consecutiveErrors = 0
-                                await send(.qrCheckResponse(.success(check)))
+                                await send(.qrCheckResponse(.success(.init(
+                                    code: check.code, message: check.message,
+                                    nickname: check.nickname, avatarUrl: check.avatar?.absoluteString
+                                ))))
                             } catch {
                                 consecutiveErrors += 1
                                 if consecutiveErrors >= 15 {
@@ -141,7 +143,7 @@ public struct LoginFeature {
 
             case let .qrKeyResponse(.success(key)):
                 state.unikey = key
-                state.qrLoginURL = api.qrLoginURL(key)
+                state.qrLoginURL = provider.qrLoginURL(key).absoluteString
                 state.phase = .waiting
                 return .none
 
@@ -192,7 +194,7 @@ public struct LoginFeature {
                 let phone = state.phone
                 return .run { send in
                     do {
-                        try await api.sendSMSCode(phone, "86")
+                        try await provider.sendSMSCode(phone: phone, countryCode: "86")
                         await send(.sendCodeResponse(.success(true)))
                     } catch {
                         await send(.sendCodeResponse(.failure(AppError(wrapping: error))))
@@ -230,7 +232,7 @@ public struct LoginFeature {
                 let code = state.code
                 return .run { send in
                     do {
-                        try await api.loginCellphone(phone, code, "86")
+                        try await provider.loginCellphone(phone: phone, captcha: code, countryCode: "86")
                         await send(.loginResponse(.success(true)))
                     } catch {
                         await send(.loginResponse(.failure(AppError(wrapping: error))))

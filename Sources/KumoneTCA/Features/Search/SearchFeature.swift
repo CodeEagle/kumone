@@ -58,7 +58,7 @@ public struct SearchFeature {
         public var playlists: [PlaylistSummary] = []
     }
 
-    @Dependency(\.netease) public var netease
+    @Dependency(\.musicProvider) public var provider
     @Dependency(\.continuousClock) public var clock
 
     /// How long the query has to be quiet before a fetch fires.
@@ -123,13 +123,13 @@ public struct SearchFeature {
         guard !query.isEmpty, !state.loadedTabs.contains(state.tab) else { return nil }
 
         let tab = state.tab
-        return .run { [netease] send in
+        return .run { [provider] send in
             switch tab {
             case .all:
-                async let songs = try? await netease.search(keywords: query, type: .songs, limit: 12, offset: 0)
-                async let artists = try? await netease.search(keywords: query, type: .artists, limit: 10, offset: 0)
-                async let albums = try? await netease.search(keywords: query, type: .albums, limit: 10, offset: 0)
-                async let playlists = try? await netease.search(keywords: query, type: .playlists, limit: 10, offset: 0)
+                async let songs = try? await provider.search(query, category: .songs, limit: 12, offset: 0)
+                async let artists = try? await provider.search(query, category: .artists, limit: 10, offset: 0)
+                async let albums = try? await provider.search(query, category: .albums, limit: 10, offset: 0)
+                async let playlists = try? await provider.search(query, category: .playlists, limit: 10, offset: 0)
                 await send(.loaded(tab: tab, results: Results(
                     songs: await songs?.songs ?? [],
                     artists: await artists?.artists ?? [],
@@ -137,19 +137,19 @@ public struct SearchFeature {
                     playlists: await playlists?.playlists ?? [])))
 
             case .songs:
-                let result = try? await netease.search(keywords: query, type: .songs, limit: 100, offset: 0)
+                let result = try? await provider.search(query, category: .songs, limit: 100, offset: 0)
                 await send(.loaded(tab: tab, results: Results(songs: result?.songs ?? [])))
 
             case .artists:
-                let result = try? await netease.search(keywords: query, type: .artists, limit: 50, offset: 0)
+                let result = try? await provider.search(query, category: .artists, limit: 50, offset: 0)
                 await send(.loaded(tab: tab, results: Results(artists: result?.artists ?? [])))
 
             case .albums:
-                let result = try? await netease.search(keywords: query, type: .albums, limit: 50, offset: 0)
+                let result = try? await provider.search(query, category: .albums, limit: 50, offset: 0)
                 await send(.loaded(tab: tab, results: Results(albums: result?.albums ?? [])))
 
             case .playlists:
-                let result = try? await netease.search(keywords: query, type: .playlists, limit: 50, offset: 0)
+                let result = try? await provider.search(query, category: .playlists, limit: 50, offset: 0)
                 await send(.loaded(tab: tab, results: Results(playlists: result?.playlists ?? [])))
             }
         }

@@ -69,7 +69,6 @@ public struct HomeFeature {
         public var dailyFirstCover: String?
     }
 
-    @Dependency(\.netease) public var netease
     @Dependency(\.musicProvider) public var provider
 
     /// The toplists worth showing on the home grid (the API returns hundreds).
@@ -114,22 +113,22 @@ public struct HomeFeature {
                 return .none
 
             case let .playPlaylist(id):
-                return .run { [netease] send in
-                    guard let detail = try? await netease.playlistDetail(id: id) else { return }
-                    var tracks = detail.playlist.tracks
+                return .run { [provider] send in
+                    guard let detail = try? await provider.playlistDetail(id: MusicID(id)) else { return }
+                    var tracks = detail.tracks
                     if tracks.isEmpty {
-                        let ids = detail.playlist.trackIds.map(\.id)
-                        tracks = (try? await netease.songDetails(ids: Array(ids.prefix(500))))?.songs ?? []
+                        let ids = detail.trackIds.map(\.id)
+                        tracks = (try? await provider.songDetails(ids: ids.prefix(500).map { MusicID($0) })) ?? []
                     }
                     await send(.delegate(.play(
                         tracks: tracks,
                         source: .playlist(id),
-                        context: .playlist(id: id, name: detail.playlist.name))))
+                        context: .playlist(id: id, name: detail.name))))
                 }
 
             case let .playAlbum(album):
-                return .run { [netease] send in
-                    guard let detail = try? await netease.album(id: album.id) else { return }
+                return .run { [provider] send in
+                    guard let detail = try? await provider.album(id: MusicID(album.id)) else { return }
                     await send(.delegate(.play(
                         tracks: detail.songs,
                         source: .album(album.id),
@@ -142,13 +141,33 @@ public struct HomeFeature {
         }
     }
 
+    // Preserve the existing view models; Chart has no track previews or track count.
+    private struct ChartPayload: Encodable {
+        let id: Int
+        let name: String
+        let coverImgUrl: String?
+        let updateFrequency: String?
+        let playCount: Int
+    }
+
+    private static func decodeChart<T: Decodable>(_ chart: Chart, as type: T.Type) throws -> T {
+        guard let id = Int(chart.id.sourceID) else {
+            throw DecodingError.dataCorrupted(.init(
+                codingPath: [], debugDescription: "Chart ID is not an integer: \(chart.id.sourceID)"))
+        }
+        let payload = ChartPayload(
+            id: id, name: chart.name, coverImgUrl: chart.coverURL?.absoluteString,
+            updateFrequency: chart.updateFrequency, playCount: chart.playCount)
+        return try JSONDecoder().decode(type, from: JSONEncoder().encode(payload))
+    }
+
     private func loadEffect(state: State) -> Effect<Action> {
-        .run { [netease, provider] send in
+        .run { [provider] send in
             let loggedIn = state.isLoggedIn
 
             async let playlists = Self.fetchRecommendPlaylists(
                 loggedIn: loggedIn, provider: provider)
-            async let toplists = try? await netease.toplists()
+            async let toplists = try? await provider.toplists()
             async let albums = try? await provider.newAlbums(area: "ALL", limit: 20, offset: 0)
             async let artists = try? await provider.topArtists(limit: 100)
 
@@ -156,6 +175,7 @@ public struct HomeFeature {
                 recommendPlaylists: await playlists,
                 radarPlaylists: [],
                 toplists: (await toplists ?? [])
+                    .compactMap { try? Self.decodeChart($0, as: ToplistItem.self) }
                     .filter { Self.featuredToplistIDs.contains($0.id) },
                 newAlbums: await albums ?? [],
                 topArtists: Array((await artists ?? []).shuffled().prefix(6)),
@@ -165,7 +185,7 @@ public struct HomeFeature {
                 if let daily = try? await provider.dailyRecommendSongs() {
                     sections.dailyFirstCover = daily.first?.album.picUrl
                 }
-                sections.radarPlaylists = await Self.fetchRadarPlaylists(netease: netease)
+                sections.radarPlaylists = await Self.fetchRadarPlaylists(provider: provider)
             }
 
             await send(.loaded(sections))
@@ -191,28 +211,28 @@ public struct HomeFeature {
     /// The radar names arrive as "今天从《…》听起|私人雷达" — the tail is the
     /// family name, the head is the per-account reason.
     private static func fetchRadarPlaylists(
-        netease: NeteaseMusicClient
+        provider: any MusicProvider
     ) async -> [State.RadarPlaylist] {
-        await withTaskGroup(of: (Int, NeteaseAPI.PlaylistBrief.Body?).self) { group in
+        await withTaskGroup(of: (Int, PlaylistBriefInfo?).self) { group in
             for id in radarPlaylistIDs {
-                group.addTask { (id, try? await netease.playlistBrief(id: id)) }
+                group.addTask { (id, try? await provider.playlistBrief(id: MusicID(id))) }
             }
-            var byID: [Int: NeteaseAPI.PlaylistBrief.Body] = [:]
+            var byID: [Int: PlaylistBriefInfo] = [:]
             for await (id, brief) in group {
                 if let brief { byID[id] = brief }
             }
             return radarPlaylistIDs.compactMap { id in
                 guard let brief = byID[id] else { return nil }
-                let parts = (brief.name ?? "").components(separatedBy: "|")
+                let parts = brief.name.components(separatedBy: "|")
                 let title = parts.count > 1
                     ? parts.last!
-                    : (brief.name ?? String(localized: "雷达歌单"))
+                    : brief.name
                 let subtitle = parts.count > 1
                     ? parts.dropLast().joined(separator: "|")
                     : nil
                 return State.RadarPlaylist(
                     id: id, title: title, subtitle: subtitle,
-                    coverURL: brief.coverImgUrl)
+                    coverURL: brief.coverURL?.absoluteString)
             }
         }
     }

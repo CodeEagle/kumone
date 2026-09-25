@@ -34,7 +34,7 @@ public struct CloudFeature {
         case play(tracks: [Track], source: PlaySource, context: PlayContext?)
     }
 
-    @Dependency(\.netease) public var netease
+    @Dependency(\.cloudStorage) public var cloud
 
     public var body: some ReducerOf<Self> {
         Reduce { state, action in
@@ -68,12 +68,12 @@ public struct CloudFeature {
 
     private func startLoad(state: inout State) -> Effect<Action> {
         if state.items.isEmpty { state.loadState = .loading }
-        return .run { [netease] send in
+        return .run { [cloud] send in
             do {
-                let response = try await netease.cloudSongs(limit: 100, offset: 0)
+                let response = try await cloud?.cloudSongs(limit: 100, offset: 0)
                 await send(.itemsResponse(
-                    items: response.data ?? [],
-                    sizeInfo: Self.sizeInfo(used: response.size, total: response.maxSize)))
+                    items: response?.items ?? [],
+                    sizeInfo: Self.sizeInfo(used: response?.usedBytes, total: response?.maxBytes)))
             } catch {
                 await send(.loadFailed(error.localizedDescription))
             }

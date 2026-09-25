@@ -45,7 +45,7 @@ public struct AlbumDetailFeature {
         case subscriptionChanged
     }
 
-    @Dependency(\.netease) public var netease
+    @Dependency(\.musicProvider) public var provider
 
     public var body: some ReducerOf<Self> {
         Reduce { state, action in
@@ -85,9 +85,9 @@ public struct AlbumDetailFeature {
                 let subscribed = !state.isSubscribed
                 state.isSubscribed = subscribed
                 let albumID = state.albumID
-                return .run { [netease] send in
+                return .run { [provider] send in
                     do {
-                        try await netease.subscribeAlbum(id: albumID, subscribe: subscribed)
+                        try await provider.subscribeAlbum(MusicID(albumID), subscribe: subscribed)
                         await send(.delegate(.subscriptionChanged))
                         await send(.delegate(.toast(
                             subscribed
@@ -112,18 +112,18 @@ public struct AlbumDetailFeature {
     private func startLoad(state: inout State) -> Effect<Action> {
         state.loadState = .loading
         let albumID = state.albumID
-        return .run { [netease] send in
+        return .run { [provider] send in
             do {
-                let response = try await netease.album(id: albumID)
-                await send(.albumResponse(album: response.album, songs: response.songs))
+                let response = try await provider.album(id: MusicID(albumID))
+                await send(.albumResponse(album: response, songs: response.songs))
 
-                if let dynamic = try? await netease.albumDynamic(id: albumID) {
-                    await send(.dynamicResponse(isSubscribed: dynamic.isSub ?? false))
+                if let dynamic = try? await provider.albumDynamic(id: MusicID(albumID)) {
+                    await send(.dynamicResponse(isSubscribed: dynamic.isSubscribed))
                 }
-                if let artistID = response.album.artist?.id,
-                   let albums = try? await netease.artistAlbums(id: artistID, limit: 12, offset: 0)
+                if let artistID = response.artist?.id,
+                   let albums = try? await provider.artistAlbums(id: MusicID(artistID), limit: 12, offset: 0)
                 {
-                    await send(.otherAlbumsResponse(albums.hotAlbums))
+                    await send(.otherAlbumsResponse(albums.albums))
                 }
             } catch {
                 await send(.loadFailed(error.localizedDescription))

@@ -198,7 +198,7 @@ public struct PlayerFeature {
     }
 
     @Dependency(\.playback) public var playback
-    @Dependency(\.netease) public var netease
+    @Dependency(\.musicProvider) public var provider
     @Dependency(\.personalFM) public var fm
     @Dependency(\.unblock) public var unblock
     @Dependency(\.persistence) public var persistence
@@ -603,8 +603,8 @@ public struct PlayerFeature {
                             title: track.name, artist: track.artistNames, album: track.album.name, coverURL: nil)
                     },
                     resolveURLEffect(track: track, generation: generation, autostart: state.playbackIntent, state: state),
-                    .run { [netease] send in
-                        let response = try? await netease.lyric(id: track.id)
+                    .run { [provider] send in
+                        let response = try? await provider.lyric(id: MusicID(track.id))
                         await send(.lyricsResponse(
                             generation: generation, response.map(LyricsParser.parse)))
                     }
@@ -736,15 +736,15 @@ public struct PlayerFeature {
                 state.playbackIntent = true
                 return .merge(
                     .send(.fmAdvance),
-                    .run { [netease] _ in try? await netease.fmTrash(id: track.id) }
+                    .run { [fm] _ in try? await fm?.fmTrash(MusicID(track.id)) }
                 )
 
             // MARK: - Recents
 
             case let .playContext(context):
                 guard context.kind != .fm else { return .send(.startFM) }
-                return .run { [netease] send in
-                    guard let resolved = try? await Self.resolve(context, using: netease)
+                return .run { [provider] send in
+                    guard let resolved = try? await Self.resolve(context, using: provider)
                     else { return }
                     await send(.contextResolved(
                         context, tracks: resolved.tracks, source: resolved.source))
@@ -789,12 +789,12 @@ public struct PlayerFeature {
     /// Resolves a playable URL for `track`, falling back to third-party sources
     /// when NetEase refuses or only offers a trial clip.
     private func resolveURLEffect(track: Track, generation: Int, autostart: Bool, state: State) -> Effect<Action> {
-        .run { [netease, unblock] send in
+        .run { [provider, unblock] send in
             let quality = state.audioQuality
-            var data = try? await netease.songURL(ids: [track.id], level: quality.rawValue).first
+            var data = try? await provider.songURL(ids: [MusicID(track.id)], quality: SongQuality(neteaseLevel: quality.rawValue)!).first
             if data?.url == nil, quality != .standard {
-                data = try? await netease.songURL(
-                    ids: [track.id], level: AudioQuality.standard.rawValue).first
+                data = try? await provider.songURL(
+                    ids: [MusicID(track.id)], quality: .standard).first
             }
             var url = data?.url.map {
                 URL(string: $0.replacingOccurrences(of: "http://", with: "https://"))
@@ -826,8 +826,8 @@ public struct PlayerFeature {
         state.startScrobbled = true
         let trackID = track.id
         let sourceID = state.source.sourceID
-        return .run { [netease] _ in
-            await netease.scrobbleStart(trackID: trackID, sourceID: sourceID)
+        return .run { [provider] _ in
+            await provider.scrobbleStart(trackID: MusicID(trackID), sourceID: MusicID(sourceID))
         }
     }
 
@@ -859,8 +859,8 @@ public struct PlayerFeature {
         let trackID = track.id
         let sourceID = state.source.sourceID
         let seconds = completed ? Int(state.duration) : Int(state.progress)
-        return .run { [netease] _ in
-            await netease.scrobbleFinish(trackID: trackID, sourceID: sourceID, seconds: seconds)
+        return .run { [provider] _ in
+            await provider.scrobbleFinish(trackID: MusicID(trackID), sourceID: MusicID(sourceID), seconds: seconds)
         }
     }
 
@@ -876,36 +876,36 @@ public struct PlayerFeature {
 
     /// Reloads a place from the recents list so it can be played again.
     public static func resolve(
-        _ context: PlayContext, using netease: NeteaseMusicClient
+        _ context: PlayContext, using provider: any MusicProvider
     ) async throws -> (tracks: [Track], source: PlaySource)? {
         switch context.kind {
         case .fm:
             return nil
         case .album:
-            return (try await netease.album(id: context.id).songs, .album(context.id))
+            return (try await provider.album(id: MusicID(context.id)).songs, .album(context.id))
         case .artist:
-            return (try await netease.artist(id: context.id).hotSongs, .artist(context.id))
+            return (try await provider.artist(id: MusicID(context.id)).hotSongs, .artist(context.id))
         case .daily:
-            @Dependency(\.musicProvider) var provider
             return (try await provider.dailyRecommendSongs(), .daily)
         case .cloud:
-            let songs = try await netease.cloudSongs(limit: 100, offset: 0)
-                .data?.compactMap(\.simpleSong) ?? []
+            @Dependency(\.cloudStorage) var cloud
+            let songs = try await cloud?.cloudSongs(limit: 100, offset: 0)
+                .items.compactMap(\.simpleSong) ?? []
             return (songs, .cloud)
         case .recents, .heartbeat:
             // Regenerated per-account at the call site (recents needs a uid and
             // heartbeat needs the liked-songs seed), not from here.
             return nil
         case .playlist:
-            let response = try await netease.playlistDetail(id: context.id)
-            var tracks = response.playlist.tracks
+            let response = try await provider.playlistDetail(id: MusicID(context.id))
+            var tracks = response.tracks
             // /v6/playlist/detail only carries the first page of tracks.
-            let remaining = response.playlist.trackIds.map(\.id).dropFirst(tracks.count)
+            let remaining = response.trackIds.map(\.id).dropFirst(tracks.count)
             for chunk in stride(from: 0, to: remaining.count, by: 500)
                 .map({ Array(remaining.dropFirst($0).prefix(500)) })
             {
-                guard let more = try? await netease.songDetails(ids: chunk) else { break }
-                tracks += more.songs
+                guard let more = try? await provider.songDetails(ids: chunk.map { MusicID($0) }) else { break }
+                tracks += more
             }
             return (tracks, .playlist(context.id))
         }

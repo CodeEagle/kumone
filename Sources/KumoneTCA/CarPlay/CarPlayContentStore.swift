@@ -30,8 +30,8 @@ public final class CarPlayContentStore {
     /// Cache lifetime in seconds.
     private let ttl: TimeInterval
 
-    /// The NetEase client used for playlist track resolution.
-    private let netease: NeteaseMusicClient
+    /// The music provider used for playlist track resolution.
+    private let provider: any MusicProvider
 
     private var recommendFetchedAt: Date = .distantPast
     private var curatedFetchedAt: Date = .distantPast
@@ -46,9 +46,9 @@ public final class CarPlayContentStore {
     private var artistsFetchedAt: Date = .distantPast
 
     /// Custom TTL constructor (defaults to 5 minutes; tests can pass a shorter value).
-    public init(ttl: TimeInterval = 300, netease: NeteaseMusicClient = .liveValue) {
+    public init(ttl: TimeInterval = 300, provider: any MusicProvider = MusicProviderKey.liveValue) {
         self.ttl = ttl
-        self.netease = netease
+        self.provider = provider
     }
 
     // MARK: - Recommend
@@ -208,7 +208,7 @@ public final class CarPlayContentStore {
     /// paginated resolver so the app and CarPlay see identical track lists.
     public func fetchPlaylistTracks(id: Int, name: String) async -> [Track] {
         guard let resolved = try? await PlayerFeature.resolve(
-            .playlist(id: id, name: name), using: netease
+            .playlist(id: id, name: name), using: provider
         ) else { return [] }
         return resolved.tracks
     }

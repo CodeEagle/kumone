@@ -36,7 +36,7 @@ public struct RecentsFeature {
         case play(tracks: [Track], startAt: Track?, context: PlayContext?)
     }
 
-    @Dependency(\.netease) public var netease
+    @Dependency(\.playHistory) public var history
 
     public var body: some ReducerOf<Self> {
         Reduce { state, action in
@@ -75,6 +75,27 @@ public struct RecentsFeature {
         }
     }
 
+    // Track's normal encoder omits playback flags; retain them in the legacy bridge.
+    private struct RecordPayload: Encodable {
+        let record: PlayRecord
+
+        private enum Keys: String, CodingKey {
+            case playCount, score, song, noCopyrightRcmd, pc, privilege
+        }
+
+        func encode(to encoder: Encoder) throws {
+            var container = encoder.container(keyedBy: Keys.self)
+            try container.encode(record.playCount, forKey: .playCount)
+            try container.encode(record.score, forKey: .score)
+            let songEncoder = container.superEncoder(forKey: .song)
+            try record.song.encode(to: songEncoder)
+            var song = songEncoder.container(keyedBy: Keys.self)
+            if record.song.noCopyright { try song.encode(true, forKey: .noCopyrightRcmd) }
+            if record.song.isCloud { try song.encode(true, forKey: .pc) }
+            try song.encodeIfPresent(record.song.embeddedPrivilege, forKey: .privilege)
+        }
+    }
+
     private func startLoad(state: inout State) -> Effect<Action> {
         guard let userID = state.userID else {
             state.loadState = .error(String(localized: "登录后才能查看播放记录"))
@@ -83,10 +104,13 @@ public struct RecentsFeature {
         // Keep the old list visible while the other range loads.
         if state.records.isEmpty { state.loadState = .loading }
         let week = state.week
-        return .run { [netease] send in
+        return .run { [history] send in
             do {
-                let records = try await netease.playRecords(uid: userID, week: week)
-                await send(.recordsResponse(records))
+                let records = try await history?.playRecords(uid: MusicID(userID), week: week) ?? []
+                // Preserve the existing state model, which only exposes a decoder initializer.
+                let items = try JSONDecoder().decode(
+                    [PlayRecordItem].self, from: JSONEncoder().encode(records.map { RecordPayload(record: $0) }))
+                await send(.recordsResponse(items))
             } catch {
                 await send(.loadFailed(error.localizedDescription))
             }

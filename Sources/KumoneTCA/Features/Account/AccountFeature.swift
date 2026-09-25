@@ -70,7 +70,6 @@ public struct AccountFeature {
         public let artists: [ArtistSummary]
     }
 
-    @Dependency(\.netease) public var api
     @Dependency(\.musicProvider) public var provider
     @Dependency(\.session) public var session
     @Dependency(\.persistence) public var persistence
@@ -96,7 +95,7 @@ public struct AccountFeature {
                         await provider.refreshLogin()
                     }
                     do {
-                        let profile = try await api.userAccount()
+                        let profile = try await provider.userAccount()
                         await send(.bootstrapResponse(.success(profile)))
                     } catch {
                         await send(.bootstrapResponse(.failure(AppError(wrapping: error))))
@@ -117,11 +116,11 @@ public struct AccountFeature {
             case .refreshLibrary:
                 guard let uid = state.profile?.userId else { return .none }
                 return .run { send in
-                    async let playlists = try? api.userPlaylists(uid: uid, limit: 2000, offset: 0)
-                    async let liked = try? api.likedTrackIDs(uid: uid)
+                    async let playlists = try? provider.userPlaylists(uid: MusicID(uid), limit: 2000, offset: 0)
+                    async let liked = try? provider.likedTrackIDs(uid: MusicID(uid))
                     if let playlists = await playlists, let liked = await liked {
                         await send(.libraryResponse(.success(LibraryRefresh(
-                            playlists: playlists, likedTrackIDs: liked
+                            playlists: playlists, likedTrackIDs: liked.compactMap { Int($0.sourceID) }
                         ))))
                     } else {
                         let message = AppError(String(localized: "加载歌单失败"))
@@ -170,7 +169,7 @@ public struct AccountFeature {
                 else { state.likedTrackIDs.remove(trackID) }
                 return .run { send in
                     do {
-                        try await api.likeTrack(trackID, like)
+                        try await provider.likeTrack(MusicID(trackID), like: like)
                         await send(.likeResponse(.success(like), trackID: trackID))
                     } catch {
                         await send(.likeResponse(.failure(AppError(wrapping: error)), trackID: trackID))

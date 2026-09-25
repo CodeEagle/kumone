@@ -29,7 +29,7 @@ public struct ToplistsFeature {
         case play(tracks: [Track], source: PlaySource, context: PlayContext?)
     }
 
-    @Dependency(\.netease) public var netease
+    @Dependency(\.musicProvider) public var provider
 
     public var body: some ReducerOf<Self> {
         Reduce { state, action in
@@ -58,10 +58,32 @@ public struct ToplistsFeature {
         }
     }
 
+    // Bridge into the existing state model, which only exposes a decoder initializer.
+    // Chart has no track previews; ToplistItem decodes the omitted tracks as [].
+    private struct ChartPayload: Encodable {
+        let id: Int
+        let name: String
+        let coverImgUrl: String?
+        let updateFrequency: String?
+        let playCount: Int
+    }
+
     private func loadEffect() -> Effect<Action> {
-        .run { [netease] send in
+        .run { [provider] send in
             do {
-                await send(.response(try await netease.toplists()))
+                let charts = try await provider.toplists()
+                let items = try charts.map { chart in
+                    guard let id = Int(chart.id.sourceID) else {
+                        throw DecodingError.dataCorrupted(.init(
+                            codingPath: [], debugDescription: "Chart ID is not an integer: \(chart.id.sourceID)"))
+                    }
+                    let payload = ChartPayload(
+                        id: id, name: chart.name, coverImgUrl: chart.coverURL?.absoluteString,
+                        updateFrequency: chart.updateFrequency, playCount: chart.playCount)
+                    return try JSONDecoder().decode(
+                        ToplistItem.self, from: JSONEncoder().encode(payload))
+                }
+                await send(.response(items))
             } catch {
                 await send(.loadFailed(error.localizedDescription))
             }

@@ -87,7 +87,8 @@ public struct PlaylistDetailFeature {
         case subscriptionChanged
     }
 
-    @Dependency(\.netease) public var netease
+    @Dependency(\.intelligence) public var intelligence
+    @Dependency(\.musicProvider) public var provider
 
     /// songDetails takes 500 IDs at a time.
     public static let chunkSize = 500
@@ -150,9 +151,9 @@ public struct PlaylistDetailFeature {
                 let subscribed = !detail.subscribed
                 state.detail?.subscribed = subscribed
                 let id = detail.id
-                return .run { [netease] send in
+                return .run { [provider] send in
                     do {
-                        try await netease.subscribePlaylist(id: id, subscribe: subscribed)
+                        try await provider.subscribePlaylist(MusicID(id), subscribe: subscribed)
                         await send(.delegate(.subscriptionChanged))
                     } catch {
                         // Roll back the optimistic toggle.
@@ -168,10 +169,10 @@ public struct PlaylistDetailFeature {
             case .startHeartbeat:
                 guard let seed = state.playableTracks.randomElement() else { return .none }
                 let playlistID = state.playlistID
-                return .run { [netease] send in
+                return .run { [intelligence] send in
                     do {
-                        let tracks = try await netease.intelligenceList(
-                            songID: seed.id, playlistID: playlistID)
+                        let tracks = try await intelligence?.intelligenceList(
+                            songID: MusicID(seed.id), playlistID: MusicID(playlistID)) ?? []
                         if tracks.isEmpty {
                             await send(.delegate(.toast(String(localized: "心动模式暂时不可用"))))
                             return
@@ -195,11 +196,11 @@ public struct PlaylistDetailFeature {
         // Keep the existing content visible while refetching.
         if state.detail == nil { state.loadState = .loading }
         let playlistID = state.playlistID
-        return .run { [netease] send in
+        return .run { [provider] send in
             do {
-                let response = try await netease.playlistDetail(id: playlistID)
+                let response = try await provider.playlistDetail(id: MusicID(playlistID))
                 await send(.detailResponse(
-                    playlist: response.playlist, privileges: response.privileges))
+                    playlist: response, privileges: response.privileges))
             } catch {
                 await send(.loadFailed(error.localizedDescription))
             }
@@ -217,11 +218,11 @@ public struct PlaylistDetailFeature {
         let chunks = stride(from: 0, to: remaining.count, by: Self.chunkSize)
             .map { Array(remaining.dropFirst($0).prefix(Self.chunkSize)) }
 
-        return .run { [netease] send in
+        return .run { [provider] send in
             await send(.isLoadingMoreChanged(true))
             for chunk in chunks {
-                guard let response = try? await netease.songDetails(ids: chunk) else { break }
-                await send(.chunkLoaded(songs: response.songs, privileges: response.privileges ?? []))
+                guard let songs = try? await provider.songDetails(ids: chunk.map(MusicID.init)) else { break }
+                await send(.chunkLoaded(songs: songs, privileges: songs.compactMap(\.embeddedPrivilege)))
             }
             await send(.chunksFinished)
         }
