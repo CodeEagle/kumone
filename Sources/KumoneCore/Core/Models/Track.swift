@@ -1,6 +1,6 @@
 import Foundation
 
-public struct ArtistRef: Codable, Hashable, Identifiable {
+public struct ArtistRef: Codable, Hashable, Identifiable, Sendable {
     public let id: Int
     public let name: String
 
@@ -16,7 +16,7 @@ public struct ArtistRef: Codable, Hashable, Identifiable {
     }
 }
 
-public struct AlbumRef: Codable, Hashable, Identifiable {
+public struct AlbumRef: Codable, Hashable, Identifiable, Sendable {
     public let id: Int
     public let name: String
     public let picUrl: String?
@@ -137,7 +137,7 @@ extension Track {
 }
 
 /// Playability flags per track, returned in parallel `privileges` arrays.
-public struct TrackPrivilege: Codable, Hashable {
+public struct TrackPrivilege: Codable, Hashable, Sendable {
     public let id: Int
     public let fee: Int?
     public let pl: Int?

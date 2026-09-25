@@ -1,5 +1,4 @@
 import CoreGraphics
-import KumoneCore
 import MetalKit
 
 #if os(macOS)

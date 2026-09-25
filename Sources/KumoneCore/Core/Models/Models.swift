@@ -27,7 +27,7 @@ public struct UserProfile: Decodable, Hashable {
 
 // MARK: - Playlist
 
-public struct PlaylistCreator: Decodable, Hashable {
+public struct PlaylistCreator: Decodable, Hashable, Sendable {
     public let userId: Int
     public let nickname: String
     public let avatarUrl: String?
@@ -421,7 +421,7 @@ public struct FreeTrialInfo: Codable, Hashable {
 /// A cloud-disk entry. The real payload nests metadata under `privateCloud`
 /// and the playable track under `simpleSong`; older docs show flat fields,
 /// so both shapes are tolerated.
-public struct CloudSongItem: Decodable, Hashable, Identifiable {
+public struct CloudSongItem: Decodable, Hashable, Identifiable, Sendable {
     public let songId: Int
     public let songName: String?
     public let artist: String?
