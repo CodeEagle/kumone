@@ -12,6 +12,7 @@ enum KumoneMain {
         // precede it.
         MusicProviderKey.register(NetEaseMusicProvider(), for: .netease)
         MusicProviderKey.register(QQMusicProvider(), for: .qq)
+        MusicProviderKey.register(KuwoMusicProvider(), for: .kuwo)
 
         let app = NSApplication.shared
         let delegate = AppDelegate()

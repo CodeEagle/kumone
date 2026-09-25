@@ -6,7 +6,7 @@ import XCTest
 final class ProviderSwitchTests: XCTestCase {
     /// 本测试专门验证 registry 解析，故不使用 withDependencies 覆盖结果。
     /// 修改全局状态的窗口不跨 await，并恢复完整快照（通常为 .netease）。
-    private func resolveProviders() -> (qq: any MusicProvider, unregistered: any MusicProvider) {
+    private func resolveProviders() -> (qq: any MusicProvider, kuwo: any MusicProvider, unregistered: any MusicProvider) {
         let originalRegistry = MusicProviderKey.registry
         let originalID = MusicProviderKey.activeProviderID
         defer {
@@ -28,6 +28,14 @@ final class ProviderSwitchTests: XCTestCase {
         XCTAssertEqual(qq.qrLoginURL("unused").absoluteString, "about:blank")
         assertOptionalCapabilities(available: false)
 
+        MusicProviderKey.register(KuwoMusicProvider(), for: .kuwo)
+        MusicProviderKey.activeProviderID = .kuwo
+        let kuwo = MusicProviderKey.liveValue
+        XCTAssertTrue(kuwo is KuwoMusicProvider)
+        XCTAssertFalse(kuwo.isLoggedIn)
+        XCTAssertTrue(kuwo.supportedMethods.isEmpty)
+        assertOptionalCapabilities(available: false)
+
         MusicProviderKey.registry.removeValue(forKey: .kuwo)
         MusicProviderKey.activeProviderID = .kuwo
         let unregistered = MusicProviderKey.liveValue
@@ -39,7 +47,7 @@ final class ProviderSwitchTests: XCTestCase {
         MusicProviderKey.activeProviderID = .netease
         XCTAssertTrue(MusicProviderKey.liveValue is NetEaseMusicProvider)
         assertOptionalCapabilities(available: true)
-        return (qq, unregistered)
+        return (qq, kuwo, unregistered)
     }
 
     private func assertOptionalCapabilities(available: Bool, file: StaticString = #filePath, line: UInt = #line) {
@@ -52,6 +60,13 @@ final class ProviderSwitchTests: XCTestCase {
     func testSwitchingResolvesPartialProviderAndUnregisteredFallback() async {
         // 先同步解析并恢复全局状态，再调用无状态 provider，避免 await 期间污染其它测试。
         let providers = resolveProviders()
+        // Transport-backed search and playback are covered by Kuwo fixture tests.
+        do { _ = try await providers.kuwo.lyric(id: .source(id: "6686351", provider: .kuwo)); XCTFail() }
+        catch { XCTAssertEqual(error as? KuwoAPIError, .lyricUnavailable) }
+        do { _ = try await providers.kuwo.search("test", category: .albums, limit: 10, offset: 0); XCTFail() }
+        catch { XCTAssertEqual(error as? KuwoAPIError, .searchCategoryUnavailable) }
+        do { _ = try await providers.kuwo.playlistDetail(id: .source(id: "93", provider: .kuwo)); XCTFail() }
+        catch { XCTAssertEqual(error as? KuwoAPIError, .playlistUnavailable) }
         for provider in [providers.qq, providers.unregistered] {
             do {
                 _ = try await provider.search("测试", category: .songs, limit: 10, offset: 0)
