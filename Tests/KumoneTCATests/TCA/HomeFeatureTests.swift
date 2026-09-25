@@ -1,7 +1,7 @@
 import ComposableArchitecture
 import Dependencies
 import Foundation
-import KumoneCore
+@testable import KumoneCore
 @testable import KumoneTCA
 import XCTest
 
@@ -35,11 +35,12 @@ final class HomeFeatureTests: XCTestCase {
         return try! JSONDecoder().decode(ArtistSummary.self, from: Data(json.utf8))
     }
 
+    // Chart does not expose NetEase track previews; the feature receives an empty list.
     nonisolated private static func makeToplist(_ id: Int, _ name: String) -> ToplistItem {
         let json = """
             {"id": \(id), "name": "\(name)", "coverImgUrl": "https://music.example.com/t\(id).jpg", \
             "updateFrequency": "每日更新", "playCount": 999, \
-            "tracks": [{"first": "歌一", "second": "歌手一"}]}
+            "tracks": []}
             """
         return try! JSONDecoder().decode(ToplistItem.self, from: Data(json.utf8))
     }
@@ -53,33 +54,34 @@ final class HomeFeatureTests: XCTestCase {
     }
 
     nonisolated private static func makeBrief(
-        _ id: Int, _ name: String, _ cover: String
-    ) -> NeteaseAPI.PlaylistBrief.Body {
-        let json = """
-            {"id": \(id), "name": "\(name)", "coverImgUrl": "\(cover)"}
-            """
-        return try! JSONDecoder().decode(
-            NeteaseAPI.PlaylistBrief.Body.self, from: Data(json.utf8)
-        )
+        _ id: MusicID, _ name: String, _ cover: String
+    ) -> PlaylistBriefInfo {
+        PlaylistBriefInfo(id: id, name: name, coverURL: URL(string: cover))
+    }
+
+    nonisolated private static func makeChart(_ id: Int, _ name: String) -> Chart {
+        Chart(id: MusicID(id), name: name,
+              coverURL: URL(string: "https://music.example.com/t\(id).jpg"),
+              updateFrequency: "每日更新", playCount: 999)
     }
 
     // MARK: - Logged out
 
     /// A logged-out user gets the public sections only.
     func testLoggedOutLoadsPublicSectionsOnly() async {
+        var provider = MockMusicProvider()
+        provider.personalizedPlaylistsHandler = { _ in
+            [Self.makePlaylist(1, "个性歌单一"), Self.makePlaylist(2, "个性歌单二")]
+        }
+        provider.toplistsHandler = {
+            // Only the featured subset survives the filter.
+            [Self.makeChart(19_723_756, "云音乐飙升榜"), Self.makeChart(999, "别榜")]
+        }
+        provider.newAlbumsHandler = { _, _, _ in [Self.makeAlbum(10, "新专辑一")] }
+        provider.topArtistsHandler = { _ in [Self.makeArtist(20, "歌手一")] }
         let store = TestStore(initialState: HomeFeature.State()) {
             HomeFeature()
         } withDependencies: {
-            var provider = MockMusicProvider()
-            provider.personalizedPlaylistsHandler = { _ in
-                [Self.makePlaylist(1, "个性歌单一"), Self.makePlaylist(2, "个性歌单二")]
-            }
-            $0.netease.toplists = {
-                // Only the featured subset survives the filter.
-                [Self.makeToplist(19_723_756, "云音乐飙升榜"), Self.makeToplist(999, "别榜")]
-            }
-            provider.newAlbumsHandler = { _, _, _ in [Self.makeAlbum(10, "新专辑一")] }
-            provider.topArtistsHandler = { _ in [Self.makeArtist(20, "歌手一")] }
             $0.musicProvider = provider
         }
         await store.send(.onAppear) {
@@ -115,34 +117,34 @@ final class HomeFeatureTests: XCTestCase {
     func testLoggedInLoadsRadarAndDailyCover() async {
         var state = HomeFeature.State()
         state.isLoggedIn = true
+        var provider = MockMusicProvider()
+        provider.recommendResourceHandler = { [Self.makePlaylist(1, "每日歌单")] }
+        // id 1 duplicates the head and must be collapsed away.
+        provider.personalizedPlaylistsHandler = { _ in
+            [Self.makePlaylist(1, "重复歌单"), Self.makePlaylist(2, "个性歌单")]
+        }
+        provider.toplistsHandler = { [] }
+        provider.newAlbumsHandler = { _, _, _ in [Self.makeAlbum(10, "新专辑一")] }
+        // A single artist keeps the shuffled prefix deterministic.
+        provider.topArtistsHandler = { _ in [Self.makeArtist(20, "歌手一")] }
+        provider.dailyRecommendSongsHandler = { [Self.makeDailyTrack("https://music.example.com/daily.jpg")] }
+        provider.playlistBriefHandler = { id in
+            switch Int(id.sourceID) {
+            case 3_136_952_023:
+                return Self.makeBrief(id, "今天从《夜曲》听起|私人雷达", "https://music.example.com/r1.jpg")
+            case 2_829_883_282:
+                // No separator: the whole name is the title.
+                return Self.makeBrief(id, "华语私人雷达", "https://music.example.com/r2.jpg")
+            case 2_829_816_518:
+                return Self.makeBrief(id, "今天从《稻香》听起|欧美私人雷达", "https://music.example.com/r3.jpg")
+            default:
+                // The last radar family fails to load and is dropped.
+                throw URLError(.badServerResponse)
+            }
+        }
         let store = TestStore(initialState: state) {
             HomeFeature()
         } withDependencies: {
-            var provider = MockMusicProvider()
-            provider.recommendResourceHandler = { [Self.makePlaylist(1, "每日歌单")] }
-            // id 1 duplicates the head and must be collapsed away.
-            provider.personalizedPlaylistsHandler = { _ in
-                [Self.makePlaylist(1, "重复歌单"), Self.makePlaylist(2, "个性歌单")]
-            }
-            $0.netease.toplists = { [] }
-            provider.newAlbumsHandler = { _, _, _ in [Self.makeAlbum(10, "新专辑一")] }
-            // A single artist keeps the shuffled prefix deterministic.
-            provider.topArtistsHandler = { _ in [Self.makeArtist(20, "歌手一")] }
-            provider.dailyRecommendSongsHandler = { [Self.makeDailyTrack("https://music.example.com/daily.jpg")] }
-            $0.netease.playlistBrief = { id in
-                switch id {
-                case 3_136_952_023:
-                    return Self.makeBrief(id, "今天从《夜曲》听起|私人雷达", "https://music.example.com/r1.jpg")
-                case 2_829_883_282:
-                    // No separator: the whole name is the title.
-                    return Self.makeBrief(id, "华语私人雷达", "https://music.example.com/r2.jpg")
-                case 2_829_816_518:
-                    return Self.makeBrief(id, "今天从《稻香》听起|欧美私人雷达", "https://music.example.com/r3.jpg")
-                default:
-                    // The last radar family fails to load and is dropped.
-                    throw URLError(.badServerResponse)
-                }
-            }
             $0.musicProvider = provider
         }
         await store.send(.onAppear) {
@@ -181,14 +183,14 @@ final class HomeFeatureTests: XCTestCase {
 
     /// Both discovery anchors empty is how the page reports a broken network.
     func testEmptySectionsReportNetworkError() async {
+        var provider = MockMusicProvider()
+        provider.personalizedPlaylistsHandler = { _ in [] }
+        provider.toplistsHandler = { [Self.makeChart(19_723_756, "云音乐飙升榜")] }
+        provider.newAlbumsHandler = { _, _, _ in [] }
+        provider.topArtistsHandler = { _ in [] }
         let store = TestStore(initialState: HomeFeature.State()) {
             HomeFeature()
         } withDependencies: {
-            var provider = MockMusicProvider()
-            provider.personalizedPlaylistsHandler = { _ in [] }
-            $0.netease.toplists = { [Self.makeToplist(19_723_756, "云音乐飙升榜")] }
-            provider.newAlbumsHandler = { _, _, _ in [] }
-            provider.topArtistsHandler = { _ in [] }
             $0.musicProvider = provider
         }
         await store.send(.onAppear) {
@@ -209,14 +211,14 @@ final class HomeFeatureTests: XCTestCase {
 
     /// `onAppear` is a load-once guard: a second arrival does nothing.
     func testOnAppearIsIdempotentOnceLoaded() async {
+        var provider = MockMusicProvider()
+        provider.personalizedPlaylistsHandler = { _ in [Self.makePlaylist(1, "个性歌单一")] }
+        provider.toplistsHandler = { [] }
+        provider.newAlbumsHandler = { _, _, _ in [Self.makeAlbum(10, "新专辑一")] }
+        provider.topArtistsHandler = { _ in [] }
         let store = TestStore(initialState: HomeFeature.State()) {
             HomeFeature()
         } withDependencies: {
-            var provider = MockMusicProvider()
-            provider.personalizedPlaylistsHandler = { _ in [Self.makePlaylist(1, "个性歌单一")] }
-            $0.netease.toplists = { [] }
-            provider.newAlbumsHandler = { _, _, _ in [Self.makeAlbum(10, "新专辑一")] }
-            provider.topArtistsHandler = { _ in [] }
             $0.musicProvider = provider
         }
         await store.send(.onAppear) { $0.loadState = HomeFeature.State.LoadState.loading }
@@ -241,17 +243,17 @@ final class HomeFeatureTests: XCTestCase {
         state.isLoggedIn = true
         state.loadState = HomeFeature.State.LoadState.loaded
         state.recommendPlaylists = [Self.makePlaylist(1, "旧歌单")]
+        var provider = MockMusicProvider()
+        provider.personalizedPlaylistsHandler = { _ in [Self.makePlaylist(2, "新歌单")] }
+        provider.recommendResourceHandler = { [] }
+        provider.toplistsHandler = { [] }
+        provider.newAlbumsHandler = { _, _, _ in [] }
+        provider.topArtistsHandler = { _ in [] }
+        provider.dailyRecommendSongsHandler = { [] }
+        provider.playlistBriefHandler = { _ in Self.makeBrief(MusicID(0), "雷达歌单", "https://music.example.com/x.jpg") }
         let store = TestStore(initialState: state) {
             HomeFeature()
         } withDependencies: {
-            var provider = MockMusicProvider()
-            provider.personalizedPlaylistsHandler = { _ in [Self.makePlaylist(2, "新歌单")] }
-            provider.recommendResourceHandler = { [] }
-            $0.netease.toplists = { [] }
-            provider.newAlbumsHandler = { _, _, _ in [] }
-            provider.topArtistsHandler = { _ in [] }
-            provider.dailyRecommendSongsHandler = { [] }
-            $0.netease.playlistBrief = { _ in Self.makeBrief(0, "雷达歌单", "https://music.example.com/x.jpg") }
             $0.musicProvider = provider
         }
         await store.send(.reload) { $0.loadState = HomeFeature.State.LoadState.loading }
@@ -275,17 +277,20 @@ final class HomeFeatureTests: XCTestCase {
         let detail = try JSONDecoder().decode(NeteaseAPI.PlaylistDetailResponse.self, from: Data(
             #"{"playlist":{"id":42,"name":"播放歌单","tracks":[{"id":7,"name":"歌曲","ar":[],"al":{"id":2,"name":"专辑"},"dt":1000}],"trackIds":[{"id":99}]}}"#.utf8))
         XCTAssertEqual(detail.playlist.tracks.count, 1)
+        var provider = MockMusicProvider()
+        provider.playlistDetailHandler = { id in
+            XCTAssertEqual(id, MusicID(42))
+            return try JSONDecoder().decode(NeteaseAPI.PlaylistDetailResponse.self, from: Data(
+                #"{"playlist":{"id":42,"name":"播放歌单","tracks":[{"id":7,"name":"歌曲","ar":[],"al":{"id":2,"name":"专辑"},"dt":1000}],"trackIds":[{"id":99}]}}"#.utf8)).playlist
+        }
+        provider.songDetailsHandler = { _ in
+            XCTFail("Embedded tracks must bypass songDetails")
+            return []
+        }
         let store = TestStore(initialState: HomeFeature.State()) {
             HomeFeature()
         } withDependencies: {
-            $0.netease.playlistDetail = { id in
-                XCTAssertEqual(id, 42)
-                return detail
-            }
-            $0.netease.songDetails = { _ in
-                XCTFail("Embedded tracks must bypass songDetails")
-                return NeteaseAPI.SongDetailResponse(songs: [], privileges: nil)
-            }
+            $0.musicProvider = provider
         }
         await store.send(.playPlaylist(42))
         await store.receive(.delegate(.play(
@@ -303,17 +308,25 @@ final class HomeFeatureTests: XCTestCase {
         let detail = try JSONDecoder().decode(NeteaseAPI.PlaylistDetailResponse.self, from: data)
         let songs = try JSONDecoder().decode(NeteaseAPI.SongDetailResponse.self, from: Data(
             #"{"songs":[{"id":1,"name":"补全歌曲","ar":[],"al":{"id":2,"name":"专辑"},"dt":1000}]}"#.utf8))
+        var provider = MockMusicProvider()
+        provider.playlistDetailHandler = { id in
+            XCTAssertEqual(id, MusicID(42))
+            let trackIDs = (1...501).map { ["id": $0] }
+            let playlist: [String: Any] = [
+                "id": 42, "name": "完整歌单", "tracks": [Int](), "trackIds": trackIDs
+            ]
+            let data = try JSONSerialization.data(withJSONObject: ["playlist": playlist])
+            return try JSONDecoder().decode(NeteaseAPI.PlaylistDetailResponse.self, from: data).playlist
+        }
+        provider.songDetailsHandler = { ids in
+            XCTAssertEqual(ids, (1...500).map(MusicID.init))
+            return try JSONDecoder().decode(NeteaseAPI.SongDetailResponse.self, from: Data(
+                #"{"songs":[{"id":1,"name":"补全歌曲","ar":[],"al":{"id":2,"name":"专辑"},"dt":1000}]}"#.utf8)).songs
+        }
         let store = TestStore(initialState: HomeFeature.State()) {
             HomeFeature()
         } withDependencies: {
-            $0.netease.playlistDetail = { id in
-                XCTAssertEqual(id, 42)
-                return detail
-            }
-            $0.netease.songDetails = { ids in
-                XCTAssertEqual(ids, Array(1...500))
-                return songs
-            }
+            $0.musicProvider = provider
         }
         await store.send(.playPlaylist(42))
         await store.receive(.delegate(.play(
@@ -323,14 +336,16 @@ final class HomeFeatureTests: XCTestCase {
     }
 
     func testPlaylistPlaybackDetailFailureProducesNoDelegate() async {
+        var provider = MockMusicProvider()
+        provider.playlistDetailHandler = { _ in throw URLError(.badServerResponse) }
+        provider.songDetailsHandler = { _ in
+            XCTFail("Failed detail must stop playback")
+            return []
+        }
         let store = TestStore(initialState: HomeFeature.State()) {
             HomeFeature()
         } withDependencies: {
-            $0.netease.playlistDetail = { _ in throw URLError(.badServerResponse) }
-            $0.netease.songDetails = { _ in
-                XCTFail("Failed detail must stop playback")
-                return NeteaseAPI.SongDetailResponse(songs: [], privileges: nil)
-            }
+            $0.musicProvider = provider
         }
         await store.send(.playPlaylist(42))
         await store.finish()
@@ -339,14 +354,19 @@ final class HomeFeatureTests: XCTestCase {
     func testPlaylistPlaybackSongDetailsFailureDelegatesEmptyTracks() async throws {
         let detail = try JSONDecoder().decode(NeteaseAPI.PlaylistDetailResponse.self, from: Data(
             #"{"playlist":{"id":42,"name":"空歌单","trackIds":[{"id":7}]}}"#.utf8))
+        var provider = MockMusicProvider()
+        provider.playlistDetailHandler = { _ in
+            try JSONDecoder().decode(NeteaseAPI.PlaylistDetailResponse.self, from: Data(
+                #"{"playlist":{"id":42,"name":"空歌单","trackIds":[{"id":7}]}}"#.utf8)).playlist
+        }
+        provider.songDetailsHandler = { ids in
+            XCTAssertEqual(ids, [MusicID(7)])
+            throw URLError(.badServerResponse)
+        }
         let store = TestStore(initialState: HomeFeature.State()) {
             HomeFeature()
         } withDependencies: {
-            $0.netease.playlistDetail = { _ in detail }
-            $0.netease.songDetails = { ids in
-                XCTAssertEqual(ids, [7])
-                throw URLError(.badServerResponse)
-            }
+            $0.musicProvider = provider
         }
         await store.send(.playPlaylist(42))
         await store.receive(.delegate(.play(
@@ -359,13 +379,17 @@ final class HomeFeatureTests: XCTestCase {
             AlbumSummary.self, from: Data(#"{"id":42,"name":"选中专辑"}"#.utf8))
         let detail = try JSONDecoder().decode(AlbumDetailResponse.self, from: Data(
             #"{"album":{"id":42,"name":"详情名称"},"songs":[{"id":7,"name":"歌曲","ar":[],"al":{"id":42,"name":"专辑"},"dt":1000}]}"#.utf8))
+        var provider = MockMusicProvider()
+        provider.albumHandler = { id in
+            XCTAssertEqual(id, MusicID(42))
+            let response = try JSONDecoder().decode(AlbumDetailResponse.self, from: Data(
+                #"{"album":{"id":42,"name":"详情名称"},"songs":[{"id":7,"name":"歌曲","ar":[],"al":{"id":42,"name":"专辑"},"dt":1000}]}"#.utf8))
+            return AlbumDetail(detail: response.album, songs: response.songs)
+        }
         let store = TestStore(initialState: HomeFeature.State()) {
             HomeFeature()
         } withDependencies: {
-            $0.netease.album = { id in
-                XCTAssertEqual(id, 42)
-                return detail
-            }
+            $0.musicProvider = provider
         }
         await store.send(.playAlbum(album))
         await store.receive(.delegate(.play(
@@ -377,20 +401,24 @@ final class HomeFeatureTests: XCTestCase {
     func testAlbumPlaybackFailureProducesNoDelegate() async throws {
         let album = try JSONDecoder().decode(
             AlbumSummary.self, from: Data(#"{"id":42,"name":"选中专辑"}"#.utf8))
+        var provider = MockMusicProvider()
+        provider.albumHandler = { id in
+            XCTAssertEqual(id, MusicID(42))
+            throw URLError(.badServerResponse)
+        }
         let store = TestStore(initialState: HomeFeature.State()) {
             HomeFeature()
         } withDependencies: {
-            $0.netease.album = { id in
-                XCTAssertEqual(id, 42)
-                throw URLError(.badServerResponse)
-            }
+            $0.musicProvider = provider
         }
         await store.send(.playAlbum(album))
         await store.finish()
     }
 
     func testHeartbeatDelegatesWithoutChangingHomeState() async {
-        let store = TestStore(initialState: HomeFeature.State()) { HomeFeature() }
+        let store = TestStore(initialState: HomeFeature.State()) { HomeFeature() } withDependencies: {
+            $0.musicProvider = MockMusicProvider()
+        }
         await store.send(.startHeartbeat)
         await store.receive(.delegate(.startHeartbeat))
         await store.finish()
@@ -405,42 +433,42 @@ final class HomeFeatureTests: XCTestCase {
         let artist = Self.makeArtist(20, "歌手")
         var state = HomeFeature.State()
         state.isLoggedIn = true
+        var provider = MockMusicProvider()
+        provider.recommendResourceHandler = { [head, head] }
+        provider.personalizedPlaylistsHandler = { limit in
+            XCTAssertEqual(limit, 30)
+            return [duplicate, tail, tail]
+        }
+        provider.newAlbumsHandler = { area, limit, offset in
+            XCTAssertEqual(area, "ALL")
+            XCTAssertEqual(limit, 20)
+            XCTAssertEqual(offset, 0)
+            return [album]
+        }
+        provider.topArtistsHandler = { limit in
+            XCTAssertEqual(limit, 100)
+            // Identical entries make shuffle deterministic while exercising the cap.
+            return Array(repeating: artist, count: 7)
+        }
+        provider.dailyRecommendSongsHandler = { [] }
+        provider.toplistsHandler = { throw URLError(.badServerResponse) }
+        provider.playlistBriefHandler = { id in
+            switch Int(id.sourceID) {
+            case 3_136_952_023:
+                return Self.makeBrief(id, "第一段|第二段|私人雷达", "https://music.example.com/r1.jpg")
+            case 2_829_883_282:
+                // The provider normalizes a missing API name to an empty string.
+                return PlaylistBriefInfo(id: id, name: "", coverURL: nil)
+            case 2_829_816_518:
+                return Self.makeBrief(id, "", "https://music.example.com/r3.jpg")
+            default:
+                throw URLError(.badServerResponse)
+            }
+        }
         let store = TestStore(initialState: state) {
             HomeFeature()
         } withDependencies: {
-            var provider = MockMusicProvider()
-            provider.recommendResourceHandler = { [head, head] }
-            provider.personalizedPlaylistsHandler = { limit in
-                XCTAssertEqual(limit, 30)
-                return [duplicate, tail, tail]
-            }
-            provider.newAlbumsHandler = { area, limit, offset in
-                XCTAssertEqual(area, "ALL")
-                XCTAssertEqual(limit, 20)
-                XCTAssertEqual(offset, 0)
-                return [album]
-            }
-            provider.topArtistsHandler = { limit in
-                XCTAssertEqual(limit, 100)
-                // Identical entries make shuffle deterministic while exercising the cap.
-                return Array(repeating: artist, count: 7)
-            }
-            provider.dailyRecommendSongsHandler = { [] }
             $0.musicProvider = provider
-            $0.netease.toplists = { throw URLError(.badServerResponse) }
-            $0.netease.playlistBrief = { id in
-                switch id {
-                case 3_136_952_023:
-                    return Self.makeBrief(id, "第一段|第二段|私人雷达", "https://music.example.com/r1.jpg")
-                case 2_829_883_282:
-                    return try JSONDecoder().decode(
-                        NeteaseAPI.PlaylistBrief.Body.self, from: Data(#"{"id":2829883282}"#.utf8))
-                case 2_829_816_518:
-                    return Self.makeBrief(id, "", "https://music.example.com/r3.jpg")
-                default:
-                    throw URLError(.badServerResponse)
-                }
-            }
         }
         let sections = HomeFeature.Sections(
             recommendPlaylists: [head, tail],
@@ -449,7 +477,7 @@ final class HomeFeatureTests: XCTestCase {
                     id: 3_136_952_023, title: "私人雷达", subtitle: "第一段|第二段",
                     coverURL: "https://music.example.com/r1.jpg"),
                 HomeFeature.State.RadarPlaylist(
-                    id: 2_829_883_282, title: String(localized: "雷达歌单"), subtitle: nil, coverURL: nil),
+                    id: 2_829_883_282, title: "", subtitle: nil, coverURL: nil),
                 HomeFeature.State.RadarPlaylist(
                     id: 2_829_816_518, title: "", subtitle: nil,
                     coverURL: "https://music.example.com/r3.jpg")
@@ -471,30 +499,30 @@ final class HomeFeatureTests: XCTestCase {
         for loggedIn in [false, true] {
             var state = HomeFeature.State()
             state.isLoggedIn = loggedIn
+            var provider = MockMusicProvider()
+            provider.personalizedPlaylistsHandler = { limit in
+                XCTAssertEqual(limit, 30)
+                throw URLError(.notConnectedToInternet)
+            }
+            provider.recommendResourceHandler = {
+                XCTAssertTrue(loggedIn)
+                throw URLError(.notConnectedToInternet)
+            }
+            provider.newAlbumsHandler = { _, _, _ in throw URLError(.notConnectedToInternet) }
+            provider.topArtistsHandler = { _ in throw URLError(.notConnectedToInternet) }
+            provider.dailyRecommendSongsHandler = {
+                XCTAssertTrue(loggedIn)
+                throw URLError(.notConnectedToInternet)
+            }
+            provider.toplistsHandler = { throw URLError(.notConnectedToInternet) }
+            provider.playlistBriefHandler = { _ in
+                XCTAssertTrue(loggedIn)
+                throw URLError(.notConnectedToInternet)
+            }
             let store = TestStore(initialState: state) {
                 HomeFeature()
             } withDependencies: {
-                var provider = MockMusicProvider()
-                provider.personalizedPlaylistsHandler = { limit in
-                    XCTAssertEqual(limit, 30)
-                    throw URLError(.notConnectedToInternet)
-                }
-                provider.recommendResourceHandler = {
-                    XCTAssertTrue(loggedIn)
-                    throw URLError(.notConnectedToInternet)
-                }
-                provider.newAlbumsHandler = { _, _, _ in throw URLError(.notConnectedToInternet) }
-                provider.topArtistsHandler = { _ in throw URLError(.notConnectedToInternet) }
-                provider.dailyRecommendSongsHandler = {
-                    XCTAssertTrue(loggedIn)
-                    throw URLError(.notConnectedToInternet)
-                }
                 $0.musicProvider = provider
-                $0.netease.toplists = { throw URLError(.notConnectedToInternet) }
-                $0.netease.playlistBrief = { _ in
-                    XCTAssertTrue(loggedIn)
-                    throw URLError(.notConnectedToInternet)
-                }
             }
             await store.send(.onAppear) { $0.loadState = .loading }
             await store.receive(.loaded(HomeFeature.Sections(

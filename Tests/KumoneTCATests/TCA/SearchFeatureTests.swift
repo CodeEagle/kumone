@@ -49,22 +49,22 @@ final class SearchFeatureTests: XCTestCase {
         artists: [ArtistSummary] = [],
         albums: [AlbumSummary] = [],
         playlists: [PlaylistSummary] = []
-    ) -> [(keywords: String, type: NeteaseAPI.SearchType, limit: Int)] {
-        nonisolated(unsafe) var calls: [(String, NeteaseAPI.SearchType, Int)] = []
-        deps.netease.search = { keywords, type, limit, offset in
+    ) -> [(keywords: String, type: SearchCategory, limit: Int)] {
+        nonisolated(unsafe) var calls: [(String, SearchCategory, Int)] = []
+        var provider = MockMusicProvider()
+        provider.searchHandler = { keywords, type, limit, offset in
             calls.append((keywords, type, limit))
             guard keywords == "周" else {
-                return NeteaseAPI.SearchResult(
-                    songs: nil, albums: nil, artists: nil, playlists: nil,
-                    songCount: nil, albumCount: nil, artistCount: nil, playlistCount: nil)
+                return SearchResult()
             }
-            return NeteaseAPI.SearchResult(
-                songs: type == .songs ? songs : nil,
-                albums: type == .albums ? albums : nil,
-                artists: type == .artists ? artists : nil,
-                playlists: type == .playlists ? playlists : nil,
-                songCount: nil, albumCount: nil, artistCount: nil, playlistCount: nil)
+            return SearchResult(
+                songs: type == .songs ? songs : [],
+                albums: type == .albums ? albums : [],
+                artists: type == .artists ? artists : [],
+                playlists: type == .playlists ? playlists : [],
+                counts: SearchCounts(songs: 0, albums: 0, artists: 0, playlists: 0))
         }
+        deps.musicProvider = provider
         return calls
     }
 
@@ -214,46 +214,48 @@ final class SearchFeatureTests: XCTestCase {
     }
 
     func testEachSpecificTabLoadsItsEndpointAndPreservesOtherResults() async throws {
-        let response = try JSONDecoder().decode(NeteaseAPI.SearchResult.self, from: Data(
-            #"{"songs":[{"id":1,"name":"歌曲","ar":[],"al":{"id":2,"name":"专辑"},"dt":1000}],"artists":[{"id":3,"name":"歌手"}],"albums":[{"id":4,"name":"专辑"}],"playlists":[{"id":5,"name":"歌单"}]}"#.utf8))
-        let cases: [(SearchFeature.State.Tab, NeteaseAPI.SearchType, Int)] = [
+        let response = try JSONDecoder().decode(SearchResult.self, from: Data(
+            #"{"songs":[{"id":1,"name":"歌曲","ar":[],"al":{"id":2,"name":"专辑"},"dt":1000}],"artists":[{"id":3,"name":"歌手"}],"albums":[{"id":4,"name":"专辑"}],"playlists":[{"id":5,"name":"歌单"}],"counts":{"songs":0,"albums":0,"artists":0,"playlists":0}}"#.utf8))
+        let cases: [(SearchFeature.State.Tab, SearchCategory, Int)] = [
             (.songs, .songs, 100), (.artists, .artists, 50),
             (.albums, .albums, 50), (.playlists, .playlists, 50)
         ]
         for (tab, type, limit) in cases {
             var state = SearchFeature.State(query: "  搜索词\n")
-            state.songs = response.songs ?? []
-            state.artists = response.artists ?? []
-            state.albums = response.albums ?? []
-            state.playlists = response.playlists ?? []
+            state.songs = response.songs
+            state.artists = response.artists
+            state.albums = response.albums
+            state.playlists = response.playlists
             // Empty just the requested tab so both loading and preservation are observable.
             var results = SearchFeature.Results()
             switch tab {
             case .songs:
                 state.songs = []
-                results.songs = response.songs ?? []
+                results.songs = response.songs
             case .artists:
                 state.artists = []
-                results.artists = response.artists ?? []
+                results.artists = response.artists
             case .albums:
                 state.albums = []
-                results.albums = response.albums ?? []
+                results.albums = response.albums
             case .playlists:
                 state.playlists = []
-                results.playlists = response.playlists ?? []
+                results.playlists = response.playlists
             case .all:
                 XCTFail("Only specific tabs belong in this table")
+            }
+            var provider = MockMusicProvider()
+            provider.searchHandler = { keywords, requestedType, requestedLimit, offset in
+                XCTAssertEqual(keywords, "搜索词")
+                XCTAssertEqual(requestedType, type)
+                XCTAssertEqual(requestedLimit, limit)
+                XCTAssertEqual(offset, 0)
+                return response
             }
             let store = TestStore(initialState: state) {
                 SearchFeature()
             } withDependencies: {
-                $0.netease.search = { keywords, requestedType, requestedLimit, offset in
-                    XCTAssertEqual(keywords, "搜索词")
-                    XCTAssertEqual(requestedType, type)
-                    XCTAssertEqual(requestedLimit, limit)
-                    XCTAssertEqual(offset, 0)
-                    return response
-                }
+                $0.musicProvider = provider
             }
             await store.send(.selectTab(tab)) { $0.tab = tab }
             await store.receive(.load) { $0.isLoading = true }
@@ -274,14 +276,16 @@ final class SearchFeatureTests: XCTestCase {
     }
 
     func testEveryTabTreatsMissingResultArraysAsEmpty() async throws {
-        let empty = try JSONDecoder().decode(NeteaseAPI.SearchResult.self, from: Data("{}".utf8))
+        let empty = SearchResult()
         for tab in SearchFeature.State.Tab.allCases {
             var state = SearchFeature.State(query: "搜索词")
             state.tab = tab
+            var provider = MockMusicProvider()
+            provider.searchHandler = { _, _, _, _ in empty }
             let store = TestStore(initialState: state) {
                 SearchFeature()
             } withDependencies: {
-                $0.netease.search = { _, _, _, _ in empty }
+                $0.musicProvider = provider
             }
             await store.send(.load) { $0.isLoading = true }
             await store.receive(.loaded(tab: tab, results: SearchFeature.Results())) {
@@ -296,10 +300,12 @@ final class SearchFeatureTests: XCTestCase {
         for tab in SearchFeature.State.Tab.allCases {
             var state = SearchFeature.State(query: "搜索词")
             state.tab = tab
+            var provider = MockMusicProvider()
+            provider.searchHandler = { _, _, _, _ in throw URLError(.notConnectedToInternet) }
             let store = TestStore(initialState: state) {
                 SearchFeature()
             } withDependencies: {
-                $0.netease.search = { _, _, _, _ in throw URLError(.notConnectedToInternet) }
+                $0.musicProvider = provider
             }
             await store.send(.load) { $0.isLoading = true }
             await store.receive(.loaded(tab: tab, results: SearchFeature.Results())) {

@@ -28,13 +28,15 @@ final class PlayerFeatureTests: XCTestCase {
     /// Mocks every dependency an unblocked resolve touches, so a test that just
     /// wants queue logic can ignore the engine.
     private func configureResolve(_ deps: inout DependencyValues) {
-        deps.netease.songURL = { _, _ in
+        var provider = MockMusicProvider()
+        provider.songURLHandler = { _, _ in
             [SongURLData(id: 1, url: "https://example.com/a", br: 0, size: 0, type: nil,
                          level: "exhigh", fee: 0, freeTrialInfo: nil, time: 200)]
         }
-        deps.netease.lyric = { _ in Self.emptyLyrics() }
-        deps.netease.scrobbleStart = { _, _ in }
-        deps.netease.scrobbleFinish = { _, _, _ in }
+        provider.lyricHandler = { _ in Self.emptyLyrics() }
+        provider.scrobbleStartHandler = { _, _ in }
+        provider.scrobbleFinishHandler = { _, _, _ in }
+        deps.musicProvider = provider
         deps.persistence.setData = { _, _ in }
         // Fire-and-forget no-ops — the tests assert state, not engine calls.
         // (@DependencyClient's default init traps on any call, so every closure
@@ -74,15 +76,17 @@ final class PlayerFeatureTests: XCTestCase {
         let clock = TestClock()
         let store = TestStore(initialState: state) { PlayerFeature() } withDependencies: {
             configureResolve(&$0)
-            $0.netease.lyric = { _ in
+            var provider = $0.musicProvider as! MockMusicProvider
+            provider.lyricHandler = { _ in
                 try await clock.sleep(for: .seconds(1))
                 return response
             }
-            let songURL = $0.netease.songURL
-            $0.netease.songURL = { ids, quality in
+            let songURL = provider.songURLHandler
+            provider.songURLHandler = { ids, quality in
                 try await clock.sleep(for: .seconds(2))
                 return try await songURL(ids, quality)
             }
+            $0.musicProvider = provider
         }
 
         await store.send(.next)
@@ -759,8 +763,10 @@ final class PlayerFeatureTests: XCTestCase {
         state.engineHasItem = true
         let store = TestStore(initialState: state) { PlayerFeature() } withDependencies: {
             configureResolve(&$0)
-            $0.netease.scrobbleStart = { started.append(($0, $1)) }
-            $0.netease.scrobbleFinish = { finished.append(($0, $1, $2)) }
+            var provider = $0.musicProvider as! MockMusicProvider
+            provider.scrobbleStartHandler = { started.append((Int($0.sourceID)!, Int($1.sourceID)!)) }
+            provider.scrobbleFinishHandler = { finished.append((Int($0.sourceID)!, Int($1.sourceID)!, $2)) }
+            $0.musicProvider = provider
         }
         await store.send(.next)
         await store.receive(\.advanceToNext) {
@@ -1089,31 +1095,26 @@ final class PlayerFeatureTests: XCTestCase {
 
     func testResolveUnsupportedContextsAndDaily() async throws {
         for context in [PlayContext.fm, .recents, .heartbeat] {
-            let resolved = try await PlayerFeature.resolve(context, using: NeteaseMusicClient())
+            let resolved = try await PlayerFeature.resolve(context, using: MockMusicProvider())
             XCTAssertNil(resolved)
         }
-        let resolved = try await withDependencies {
-            var provider = MockMusicProvider()
-            provider.dailyRecommendSongsHandler = { [Self.t1] }
-            $0.musicProvider = provider
-        } operation: {
-            try await PlayerFeature.resolve(.daily, using: NeteaseMusicClient())
-        }
+        var provider = MockMusicProvider()
+        provider.dailyRecommendSongsHandler = { [Self.t1] }
+        let resolved = try await PlayerFeature.resolve(.daily, using: provider)
         XCTAssertEqual(resolved?.tracks, [Self.t1])
         XCTAssertEqual(resolved?.source, .daily)
     }
 
     func testResolveAlbumArtistAndCloud() async throws {
-        var client = NeteaseMusicClient()
-        client.album = { id in
-            XCTAssertEqual(id, 7)
-            return AlbumDetailResponse(
-                album: try JSONDecoder().decode(AlbumDetail.self, from: Data(#"{"id":7}"#.utf8)),
+        var client = MockMusicProvider()
+        client.albumHandler = { id in
+            XCTAssertEqual(id, MusicID(7))
+            return AlbumDetail(detail: try JSONDecoder().decode(AlbumDetail.self, from: Data(#"{"id":7}"#.utf8)),
                 songs: [Self.t1])
         }
-        client.artist = { id in
-            XCTAssertEqual(id, 8)
-            return NeteaseAPI.ArtistResponse(
+        client.artistHandler = { id in
+            XCTAssertEqual(id, MusicID(8))
+            return ArtistDetail(
                 artist: try JSONDecoder().decode(ArtistSummary.self, from: Data(#"{"id":8}"#.utf8)),
                 hotSongs: [Self.t2])
         }
@@ -1124,44 +1125,56 @@ final class PlayerFeatureTests: XCTestCase {
         XCTAssertEqual(artist?.tracks, [Self.t2])
         XCTAssertEqual(artist?.source, .artist(8))
         let song = try JSONSerialization.jsonObject(with: JSONEncoder().encode(Self.t3))
-        let cloudData = try JSONSerialization.data(withJSONObject: ["data": [["simpleSong": song], ["songId": 4]]])
-        client.cloudSongs = { limit, offset in
+        let cloudData = try JSONSerialization.data(withJSONObject: [
+            "items": [["simpleSong": song], ["songId": 4]],
+            "hasMore": false, "usedBytes": 0, "maxBytes": 0
+        ])
+        var cloudStorage = MockCloudStorage()
+        cloudStorage.cloudSongsHandler = { limit, offset in
             XCTAssertEqual(limit, 100)
             XCTAssertEqual(offset, 0)
-            return try JSONDecoder().decode(NeteaseAPI.CloudResponse.self, from: cloudData)
+            return try JSONDecoder().decode(CloudStoragePage.self, from: cloudData)
         }
-        let cloud = try await PlayerFeature.resolve(.cloud, using: client)
+        let cloud = try await withDependencies {
+            $0.cloudStorage = cloudStorage
+        } operation: {
+            try await PlayerFeature.resolve(.cloud, using: client)
+        }
         XCTAssertEqual(cloud?.tracks, [Self.t3])
         XCTAssertEqual(cloud?.source, .cloud)
-        client.cloudSongs = { _, _ in
-            try JSONDecoder().decode(NeteaseAPI.CloudResponse.self, from: Data("{}".utf8))
+        cloudStorage.cloudSongsHandler = { _, _ in
+            CloudStoragePage(items: [], hasMore: false, usedBytes: 0, maxBytes: 0)
         }
-        let empty = try await PlayerFeature.resolve(.cloud, using: client)
+        let empty = try await withDependencies {
+            $0.cloudStorage = cloudStorage
+        } operation: {
+            try await PlayerFeature.resolve(.cloud, using: client)
+        }
         XCTAssertEqual(empty?.tracks, [])
     }
 
     func testResolvePlaylistChunksRemainingIDsAndStopsAfterFailure() async throws {
         let first = try JSONSerialization.jsonObject(with: JSONEncoder().encode(Self.t1))
-        let data = try JSONSerialization.data(withJSONObject: ["playlist": [
+        let data = try JSONSerialization.data(withJSONObject: [
             "id": 9, "tracks": [first], "trackIds": (1...502).map { ["id": $0] }
-        ]])
+        ])
         let calls = LockIsolated<[[Int]]>([])
-        var client = NeteaseMusicClient()
-        client.playlistDetail = { id in
-            XCTAssertEqual(id, 9)
-            return try JSONDecoder().decode(NeteaseAPI.PlaylistDetailResponse.self, from: data)
+        var client = MockMusicProvider()
+        client.playlistDetailHandler = { id in
+            XCTAssertEqual(id, MusicID(9))
+            return try JSONDecoder().decode(PlaylistDetail.self, from: data)
         }
-        client.songDetails = { ids in
-            calls.withValue { $0.append(ids) }
-            return .init(songs: ids.map { Self.track($0, "song") }, privileges: nil)
+        client.songDetailsHandler = { ids in
+            calls.withValue { $0.append(ids.map { Int($0.sourceID)! }) }
+            return ids.map { Self.track(Int($0.sourceID)!, "song") }
         }
         let result = try await PlayerFeature.resolve(.playlist(id: 9, name: "list"), using: client)
         XCTAssertEqual(result?.tracks.map(\.id), Array(1...502))
         XCTAssertEqual(result?.source, .playlist(9))
         XCTAssertEqual(calls.value, [Array(2...501), [502]])
         calls.setValue([])
-        client.songDetails = { ids in
-            calls.withValue { $0.append(ids) }
+        client.songDetailsHandler = { ids in
+            calls.withValue { $0.append(ids.map { Int($0.sourceID)! }) }
             throw URLError(.badServerResponse)
         }
         let partial = try await PlayerFeature.resolve(.playlist(id: 9, name: "list"), using: client)
@@ -1213,9 +1226,11 @@ final class PlayerFeatureTests: XCTestCase {
         let commands = LockIsolated<[String]>([])
         let store = TestStore(initialState: state) { PlayerFeature() } withDependencies: {
             configureResolve(&$0)
+            var provider = $0.musicProvider as! MockMusicProvider
             $0.playback.pause = { commands.withValue { $0.append("pause") } }
             $0.playback.play = { commands.withValue { $0.append("play") } }
-            $0.netease.scrobbleStart = { _, _ in commands.withValue { $0.append("start") } }
+            provider.scrobbleStartHandler = { _, _ in commands.withValue { $0.append("start") } }
+            $0.musicProvider = provider
         }
         await store.send(.togglePlayPause)
         await store.receive(.pause) {
@@ -1398,14 +1413,16 @@ final class PlayerFeatureTests: XCTestCase {
         let now = Date(timeIntervalSince1970: 1000)
         let store = TestStore(initialState: state) { PlayerFeature() } withDependencies: {
             configureResolve(&$0)
+            var provider = $0.musicProvider as! MockMusicProvider
             $0.date = .constant(now)
             $0.playback.seek = { _ in calls.withValue { $0.append("seek") } }
             $0.playback.play = { calls.withValue { $0.append("play") } }
-            $0.netease.scrobbleFinish = { id, _, seconds in
-                XCTAssertEqual(id, 1)
+            provider.scrobbleFinishHandler = { id, _, seconds in
+                XCTAssertEqual(id, MusicID(1))
                 XCTAssertEqual(seconds, 200)
                 calls.withValue { $0.append("finish") }
             }
+            $0.musicProvider = provider
         }
         await store.send(.itemEnded) { $0.progress = 0 }
         await store.receive(.seek(0)) {
@@ -1433,7 +1450,8 @@ final class PlayerFeatureTests: XCTestCase {
             let starts = LockIsolated(0)
             let store = TestStore(initialState: state) { PlayerFeature() } withDependencies: {
                 configureResolve(&$0)
-                $0.netease.scrobbleStart = { _, _ in starts.withValue { $0 += 1 } }
+            var provider = $0.musicProvider as! MockMusicProvider
+                provider.scrobbleStartHandler = { _, _ in starts.withValue { $0 += 1 } }
                 $0.playback.updateMetadata = { title, artist, album, url in
                     XCTAssertEqual(title, track.name)
                     XCTAssertEqual(artist, track.artistNames)
@@ -1441,7 +1459,8 @@ final class PlayerFeatureTests: XCTestCase {
                     XCTAssertEqual(url, cover.flatMap(URL.init(string:)))
                     metadata.withValue { $0.append(title) }
                 }
-            }
+            $0.musicProvider = provider
+        }
             await store.send(.isPlayingChanged(true)) {
                 $0.isPlaying = true
                 $0.isBuffering = false
@@ -1526,12 +1545,13 @@ final class PlayerFeatureTests: XCTestCase {
         state.currentTrack = Self.t1
         let trashed = LockIsolated<[Int]>([])
         let store = TestStore(initialState: state) { PlayerFeature() } withDependencies: {
-            $0.personalFM = nil
             $0.continuousClock = ImmediateClock()
-            $0.netease.fmTrash = { id in
-                trashed.withValue { $0.append(id) }
+            var fm = MockPersonalFM()
+            fm.fmTrashHandler = { id in
+                trashed.withValue { $0.append(Int(id.sourceID)!) }
                 throw URLError(.badServerResponse)
             }
+            $0.personalFM = fm
         }
         await store.send(.fmTrash) { $0.playbackIntent = true }
         await store.receive(.fmAdvance)
@@ -1544,12 +1564,13 @@ final class PlayerFeatureTests: XCTestCase {
     func testPlayContextForwardsResolutionAndIgnoresUnsupportedOrFailedContexts() async {
         let context = PlayContext.album(id: 9, name: "album")
         let store = TestStore(initialState: PlayerFeature.State()) { PlayerFeature() } withDependencies: {
-            $0.netease.album = { _ in
-                AlbumDetailResponse(
-                    album: try JSONDecoder().decode(AlbumDetail.self, from: Data(#"{"id":9}"#.utf8)),
+            var provider = MockMusicProvider()
+            provider.albumHandler = { _ in
+                AlbumDetail(detail: try JSONDecoder().decode(AlbumDetail.self, from: Data(#"{"id":9}"#.utf8)),
                     songs: [])
             }
-            $0.netease.artist = { _ in throw URLError(.badServerResponse) }
+            provider.artistHandler = { _ in throw URLError(.badServerResponse) }
+            $0.musicProvider = provider
         }
         await store.send(.playContext(context))
         await store.receive(.contextResolved(context, tracks: [], source: .album(9)))
@@ -1566,20 +1587,22 @@ final class PlayerFeatureTests: XCTestCase {
         let urls = LockIsolated<[URL]>([])
         let store = TestStore(initialState: PlayerFeature.State()) { PlayerFeature() } withDependencies: {
             configureResolve(&$0)
-            $0.netease.songURL = { ids, level in
-                XCTAssertEqual(ids, [1])
-                qualities.withValue { $0.append(level) }
-                if level != "standard" {
+            var provider = $0.musicProvider as! MockMusicProvider
+            provider.songURLHandler = { ids, level in
+                XCTAssertEqual(ids, [MusicID(1)])
+                qualities.withValue { $0.append(level.neteaseLevel) }
+                if level != .standard {
                     try await clock.sleep(for: .seconds(1))
                     throw URLError(.badServerResponse)
                 }
                 return [SongURLData(id: 1, url: "http://example.com/fallback", br: 0, size: 0,
-                    type: nil, level: level, fee: 0, freeTrialInfo: nil, time: 200)]
+                    type: nil, level: level.neteaseLevel, fee: 0, freeTrialInfo: nil, time: 200)]
             }
             $0.playback.load = { url, autostart in
                 XCTAssertFalse(autostart)
                 urls.withValue { $0.append(url) }
             }
+            $0.musicProvider = provider
         }
         await store.send(.startPlaying(Self.t1)) {
             $0.currentTrack = Self.t1
@@ -1613,8 +1636,9 @@ final class PlayerFeatureTests: XCTestCase {
             state.audioQuality = .standard
             let store = TestStore(initialState: state) { PlayerFeature() } withDependencies: {
                 configureResolve(&$0)
-                $0.netease.songURL = { _, quality in
-                    XCTAssertEqual(quality, "standard")
+            var provider = $0.musicProvider as! MockMusicProvider
+                provider.songURLHandler = { _, quality in
+                    XCTAssertEqual(quality, .standard)
                     try await clock.sleep(for: .seconds(1))
                     return [SongURLData(id: 1, url: isTrial ? "https://example.com/trial" : nil,
                         br: 0, size: 0, type: nil, level: "standard", fee: 0,
@@ -1624,7 +1648,8 @@ final class PlayerFeatureTests: XCTestCase {
                     unblocks.withValue { $0.append(track.id) }
                     return UnblockService.Resolved(url: resolvedURL, source: "test")
                 }
-            }
+            $0.musicProvider = provider
+        }
             await store.send(.startPlaying(Self.t1)) {
                 $0.currentTrack = Self.t1
                 $0.duration = 200
@@ -1677,11 +1702,13 @@ final class PlayerFeatureTests: XCTestCase {
         let clock = TestClock()
         let store = TestStore(initialState: state) { PlayerFeature() } withDependencies: {
             configureResolve(&$0)
-            let songURL = $0.netease.songURL
-            $0.netease.songURL = { ids, quality in
+            var provider = $0.musicProvider as! MockMusicProvider
+            let songURL = provider.songURLHandler
+            provider.songURLHandler = { ids, quality in
                 try await clock.sleep(for: .seconds(1))
                 return try await songURL(ids, quality)
             }
+            $0.musicProvider = provider
         }
         await store.send(.play(tracks: [Self.t1, Self.t2], source: .none, startAt: Self.t2, context: nil)) {
             $0.queue = [Self.t1, Self.t2]
@@ -1714,11 +1741,13 @@ final class PlayerFeatureTests: XCTestCase {
         let clock = TestClock()
         let store = TestStore(initialState: state) { PlayerFeature() } withDependencies: {
             configureResolve(&$0)
-            let songURL = $0.netease.songURL
-            $0.netease.songURL = { ids, quality in
+            var provider = $0.musicProvider as! MockMusicProvider
+            let songURL = provider.songURLHandler
+            provider.songURLHandler = { ids, quality in
                 try await clock.sleep(for: .seconds(1))
                 return try await songURL(ids, quality)
             }
+            $0.musicProvider = provider
         }
         await store.send(.play(tracks: [Self.t1], source: .none, startAt: Self.t2, context: nil)) {
             $0.queue = [Self.t1]
@@ -1751,11 +1780,13 @@ final class PlayerFeatureTests: XCTestCase {
         let clock = TestClock()
         let store = TestStore(initialState: state) { PlayerFeature() } withDependencies: {
             configureResolve(&$0)
-            let songURL = $0.netease.songURL
-            $0.netease.songURL = { ids, quality in
+            var provider = $0.musicProvider as! MockMusicProvider
+            let songURL = provider.songURLHandler
+            provider.songURLHandler = { ids, quality in
                 try await clock.sleep(for: .seconds(1))
                 return try await songURL(ids, quality)
             }
+            $0.musicProvider = provider
         }
         await store.send(.togglePlayPause) {
             $0.playbackIntent = true
@@ -1786,11 +1817,13 @@ final class PlayerFeatureTests: XCTestCase {
         let clock = TestClock()
         let store = TestStore(initialState: state) { PlayerFeature() } withDependencies: {
             configureResolve(&$0)
-            let songURL = $0.netease.songURL
-            $0.netease.songURL = { ids, quality in
+            var provider = $0.musicProvider as! MockMusicProvider
+            let songURL = provider.songURLHandler
+            provider.songURLHandler = { ids, quality in
                 try await clock.sleep(for: .seconds(1))
                 return try await songURL(ids, quality)
             }
+            $0.musicProvider = provider
         }
         await store.send(.previous) {
             $0.playbackIntent = true
@@ -1821,11 +1854,13 @@ final class PlayerFeatureTests: XCTestCase {
         let clock = TestClock()
         let store = TestStore(initialState: state) { PlayerFeature() } withDependencies: {
             configureResolve(&$0)
-            let songURL = $0.netease.songURL
-            $0.netease.songURL = { ids, quality in
+            var provider = $0.musicProvider as! MockMusicProvider
+            let songURL = provider.songURLHandler
+            provider.songURLHandler = { ids, quality in
                 try await clock.sleep(for: .seconds(1))
                 return try await songURL(ids, quality)
             }
+            $0.musicProvider = provider
         }
         await store.send(.jumpTo(Self.t2)) {
             $0.playbackIntent = true
@@ -1859,11 +1894,13 @@ final class PlayerFeatureTests: XCTestCase {
         let clock = TestClock()
         let store = TestStore(initialState: state) { PlayerFeature() } withDependencies: {
             configureResolve(&$0)
-            let songURL = $0.netease.songURL
-            $0.netease.songURL = { ids, quality in
+            var provider = $0.musicProvider as! MockMusicProvider
+            let songURL = provider.songURLHandler
+            provider.songURLHandler = { ids, quality in
                 try await clock.sleep(for: .seconds(1))
                 return try await songURL(ids, quality)
             }
+            $0.musicProvider = provider
         }
         await store.send(.fmAdvance) {
             $0.fmUpcoming = [Self.t2]
@@ -1927,16 +1964,18 @@ final class PlayerFeatureTests: XCTestCase {
         let clock = TestClock()
         let store = TestStore(initialState: state) { PlayerFeature() } withDependencies: {
             configureResolve(&$0)
+            var provider = $0.musicProvider as! MockMusicProvider
             $0.personalFM = MockPersonalFM(tracks: [Self.t2])
-            let songURL = $0.netease.songURL
-            $0.netease.songURL = { ids, quality in
+            let songURL = provider.songURLHandler
+            provider.songURLHandler = { ids, quality in
                 try await clock.sleep(for: .seconds(2))
                 return try await songURL(ids, quality)
             }
-            $0.netease.lyric = { _ in
+            provider.lyricHandler = { _ in
                 try await clock.sleep(for: .seconds(1))
                 return Self.emptyLyrics()
             }
+            $0.musicProvider = provider
         }
         await store.send(.fmAdvance) { $0.fmUpcoming = [] }
         await store.receive(.startPlaying(Self.t1)) {
@@ -1972,7 +2011,8 @@ final class PlayerFeatureTests: XCTestCase {
         state.consecutiveFailures = 4
         let store = TestStore(initialState: state) { PlayerFeature() } withDependencies: {
             configureResolve(&$0)
-            $0.netease.songURL = { _, _ in
+            var provider = $0.musicProvider as! MockMusicProvider
+            provider.songURLHandler = { _, _ in
                 try await clock.sleep(for: .seconds(1))
                 return []
             }
@@ -1980,6 +2020,7 @@ final class PlayerFeatureTests: XCTestCase {
                 attempts.withValue { $0 += 1 }
                 return nil
             }
+            $0.musicProvider = provider
         }
         await store.send(.startPlaying(Self.t1)) {
             $0.currentTrack = Self.t1
@@ -2040,11 +2081,13 @@ final class PlayerFeatureTests: XCTestCase {
         let clock = TestClock()
         let store = TestStore(initialState: state) { PlayerFeature() } withDependencies: {
             configureResolve(&$0)
-            let songURL = $0.netease.songURL
-            $0.netease.songURL = { ids, quality in
+            var provider = $0.musicProvider as! MockMusicProvider
+            let songURL = provider.songURLHandler
+            provider.songURLHandler = { ids, quality in
                 try await clock.sleep(for: .seconds(1))
                 return try await songURL(ids, quality)
             }
+            $0.musicProvider = provider
         }
         await store.send(.playTrack(Self.t3)) { $0.playbackIntent = true }
         await store.receive(.play(tracks: [Self.t3], source: .none, startAt: nil, context: nil)) {

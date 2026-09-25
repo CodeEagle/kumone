@@ -1,7 +1,7 @@
 import ComposableArchitecture
 import Dependencies
 import Foundation
-import KumoneCore
+@testable import KumoneCore
 @testable import KumoneTCA
 import XCTest
 
@@ -12,7 +12,7 @@ final class ExploreFeatureTests: XCTestCase {
     nonisolated private static func makePlaylist(_ id: Int, _ name: String) -> PlaylistSummary {
         let json = """
             {"id": \(id), "name": "\(name)", "picUrl": "https://music.example.com/p\(id).jpg", \
-            "playCount": 100, "trackCount": 20}
+            "playCount": 100, "trackCount": 0}
             """
         return try! JSONDecoder().decode(PlaylistSummary.self, from: Data(json.utf8))
     }
@@ -21,9 +21,15 @@ final class ExploreFeatureTests: XCTestCase {
         let json = """
             {"id": \(id), "name": "\(name)", "coverImgUrl": "https://music.example.com/t\(id).jpg", \
             "updateFrequency": "每日更新", "playCount": 50, \
-            "tracks": [{"first": "歌", "second": "歌手"}]}
+            "tracks": []}
             """
         return try! JSONDecoder().decode(ToplistItem.self, from: Data(json.utf8))
+    }
+
+    nonisolated private static func makeChart(_ playlist: PlaylistSummary) -> Chart {
+        Chart(id: MusicID(playlist.id), name: playlist.name,
+              coverURL: playlist.coverURL.flatMap(URL.init(string:)),
+              updateFrequency: nil, playCount: playlist.playCount)
     }
 
     /// The shape of a `/playlist/list` page: the API echoes the tail of the
@@ -33,18 +39,17 @@ final class ExploreFeatureTests: XCTestCase {
         pages: [[PlaylistSummary]],
         more: [Bool]
     ) {
-        deps.netease.topPlaylists = { _, _, _, offset in
+        var provider = MockMusicProvider()
+        provider.topPlaylistsHandler = { _, _, _, offset in
             let index = offset / ExploreFeature.pageSize
-            return NeteaseAPI.TopPlaylistResponse(
-                playlists: pages[min(index, pages.count - 1)],
-                total: nil,
-                more: more[min(index, more.count - 1)]
+            return ChartList(
+                charts: pages[min(index, pages.count - 1)].map(Self.makeChart),
+                total: 0,
+                hasMore: more[min(index, more.count - 1)]
             )
         }
+        deps.musicProvider = provider
     }
-
-    // loadEffect captures musicProvider before selecting a category, so even
-    // categories still using netease need the provider override.
 
     // MARK: - First load
 
@@ -103,10 +108,14 @@ final class ExploreFeatureTests: XCTestCase {
         let store = TestStore(initialState: state) {
             ExploreFeature()
         } withDependencies: {
-            $0.musicProvider = MockMusicProvider()
-            $0.netease.toplists = {
-                [Self.makeToplist(19_723_756, "云音乐飙升榜"), Self.makeToplist(3_779_629, "新歌榜")]
+            var provider = MockMusicProvider()
+            provider.toplistsHandler = {
+                [Self.makeToplist(19_723_756, "云音乐飙升榜"), Self.makeToplist(3_779_629, "新歌榜")].map {
+                    Chart(id: MusicID($0.id), name: $0.name, coverURL: $0.coverImgUrl.flatMap(URL.init(string:)),
+                          updateFrequency: $0.updateFrequency, playCount: $0.playCount)
+                }
             }
+            $0.musicProvider = provider
         }
         await store.send(.selectCategory("排行榜")) {
             $0.selectedCategory = "排行榜"
@@ -136,8 +145,6 @@ final class ExploreFeatureTests: XCTestCase {
                 (1...3).map { Self.makePlaylist($0, "推荐\($0)") }
             }
             $0.musicProvider = provider
-            // loadEffect captures `netease` unconditionally alongside `provider`.
-            $0.netease.toplists = { [] }
         }
         await store.send(.selectCategory("推荐歌单")) {
             $0.selectedCategory = "推荐歌单"
@@ -162,9 +169,11 @@ final class ExploreFeatureTests: XCTestCase {
         state.playlists = [Self.makePlaylist(1, "歌单一")]
         state.loadState = ExploreFeature.State.LoadState.loaded
         let store = TestStore(initialState: state) { ExploreFeature() } withDependencies: {
-            $0.netease.topPlaylists = { _, _, _, _ in
-                NeteaseAPI.TopPlaylistResponse(playlists: [], total: nil, more: false)
+            var provider = MockMusicProvider()
+            provider.topPlaylistsHandler = { _, _, _, _ in
+                ChartList(charts: [], total: 0, hasMore: false)
             }
+            $0.musicProvider = provider
         }
         await store.send(.selectCategory("华语"))
     }
@@ -244,13 +253,15 @@ final class ExploreFeatureTests: XCTestCase {
         let store = TestStore(initialState: ExploreFeature.State()) {
             ExploreFeature()
         } withDependencies: {
-            $0.musicProvider = MockMusicProvider()
-            $0.netease.highQualityPlaylists = { _, _, before in
-                NeteaseAPI.HighQualityResponse(
+            var provider = MockMusicProvider()
+            provider.highQualityPlaylistsHandler = { _, _, cursor in
+                let before = cursor ?? 0
+                return HighQualityList(
                     playlists: [Self.makePlaylist(before + 1, "精品\(before + 1)")],
-                    lasttime: before + 1,
-                    more: true)
+                    lastTime: before + 1,
+                    hasMore: true)
             }
+            $0.musicProvider = provider
         }
         await store.send(.selectCategory("精品歌单")) {
             $0.selectedCategory = "精品歌单"
@@ -286,8 +297,9 @@ final class ExploreFeatureTests: XCTestCase {
         let store = TestStore(initialState: ExploreFeature.State()) {
             ExploreFeature()
         } withDependencies: {
-            $0.musicProvider = MockMusicProvider()
-            $0.netease.topPlaylists = { _, _, _, _ in throw URLError(.notConnectedToInternet) }
+            var provider = MockMusicProvider()
+            provider.topPlaylistsHandler = { _, _, _, _ in throw URLError(.notConnectedToInternet) }
+            $0.musicProvider = provider
         }
         await store.send(.onAppear) { $0.loadState = ExploreFeature.State.LoadState.loading }
         await store.receive(.pageLoaded(.playlists(
@@ -302,24 +314,26 @@ final class ExploreFeatureTests: XCTestCase {
     }
 
     func testPlaylistPlaybackUsesEmbeddedTracks() async throws {
-        let detail = try JSONDecoder().decode(NeteaseAPI.PlaylistDetailResponse.self, from: Data(
-            #"{"playlist":{"id":42,"name":"播放歌单","tracks":[{"id":7,"name":"歌曲","ar":[],"al":{"id":2,"name":"专辑"},"dt":1000}],"trackIds":[{"id":99}]}}"#.utf8))
-        XCTAssertEqual(detail.playlist.tracks.count, 1)
+        let detail = try JSONDecoder().decode(PlaylistDetail.self, from: Data(
+            #"{"id":42,"name":"播放歌单","tracks":[{"id":7,"name":"歌曲","ar":[],"al":{"id":2,"name":"专辑"},"dt":1000}],"trackIds":[{"id":99}]}"#.utf8))
+        XCTAssertEqual(detail.tracks.count, 1)
         let store = TestStore(initialState: ExploreFeature.State()) {
             ExploreFeature()
         } withDependencies: {
-            $0.netease.playlistDetail = { id in
-                XCTAssertEqual(id, 42)
+            var provider = MockMusicProvider()
+            provider.playlistDetailHandler = { id in
+                XCTAssertEqual(id, MusicID(42))
                 return detail
             }
-            $0.netease.songDetails = { _ in
+            provider.songDetailsHandler = { _ in
                 XCTFail("Embedded tracks must bypass songDetails")
-                return NeteaseAPI.SongDetailResponse(songs: [], privileges: nil)
+                return []
             }
+            $0.musicProvider = provider
         }
         await store.send(.playPlaylist(42))
         await store.receive(.delegate(.play(
-            tracks: detail.playlist.tracks, source: .playlist(42),
+            tracks: detail.tracks, source: .playlist(42),
             context: .playlist(id: 42, name: "播放歌单"))))
         await store.finish()
     }
@@ -329,25 +343,27 @@ final class ExploreFeatureTests: XCTestCase {
         let playlist: [String: Any] = [
             "id": 42, "name": "完整歌单", "tracks": [Int](), "trackIds": trackIDs
         ]
-        let data = try JSONSerialization.data(withJSONObject: ["playlist": playlist])
-        let detail = try JSONDecoder().decode(NeteaseAPI.PlaylistDetailResponse.self, from: data)
-        let songs = try JSONDecoder().decode(NeteaseAPI.SongDetailResponse.self, from: Data(
-            #"{"songs":[{"id":1,"name":"补全歌曲","ar":[],"al":{"id":2,"name":"专辑"},"dt":1000}]}"#.utf8))
+        let data = try JSONSerialization.data(withJSONObject: playlist)
+        let detail = try JSONDecoder().decode(PlaylistDetail.self, from: data)
+        let songs = try JSONDecoder().decode([Track].self, from: Data(
+            #"[{"id":1,"name":"补全歌曲","ar":[],"al":{"id":2,"name":"专辑"},"dt":1000}]"#.utf8))
         let store = TestStore(initialState: ExploreFeature.State()) {
             ExploreFeature()
         } withDependencies: {
-            $0.netease.playlistDetail = { id in
-                XCTAssertEqual(id, 42)
+            var provider = MockMusicProvider()
+            provider.playlistDetailHandler = { id in
+                XCTAssertEqual(id, MusicID(42))
                 return detail
             }
-            $0.netease.songDetails = { ids in
-                XCTAssertEqual(ids, Array(1...500))
+            provider.songDetailsHandler = { ids in
+                XCTAssertEqual(ids, (1...500).map { MusicID($0) })
                 return songs
             }
+            $0.musicProvider = provider
         }
         await store.send(.playPlaylist(42))
         await store.receive(.delegate(.play(
-            tracks: songs.songs, source: .playlist(42),
+            tracks: songs, source: .playlist(42),
             context: .playlist(id: 42, name: "完整歌单"))))
         await store.finish()
     }
@@ -356,27 +372,31 @@ final class ExploreFeatureTests: XCTestCase {
         let store = TestStore(initialState: ExploreFeature.State()) {
             ExploreFeature()
         } withDependencies: {
-            $0.netease.playlistDetail = { _ in throw URLError(.badServerResponse) }
-            $0.netease.songDetails = { _ in
+            var provider = MockMusicProvider()
+            provider.playlistDetailHandler = { _ in throw URLError(.badServerResponse) }
+            provider.songDetailsHandler = { _ in
                 XCTFail("Failed detail must stop playback")
-                return NeteaseAPI.SongDetailResponse(songs: [], privileges: nil)
+                return []
             }
+            $0.musicProvider = provider
         }
         await store.send(.playPlaylist(42))
         await store.finish()
     }
 
     func testPlaylistPlaybackSongDetailsFailureDelegatesEmptyTracks() async throws {
-        let detail = try JSONDecoder().decode(NeteaseAPI.PlaylistDetailResponse.self, from: Data(
-            #"{"playlist":{"id":42,"name":"空歌单","trackIds":[{"id":7}]}}"#.utf8))
+        let detail = try JSONDecoder().decode(PlaylistDetail.self, from: Data(
+            #"{"id":42,"name":"空歌单","trackIds":[{"id":7}]}"#.utf8))
         let store = TestStore(initialState: ExploreFeature.State()) {
             ExploreFeature()
         } withDependencies: {
-            $0.netease.playlistDetail = { _ in detail }
-            $0.netease.songDetails = { ids in
-                XCTAssertEqual(ids, [7])
+            var provider = MockMusicProvider()
+            provider.playlistDetailHandler = { _ in detail }
+            provider.songDetailsHandler = { ids in
+                XCTAssertEqual(ids, [MusicID(7)])
                 throw URLError(.badServerResponse)
             }
+            $0.musicProvider = provider
         }
         await store.send(.playPlaylist(42))
         await store.receive(.delegate(.play(
@@ -390,8 +410,9 @@ final class ExploreFeatureTests: XCTestCase {
         let store = TestStore(initialState: state) {
             ExploreFeature()
         } withDependencies: {
-            $0.musicProvider = MockMusicProvider()
-            $0.netease.toplists = { throw URLError(.notConnectedToInternet) }
+            var provider = MockMusicProvider()
+            provider.toplistsHandler = { throw URLError(.notConnectedToInternet) }
+            $0.musicProvider = provider
         }
         await store.send(.onAppear) { $0.loadState = .loading }
         await store.receive(.pageLoaded(.toplists([]))) {
@@ -415,7 +436,6 @@ final class ExploreFeatureTests: XCTestCase {
                 return [first, first, second]
             }
             $0.musicProvider = provider
-            $0.netease = NeteaseMusicClient()
         }
         await store.send(.onAppear) { $0.loadState = .loading }
         await store.receive(.pageLoaded(.playlists(
@@ -439,7 +459,6 @@ final class ExploreFeatureTests: XCTestCase {
                 throw URLError(.badServerResponse)
             }
             $0.musicProvider = provider
-            $0.netease = NeteaseMusicClient()
         }
         await store.send(.onAppear) { $0.loadState = .loading }
         await store.receive(.pageLoaded(.playlists(
@@ -462,14 +481,15 @@ final class ExploreFeatureTests: XCTestCase {
         let store = TestStore(initialState: state) {
             ExploreFeature()
         } withDependencies: {
-            $0.musicProvider = MockMusicProvider()
-            $0.netease.highQualityPlaylists = { category, limit, before in
+            var provider = MockMusicProvider()
+            provider.highQualityPlaylistsHandler = { category, limit, before in
                 XCTAssertEqual(category, "全部")
                 XCTAssertEqual(limit, 50)
                 XCTAssertEqual(before, 123)
-                return NeteaseAPI.HighQualityResponse(
-                    playlists: [old, added, added], lasttime: nil, more: nil)
+                return HighQualityList(
+                    playlists: [old, added, added], lastTime: nil, hasMore: false)
             }
+            $0.musicProvider = provider
         }
         await store.send(.loadMore) { $0.loadState = .loading }
         await store.receive(.pageLoaded(.playlists(
@@ -492,8 +512,9 @@ final class ExploreFeatureTests: XCTestCase {
         let store = TestStore(initialState: state) {
             ExploreFeature()
         } withDependencies: {
-            $0.musicProvider = MockMusicProvider()
-            $0.netease.highQualityPlaylists = { _, _, _ in throw URLError(.badServerResponse) }
+            var provider = MockMusicProvider()
+            provider.highQualityPlaylistsHandler = { _, _, _ in throw URLError(.badServerResponse) }
+            $0.musicProvider = provider
         }
         await store.send(.loadMore) { $0.loadState = .loading }
         await store.receive(.pageLoaded(.playlists(
@@ -509,14 +530,15 @@ final class ExploreFeatureTests: XCTestCase {
         let store = TestStore(initialState: ExploreFeature.State()) {
             ExploreFeature()
         } withDependencies: {
-            $0.musicProvider = MockMusicProvider()
-            $0.netease.topPlaylists = { category, order, limit, offset in
+            var provider = MockMusicProvider()
+            provider.topPlaylistsHandler = { category, order, limit, offset in
                 XCTAssertEqual(category, "全部")
                 XCTAssertEqual(order, "hot")
                 XCTAssertEqual(limit, 50)
                 XCTAssertEqual(offset, 0)
-                return NeteaseAPI.TopPlaylistResponse(playlists: [], total: nil, more: nil)
+                return ChartList(charts: [], total: 0, hasMore: false)
             }
+            $0.musicProvider = provider
         }
         await store.send(.onAppear) { $0.loadState = .loading }
         await store.receive(.pageLoaded(.playlists(

@@ -1,7 +1,7 @@
 import ComposableArchitecture
 import Dependencies
 import Foundation
-import KumoneCore
+@testable import KumoneCore
 @testable import KumoneTCA
 import XCTest
 
@@ -10,10 +10,14 @@ final class ToplistsFeatureTests: XCTestCase {
     func testInitialStateAndSuccessfulFirstLoad() async throws {
         let lists = [try JSONDecoder().decode(
             ToplistItem.self, from: Data(#"{"id":1,"name":"排行榜"}"#.utf8))]
+        var provider = MockMusicProvider()
+        provider.toplistsHandler = {
+            [Chart(id: MusicID(1), name: "排行榜", coverURL: nil, updateFrequency: nil, playCount: 0)]
+        }
         let store = TestStore(initialState: ToplistsFeature.State()) {
             ToplistsFeature()
         } withDependencies: {
-            $0.netease.toplists = { lists }
+            $0.musicProvider = provider
         }
         XCTAssertEqual(store.state.toplists, [])
         XCTAssertEqual(store.state.loadState, .idle)
@@ -29,13 +33,15 @@ final class ToplistsFeatureTests: XCTestCase {
         for loadState in [ToplistsFeature.State.LoadState.loading, .loaded, .error("offline")] {
             var state = ToplistsFeature.State()
             state.loadState = loadState
+            var provider = MockMusicProvider()
+            provider.toplistsHandler = {
+                XCTFail("Non-idle onAppear must not fetch")
+                return []
+            }
             let store = TestStore(initialState: state) {
                 ToplistsFeature()
             } withDependencies: {
-                $0.netease.toplists = {
-                    XCTFail("Non-idle onAppear must not fetch")
-                    return []
-                }
+                $0.musicProvider = provider
             }
             await store.send(.onAppear)
             await store.finish()
@@ -48,17 +54,20 @@ final class ToplistsFeatureTests: XCTestCase {
         var state = ToplistsFeature.State()
         state.toplists = [old]
         let error = URLError(.notConnectedToInternet)
+        var provider = MockMusicProvider()
+        provider.toplistsHandler = { throw error }
         let store = TestStore(initialState: state) {
             ToplistsFeature()
         } withDependencies: {
-            $0.netease.toplists = { throw error }
+            $0.musicProvider = provider
         }
         await store.send(.onAppear) { $0.loadState = .loading }
         await store.receive(.loadFailed(error.localizedDescription)) {
             $0.loadState = .error(error.localizedDescription)
         }
         XCTAssertEqual(store.state.toplists, [old])
-        store.dependencies.netease.toplists = { [] }
+        provider.toplistsHandler = { [] }
+        store.dependencies.musicProvider = provider
         await store.send(.reload) { $0.loadState = .loading }
         await store.receive(.response([])) {
             $0.toplists = []

@@ -28,16 +28,17 @@ final class AccountFeatureTests: XCTestCase {
     }
 
     func testBootstrapLoadsProfileThenLibrary() async {
+        var provider = MockMusicProvider()
+        provider.userAccountHandler = { Self.makeProfile() }
+        provider.userPlaylistsHandler = { _, _, _ in [] }
+        provider.likedTrackIDsHandler = { _ in [1, 2, 3].map { MusicID($0) } }
         let store = TestStore(initialState: AccountFeature.State()) {
             AccountFeature()
         } withDependencies: {
             $0.session.hasAuthCookie = { true }
             $0.persistence.doubleForKey = { _ in 0 }
             $0.persistence.setDouble = { _, _ in }
-            $0.netease.userAccount = { Self.makeProfile() }
-            $0.musicProvider = MockMusicProvider()
-            $0.netease.userPlaylists = { _, _, _ in [] }
-            $0.netease.likedTrackIDs = { _ in [1, 2, 3] }
+            $0.musicProvider = provider
         }
         await store.send(.bootstrap) {
             $0.hasAuthCookie = true
@@ -69,6 +70,11 @@ final class AccountFeatureTests: XCTestCase {
 
     func testToggleLikeOptimisticThenRollback() async {
         nonisolated(unsafe) var liked = false
+        var provider = MockMusicProvider()
+        provider.likeTrackHandler = { _, like in
+            liked = like
+            throw URLError(.badServerResponse)
+        }
         let store = TestStore(initialState: AccountFeature.State(
             hasAuthCookie: true,
             profile: Self.makeProfile()
@@ -76,10 +82,7 @@ final class AccountFeatureTests: XCTestCase {
             AccountFeature()
         } withDependencies: {
             $0.session.hasAuthCookie = { true }
-            $0.netease.likeTrack = { _, like in
-                liked = like
-                throw URLError(.badServerResponse)
-            }
+            $0.musicProvider = provider
         }
         // Optimistic insert.
         await store.send(.toggleLike(9)) {
@@ -98,6 +101,8 @@ final class AccountFeatureTests: XCTestCase {
 
     func testToggleLikeSuccess() async {
         nonisolated(unsafe) var liked = false
+        var provider = MockMusicProvider()
+        provider.likeTrackHandler = { _, like in liked = like }
         let store = TestStore(initialState: AccountFeature.State(
             hasAuthCookie: true,
             profile: Self.makeProfile()
@@ -105,7 +110,7 @@ final class AccountFeatureTests: XCTestCase {
             AccountFeature()
         } withDependencies: {
             $0.session.hasAuthCookie = { true }
-            $0.netease.likeTrack = { _, like in liked = like }
+            $0.musicProvider = provider
         }
         await store.send(.toggleLike(3)) {
             $0.likedTrackIDs = [3]
@@ -170,12 +175,14 @@ final class AccountFeatureTests: XCTestCase {
 
     func testBootstrapFailureCompletesWithoutRefreshingLibrary() async {
         let failure = URLError(.notConnectedToInternet)
+        var provider = MockMusicProvider()
+        provider.userAccountHandler = { throw failure }
         let store = TestStore(initialState: AccountFeature.State()) {
             AccountFeature()
         } withDependencies: {
             $0.session.hasAuthCookie = { true }
             $0.persistence.doubleForKey = { _ in .greatestFiniteMagnitude }
-            $0.netease.userAccount = { throw failure }
+            $0.musicProvider = provider
         }
         await store.send(.bootstrap) {
             $0.hasAuthCookie = true
@@ -190,20 +197,22 @@ final class AccountFeatureTests: XCTestCase {
     func testLibraryFailurePreservesPreviouslyLoadedData() async throws {
         let playlist = try JSONDecoder().decode(PlaylistSummary.self, from: Data(#"{"id":9}"#.utf8))
         for failingPlaylists in [true, false] {
+            var provider = MockMusicProvider()
+            provider.userPlaylistsHandler = { uid, limit, offset in
+                XCTAssertEqual(uid, MusicID(42))
+                XCTAssertEqual(limit, 2000)
+                XCTAssertEqual(offset, 0)
+                if failingPlaylists { throw URLError(.badServerResponse) }
+                return []
+            }
+            provider.likedTrackIDsHandler = { _ in
+                if !failingPlaylists { throw URLError(.badServerResponse) }
+                return []
+            }
             let store = TestStore(initialState: AccountFeature.State(
                 profile: Self.makeProfile(), likedTrackIDs: [9], userPlaylists: [playlist]
             )) { AccountFeature() } withDependencies: {
-                $0.netease.userPlaylists = { uid, limit, offset in
-                    XCTAssertEqual(uid, 42)
-                    XCTAssertEqual(limit, 2000)
-                    XCTAssertEqual(offset, 0)
-                    if failingPlaylists { throw URLError(.badServerResponse) }
-                    return []
-                }
-                $0.netease.likedTrackIDs = { _ in
-                    if !failingPlaylists { throw URLError(.badServerResponse) }
-                    return []
-                }
+                $0.musicProvider = provider
             }
             await store.send(.refreshLibrary)
             await store.receive(.libraryResponse(.failure(AppError(String(localized: "加载歌单失败")))))
@@ -257,14 +266,16 @@ final class AccountFeatureTests: XCTestCase {
     func testUnlikeSuccessAndFailureRollback() async {
         for succeeds in [true, false] {
             let failure = URLError(.badServerResponse)
+            var provider = MockMusicProvider()
+            provider.likeTrackHandler = { id, like in
+                XCTAssertEqual(id, MusicID(7))
+                XCTAssertFalse(like)
+                if !succeeds { throw failure }
+            }
             let store = TestStore(initialState: AccountFeature.State(
                 hasAuthCookie: true, profile: Self.makeProfile(), likedTrackIDs: [7]
             )) { AccountFeature() } withDependencies: {
-                $0.netease.likeTrack = { id, like in
-                    XCTAssertEqual(id, 7)
-                    XCTAssertFalse(like)
-                    if !succeeds { throw failure }
-                }
+                $0.musicProvider = provider
             }
             await store.send(.toggleLike(7)) { $0.likedTrackIDs = [] }
             if succeeds {

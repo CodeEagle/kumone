@@ -1,7 +1,7 @@
 import Foundation
 import ComposableArchitecture
 import Dependencies
-import KumoneCore
+@testable import KumoneCore
 @testable import KumoneTCA
 import XCTest
 
@@ -43,26 +43,29 @@ final class AlbumDetailFeatureTests: XCTestCase {
     /// The album lands first, then the collection state, then the artist's
     /// other releases (with this album itself filtered out).
     func testLoadsAlbumThenDynamicThenOtherAlbums() async {
+        var provider = MockMusicProvider()
+        provider.albumHandler = { _ in
+            AlbumDetail(detail: Self.makeAlbum(1), songs: [Self.makeSong(10), Self.makeSong(11)])
+        }
+        provider.albumDynamicHandler = { _ in
+            AlbumDynamic(isSubscribed: true, subscriberCount: 1)
+        }
+        provider.artistAlbumsHandler = { artistID, _, _ in
+            XCTAssertEqual(artistID, MusicID(5))
+            return ArtistAlbums(
+                albums: [Self.makeAlbumSummary(1, 10), Self.makeAlbumSummary(2, 8)], hasMore: false)
+        }
         let store = TestStore(initialState: AlbumDetailFeature.State(albumID: 1)) {
             AlbumDetailFeature()
         } withDependencies: {
-            $0.netease.album = { _ in
-                AlbumDetailResponse(album: Self.makeAlbum(1), songs: [Self.makeSong(10), Self.makeSong(11)])
-            }
-            $0.netease.albumDynamic = { _ in
-                NeteaseAPI.AlbumDynamicResponse(isSub: true, subCount: 1)
-            }
-            $0.netease.artistAlbums = { artistID, _, _ in
-                XCTAssertEqual(artistID, 5)
-                return NeteaseAPI.ArtistAlbumsResponse(
-                    hotAlbums: [Self.makeAlbumSummary(1, 10), Self.makeAlbumSummary(2, 8)], more: false)
-            }
+            $0.musicProvider = provider
         }
         await store.send(.onAppear) { $0.loadState = AlbumDetailFeature.State.LoadState.loading }
         await store.receive(.albumResponse(
-            album: Self.makeAlbum(1), songs: [Self.makeSong(10), Self.makeSong(11)]
+            album: AlbumDetail(detail: Self.makeAlbum(1), songs: [Self.makeSong(10), Self.makeSong(11)]),
+            songs: [Self.makeSong(10), Self.makeSong(11)]
         )) {
-            $0.album = Self.makeAlbum(1)
+            $0.album = AlbumDetail(detail: Self.makeAlbum(1), songs: [Self.makeSong(10), Self.makeSong(11)])
             $0.tracks = [Self.makeSong(10), Self.makeSong(11)]
             $0.loadState = AlbumDetailFeature.State.LoadState.loaded
         }
@@ -79,10 +82,12 @@ final class AlbumDetailFeatureTests: XCTestCase {
 
     func testFailedLoadSurfacesError() async {
         let error = URLError(.badServerResponse)
+        var provider = MockMusicProvider()
+        provider.albumHandler = { _ in throw error }
         let store = TestStore(initialState: AlbumDetailFeature.State(albumID: 1)) {
             AlbumDetailFeature()
         } withDependencies: {
-            $0.netease.album = { _ in throw error }
+            $0.musicProvider = provider
         }
         await store.send(.onAppear) { $0.loadState = AlbumDetailFeature.State.LoadState.loading }
         await store.receive(.loadFailed(error.localizedDescription)) {
@@ -96,8 +101,10 @@ final class AlbumDetailFeatureTests: XCTestCase {
         var state = AlbumDetailFeature.State(albumID: 1)
         state.album = Self.makeAlbum(1)
         state.tracks = [Self.makeSong(10), Self.makeSong(11)]
+        var provider = MockMusicProvider()
+        provider.albumHandler = { _ in throw URLError(.badServerResponse) }
         let store = TestStore(initialState: state) { AlbumDetailFeature() } withDependencies: {
-            $0.netease.album = { _ in throw URLError(.badServerResponse) }
+            $0.musicProvider = provider
         }
         await store.send(.playAll)
         await store.receive(.delegate(.play(
@@ -111,11 +118,13 @@ final class AlbumDetailFeatureTests: XCTestCase {
     // MARK: - Subscribe
 
     func testSubscribeOptimisticThenConfirmed() async {
+        var provider = MockMusicProvider()
+        provider.albumHandler = { _ in throw URLError(.badServerResponse) }
+        provider.subscribeAlbumHandler = { _, _ in }
         let store = TestStore(initialState: AlbumDetailFeature.State(albumID: 1)) {
             AlbumDetailFeature()
         } withDependencies: {
-            $0.netease.album = { _ in throw URLError(.badServerResponse) }
-            $0.netease.subscribeAlbum = { _, _ in }
+            $0.musicProvider = provider
         }
         await store.send(.toggleSubscribe) { $0.isSubscribed = true }
         await store.receive(.delegate(.subscriptionChanged))
@@ -125,9 +134,11 @@ final class AlbumDetailFeatureTests: XCTestCase {
     func testUnsubscribeToastsTheOtherMessage() async {
         var state = AlbumDetailFeature.State(albumID: 1)
         state.isSubscribed = true
+        var provider = MockMusicProvider()
+        provider.albumHandler = { _ in throw URLError(.badServerResponse) }
+        provider.subscribeAlbumHandler = { _, _ in }
         let store = TestStore(initialState: state) { AlbumDetailFeature() } withDependencies: {
-            $0.netease.album = { _ in throw URLError(.badServerResponse) }
-            $0.netease.subscribeAlbum = { _, _ in }
+            $0.musicProvider = provider
         }
         await store.send(.toggleSubscribe) { $0.isSubscribed = false }
         await store.receive(.delegate(.subscriptionChanged))
@@ -136,11 +147,13 @@ final class AlbumDetailFeatureTests: XCTestCase {
 
     func testSubscribeFailureRollsBackAndToasts() async {
         let error = URLError(.notConnectedToInternet)
+        var provider = MockMusicProvider()
+        provider.albumHandler = { _ in throw URLError(.badServerResponse) }
+        provider.subscribeAlbumHandler = { _, _ in throw error }
         let store = TestStore(initialState: AlbumDetailFeature.State(albumID: 1)) {
             AlbumDetailFeature()
         } withDependencies: {
-            $0.netease.album = { _ in throw URLError(.badServerResponse) }
-            $0.netease.subscribeAlbum = { _, _ in throw error }
+            $0.musicProvider = provider
         }
         await store.send(.toggleSubscribe) { $0.isSubscribed = true }
         await store.receive(.subscribeReverted(to: false)) { $0.isSubscribed = false }
@@ -161,20 +174,23 @@ final class AlbumDetailFeatureTests: XCTestCase {
         state.album = Self.makeAlbum(1)
         state.loadState = .loaded
         state.isSubscribed = true
+        var provider = MockMusicProvider()
+        provider.albumHandler = { id in
+            XCTAssertEqual(id, MusicID(1))
+            return AlbumDetail(detail: Self.makeAlbum(1), songs: [Self.makeSong(10)])
+        }
+        provider.albumDynamicHandler = { _ in
+            AlbumDynamic(isSubscribed: false, subscriberCount: 0)
+        }
+        provider.artistAlbumsHandler = { _, _, _ in
+            ArtistAlbums(albums: [], hasMore: false)
+        }
         let store = TestStore(initialState: state) { AlbumDetailFeature() } withDependencies: {
-            $0.netease.album = { id in
-                XCTAssertEqual(id, 1)
-                return AlbumDetailResponse(album: Self.makeAlbum(1), songs: [Self.makeSong(10)])
-            }
-            $0.netease.albumDynamic = { _ in
-                NeteaseAPI.AlbumDynamicResponse(isSub: nil, subCount: nil)
-            }
-            $0.netease.artistAlbums = { _, _, _ in
-                NeteaseAPI.ArtistAlbumsResponse(hotAlbums: [], more: false)
-            }
+            $0.musicProvider = provider
         }
         await store.send(.reload) { $0.loadState = .loading }
-        await store.receive(.albumResponse(album: Self.makeAlbum(1), songs: [Self.makeSong(10)])) {
+        await store.receive(.albumResponse(album: AlbumDetail(detail: Self.makeAlbum(1), songs: [Self.makeSong(10)]), songs: [Self.makeSong(10)])) {
+            $0.album = AlbumDetail(detail: Self.makeAlbum(1), songs: [Self.makeSong(10)])
             $0.tracks = [Self.makeSong(10)]
             $0.loadState = .loaded
         }

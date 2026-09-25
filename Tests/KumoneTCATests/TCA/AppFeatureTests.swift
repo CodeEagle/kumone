@@ -53,9 +53,11 @@ final class AppFeatureTests: XCTestCase {
         deps.session.hasAuthCookie = { true }
         deps.persistence.doubleForKey = { _ in 0 }
         deps.persistence.setDouble = { _, _ in }
-        deps.netease.userAccount = { Self.makeProfile() }
-        deps.netease.userPlaylists = { _, _, _ in [] }
-        deps.netease.likedTrackIDs = { _ in [] }
+        var provider = MockMusicProvider()
+        provider.userAccountHandler = { Self.makeProfile() }
+        provider.userPlaylistsHandler = { _, _, _ in [] }
+        provider.likedTrackIDsHandler = { _ in [] }
+        deps.musicProvider = provider
     }
 
     // MARK: - Player → toasts
@@ -105,7 +107,6 @@ final class AppFeatureTests: XCTestCase {
         let store = TestStore(initialState: AppFeature.State()) {
             AppFeature()
         } withDependencies: {
-            $0.musicProvider = MockMusicProvider()
             configureAccount(&$0)
             $0.continuousClock = ImmediateClock()
             $0.uuid = .init { toastID }
@@ -466,10 +467,12 @@ final class AppFeatureTests: XCTestCase {
         state.recents.userID = 42
         state.playlistRoot.isLoggedIn = true
         state.playlistRoot.vipType = 11
+        var provider = MockMusicProvider()
+        provider.likeTrackHandler = { _, _ in }
         let store = TestStore(initialState: state) {
             AppFeature()
         } withDependencies: {
-            $0.netease.likeTrack = { _, _ in }
+            $0.musicProvider = provider
         }
         await store.send(.nowPlaying(.like))
         await store.receive(.account(.toggleLike(9))) {
@@ -655,15 +658,18 @@ final class AppFeatureTests: XCTestCase {
             let failure = URLError(.notConnectedToInternet)
             let message = fails ? failure.localizedDescription : String(localized: "心动模式暂时不可用")
             let toastID = UUID()
+            var provider = MockMusicProvider()
+            provider.intelligenceListHandler = { seed, playlistID in
+                XCTAssertEqual(seed, MusicID(7))
+                XCTAssertEqual(playlistID, MusicID(9))
+                if fails { throw failure }
+                return []
+            }
             let store = TestStore(initialState: state) { AppFeature() } withDependencies: {
                 $0.uuid = .init { toastID }
                 $0.continuousClock = ImmediateClock()
-                $0.netease.intelligenceList = { seed, playlistID in
-                    XCTAssertEqual(seed, 7)
-                    XCTAssertEqual(playlistID, 9)
-                    if fails { throw failure }
-                    return []
-                }
+                $0.musicProvider = provider
+                $0.intelligence = provider
             }
             await store.send(.startHeartbeat)
             await store.receive(.toasts(.presented(message))) {
@@ -682,30 +688,33 @@ final class AppFeatureTests: XCTestCase {
         var state = AppFeature.State()
         state.account.userPlaylists = [Self.likedSongsPlaylist]
         state.account.likedTrackIDs = [7]
+        var provider = MockMusicProvider()
+        provider.intelligenceListHandler = { _, _ in [recommended] }
+        provider.scrobbleStartHandler = { trackID, sourceID in
+            XCTAssertEqual(trackID, MusicID(7))
+            XCTAssertEqual(sourceID, MusicID(9))
+        }
+        provider.lyricHandler = { _ in
+            try await clock.sleep(for: .seconds(1))
+            throw URLError(.badServerResponse)
+        }
+        provider.songURLHandler = { _, _ in
+            try await clock.sleep(for: .seconds(2))
+            return [SongURLData(id: 7, url: url.absoluteString, br: 0, size: 0, type: nil,
+                                level: "exhigh", fee: 0, freeTrialInfo: nil, time: 200)]
+        }
         let store = TestStore(initialState: state) { AppFeature() } withDependencies: {
             $0.continuousClock = clock
             $0.uuid = .init { toastID }
             $0.unblock.resolve = { _ in nil }
-            $0.netease.intelligenceList = { _, _ in [recommended] }
             $0.persistence.setData = { _, _ in }
             $0.playback.updateMetadata = { _, _, _, _ in }
             $0.playback.load = { loadedURL, autostart in
                 XCTAssertEqual(loadedURL, url)
                 XCTAssertTrue(autostart)
             }
-            $0.netease.scrobbleStart = { trackID, sourceID in
-                XCTAssertEqual(trackID, 7)
-                XCTAssertEqual(sourceID, 9)
-            }
-            $0.netease.lyric = { _ in
-                try await clock.sleep(for: .seconds(1))
-                throw URLError(.badServerResponse)
-            }
-            $0.netease.songURL = { _, _ in
-                try await clock.sleep(for: .seconds(2))
-                return [SongURLData(id: 7, url: url.absoluteString, br: 0, size: 0, type: nil,
-                                    level: "exhigh", fee: 0, freeTrialInfo: nil, time: 200)]
-            }
+            $0.musicProvider = provider
+            $0.intelligence = provider
         }
         await store.send(.startHeartbeat)
         await store.receive(.player(.play(tracks: [recommended], source: .playlist(9), startAt: nil, context: .heartbeat))) {

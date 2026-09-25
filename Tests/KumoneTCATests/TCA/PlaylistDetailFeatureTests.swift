@@ -1,7 +1,7 @@
 import Foundation
 import ComposableArchitecture
 import Dependencies
-import KumoneCore
+@testable import KumoneCore
 @testable import KumoneTCA
 import XCTest
 
@@ -15,6 +15,12 @@ final class PlaylistDetailFeatureTests: XCTestCase {
             "al": {"id": 2, "name": "专辑\(id)"}, "dt": 100000, "fee": \(fee)}
             """
         return try! JSONDecoder().decode(Track.self, from: Data(json.utf8))
+    }
+
+    nonisolated private static func makeSongWithPrivilege(_ id: Int) -> Track {
+        var song = makeSong(id)
+        song.embeddedPrivilege = makePrivilege(id, 0)
+        return song
     }
 
     nonisolated private static func makePrivilege(_ id: Int, _ fee: Int) -> TrackPrivilege {
@@ -37,11 +43,9 @@ final class PlaylistDetailFeatureTests: XCTestCase {
     }
 
     /// Serves every requested ID as a track plus its privilege.
-    private func stubSongDetails(_ deps: inout DependencyValues) {
-        deps.netease.songDetails = { ids in
-            NeteaseAPI.SongDetailResponse(
-                songs: ids.map { Self.makeSong($0) },
-                privileges: ids.map { Self.makePrivilege($0, 0) })
+    private func stubSongDetails(_ provider: inout MockMusicProvider) {
+        provider.songDetailsHandler = { ids in
+            ids.map { Self.makeSongWithPrivilege(Int($0.sourceID)!) }
         }
     }
 
@@ -50,31 +54,37 @@ final class PlaylistDetailFeatureTests: XCTestCase {
     /// The detail response carries the first batch inline; the rest are paged
     /// in, and every privilege is folded into the map.
     func testLoadsDetailThenPagesTheRemainingTracks() async {
+        var provider = MockMusicProvider()
+        provider.playlistDetailHandler = { _ in
+            PlaylistDetail(
+                detail: Self.makeDetail(trackIDs: [10, 11, 12], tracks: [Self.makeSong(10)]),
+                privileges: [Self.makePrivilege(10, 0)])
+        }
+        stubSongDetails(&provider)
         let store = TestStore(initialState: PlaylistDetailFeature.State(playlistID: 1)) {
             PlaylistDetailFeature()
         } withDependencies: {
-            $0.netease.playlistDetail = { _ in
-                NeteaseAPI.PlaylistDetailResponse(
-                    playlist: Self.makeDetail(trackIDs: [10, 11, 12], tracks: [Self.makeSong(10)]),
-                    privileges: [Self.makePrivilege(10, 0)])
-            }
-            stubSongDetails(&$0)
+            $0.musicProvider = provider
         }
         await store.send(.onAppear) { $0.loadState = PlaylistDetailFeature.State.LoadState.loading }
         await store.receive(.detailResponse(
-            playlist: Self.makeDetail(trackIDs: [10, 11, 12], tracks: [Self.makeSong(10)]),
+            playlist: PlaylistDetail(
+                detail: Self.makeDetail(trackIDs: [10, 11, 12], tracks: [Self.makeSong(10)]),
+                privileges: [Self.makePrivilege(10, 0)]),
             privileges: [Self.makePrivilege(10, 0)]
         )) {
-            $0.detail = Self.makeDetail(trackIDs: [10, 11, 12], tracks: [Self.makeSong(10)])
+            $0.detail = PlaylistDetail(
+                detail: Self.makeDetail(trackIDs: [10, 11, 12], tracks: [Self.makeSong(10)]),
+                privileges: [Self.makePrivilege(10, 0)])
             $0.tracks = [Self.makeSong(10)]
             $0.privileges = [10: Self.makePrivilege(10, 0)]
             $0.loadState = PlaylistDetailFeature.State.LoadState.loaded
         }
         await store.receive(.isLoadingMoreChanged(true)) { $0.isLoadingMore = true }
-        await store.receive(.chunkLoaded(songs: [Self.makeSong(11), Self.makeSong(12)], privileges: [
+        await store.receive(.chunkLoaded(songs: [Self.makeSongWithPrivilege(11), Self.makeSongWithPrivilege(12)], privileges: [
             Self.makePrivilege(11, 0), Self.makePrivilege(12, 0),
         ])) {
-            $0.tracks = [Self.makeSong(10), Self.makeSong(11), Self.makeSong(12)]
+            $0.tracks = [Self.makeSong(10), Self.makeSongWithPrivilege(11), Self.makeSongWithPrivilege(12)]
             $0.privileges = [
                 10: Self.makePrivilege(10, 0),
                 11: Self.makePrivilege(11, 0),
@@ -87,15 +97,17 @@ final class PlaylistDetailFeatureTests: XCTestCase {
 
     /// A short playlist does not page at all.
     func testShortPlaylistSkipsTheChunks() async {
+        var provider = MockMusicProvider()
+        provider.playlistDetailHandler = { _ in
+            PlaylistDetail(
+                detail: Self.makeDetail(trackIDs: [10], tracks: [Self.makeSong(10)]),
+                privileges: nil)
+        }
+        stubSongDetails(&provider)
         let store = TestStore(initialState: PlaylistDetailFeature.State(playlistID: 1)) {
             PlaylistDetailFeature()
         } withDependencies: {
-            $0.netease.playlistDetail = { _ in
-                NeteaseAPI.PlaylistDetailResponse(
-                    playlist: Self.makeDetail(trackIDs: [10], tracks: [Self.makeSong(10)]),
-                    privileges: nil)
-            }
-            stubSongDetails(&$0)
+            $0.musicProvider = provider
         }
         await store.send(.onAppear) { $0.loadState = PlaylistDetailFeature.State.LoadState.loading }
         await store.receive(.detailResponse(
@@ -113,10 +125,12 @@ final class PlaylistDetailFeatureTests: XCTestCase {
     /// tracks the old content stays put.
     func testFailedLoadSurfacesErrorOnlyWhenEmpty() async {
         let error = URLError(.badServerResponse)
+        var provider = MockMusicProvider()
+        provider.playlistDetailHandler = { _ in throw error }
         let store = TestStore(initialState: PlaylistDetailFeature.State(playlistID: 1)) {
             PlaylistDetailFeature()
         } withDependencies: {
-            $0.netease.playlistDetail = { _ in throw error }
+            $0.musicProvider = provider
         }
         await store.send(.onAppear) { $0.loadState = PlaylistDetailFeature.State.LoadState.loading }
         await store.receive(.loadFailed(error.localizedDescription)) {
@@ -128,10 +142,12 @@ final class PlaylistDetailFeatureTests: XCTestCase {
         state.detail = Self.makeDetail(trackIDs: [10], tracks: [Self.makeSong(10)])
         state.tracks = [Self.makeSong(10)]
         state.loadState = PlaylistDetailFeature.State.LoadState.loaded
+        var retryProvider = MockMusicProvider()
+        retryProvider.playlistDetailHandler = { _ in throw error }
         let store2 = TestStore(initialState: state) {
             PlaylistDetailFeature()
         } withDependencies: {
-            $0.netease.playlistDetail = { _ in throw error }
+            $0.musicProvider = retryProvider
         }
         await store2.send(.reload)
         await store2.receive(.loadFailed(error.localizedDescription))
@@ -145,8 +161,10 @@ final class PlaylistDetailFeatureTests: XCTestCase {
         state.tracks = [
             Self.makeSong(1),  // 歌曲1 / 歌手 / 专辑1
         ]
+        var provider = MockMusicProvider()
+        provider.playlistDetailHandler = { _ in throw URLError(.badServerResponse) }
         let store = TestStore(initialState: state) { PlaylistDetailFeature() } withDependencies: {
-            $0.netease.playlistDetail = { _ in throw URLError(.badServerResponse) }
+            $0.musicProvider = provider
         }
         await store.send(.setFilter("歌曲1")) { $0.filter = "歌曲1" }
         XCTAssertEqual(store.state.filteredTracks.map(\.id), [1])
@@ -168,22 +186,28 @@ final class PlaylistDetailFeatureTests: XCTestCase {
         state.privileges = [1: Self.makePrivilege(1, 1), 2: Self.makePrivilege(2, 0)]
         state.isLoggedIn = true
         state.vipType = 0
+        var provider = MockMusicProvider()
+        provider.playlistDetailHandler = { _ in throw URLError(.badServerResponse) }
         let store = TestStore(initialState: state) { PlaylistDetailFeature() } withDependencies: {
-            $0.netease.playlistDetail = { _ in throw URLError(.badServerResponse) }
+            $0.musicProvider = provider
         }
         XCTAssertEqual(store.state.playableTracks.map(\.id), [2])
         // VIP unlocks the paid track.
         var vipState = state
         vipState.vipType = 11
+        var vipProvider = MockMusicProvider()
+        vipProvider.playlistDetailHandler = { _ in throw URLError(.badServerResponse) }
         let vipStore = TestStore(initialState: vipState) { PlaylistDetailFeature() } withDependencies: {
-            $0.netease.playlistDetail = { _ in throw URLError(.badServerResponse) }
+            $0.musicProvider = vipProvider
         }
         XCTAssertEqual(vipStore.state.playableTracks.map(\.id), [1, 2])
         // Unblock includes everything regardless.
         var unblockState = state
         unblockState.enableUnblock = true
+        var unblockProvider = MockMusicProvider()
+        unblockProvider.playlistDetailHandler = { _ in throw URLError(.badServerResponse) }
         let unblockStore = TestStore(initialState: unblockState) { PlaylistDetailFeature() } withDependencies: {
-            $0.netease.playlistDetail = { _ in throw URLError(.badServerResponse) }
+            $0.musicProvider = unblockProvider
         }
         XCTAssertEqual(unblockStore.state.playableTracks.map(\.id), [1, 2])
     }
@@ -193,8 +217,10 @@ final class PlaylistDetailFeatureTests: XCTestCase {
     func testTrackRemovedDropsTheTrack() async {
         var state = PlaylistDetailFeature.State(playlistID: 1)
         state.tracks = [Self.makeSong(1), Self.makeSong(2)]
+        var provider = MockMusicProvider()
+        provider.playlistDetailHandler = { _ in throw URLError(.badServerResponse) }
         let store = TestStore(initialState: state) { PlaylistDetailFeature() } withDependencies: {
-            $0.netease.playlistDetail = { _ in throw URLError(.badServerResponse) }
+            $0.musicProvider = provider
         }
         await store.send(.trackRemoved(Self.makeSong(1))) {
             $0.tracks = [Self.makeSong(2)]
@@ -205,8 +231,10 @@ final class PlaylistDetailFeatureTests: XCTestCase {
     func testRejectedRecommendationStaysOutOfLaterLoads() async {
         var state = PlaylistDetailFeature.State(playlistID: 1)
         state.tracks = [Self.makeSong(1), Self.makeSong(2)]
+        var provider = MockMusicProvider()
+        provider.playlistDetailHandler = { _ in throw URLError(.badServerResponse) }
         let store = TestStore(initialState: state) { PlaylistDetailFeature() } withDependencies: {
-            $0.netease.playlistDetail = { _ in throw URLError(.badServerResponse) }
+            $0.musicProvider = provider
         }
         await store.send(.recommendationReduced(
             rejected: Self.makeSong(1), replacement: Self.makeSong(3)
@@ -227,8 +255,10 @@ final class PlaylistDetailFeatureTests: XCTestCase {
     func testSubscribeOptimisticThenConfirmed() async {
         var state = PlaylistDetailFeature.State(playlistID: 1)
         state.detail = Self.makeDetail(trackIDs: [], tracks: [])
+        var provider = MockMusicProvider()
+        provider.subscribePlaylistHandler = { _, _ in }
         let store = TestStore(initialState: state) { PlaylistDetailFeature() } withDependencies: {
-            $0.netease.subscribePlaylist = { _, _ in }
+            $0.musicProvider = provider
         }
         await store.send(.toggleSubscribe) {
             $0.detail?.subscribed = true
@@ -241,8 +271,10 @@ final class PlaylistDetailFeatureTests: XCTestCase {
         let error = URLError(.notConnectedToInternet)
         var state = PlaylistDetailFeature.State(playlistID: 1)
         state.detail = Self.makeDetail(trackIDs: [], tracks: [])
+        var provider = MockMusicProvider()
+        provider.subscribePlaylistHandler = { _, _ in throw error }
         let store = TestStore(initialState: state) { PlaylistDetailFeature() } withDependencies: {
-            $0.netease.subscribePlaylist = { _, _ in throw error }
+            $0.musicProvider = provider
         }
         await store.send(.toggleSubscribe) {
             $0.detail?.subscribed = true
@@ -261,8 +293,11 @@ final class PlaylistDetailFeatureTests: XCTestCase {
         var state = PlaylistDetailFeature.State(playlistID: 7)
         state.tracks = [Self.makeSong(1)]
         state.enableUnblock = true
+        var provider = MockMusicProvider()
+        provider.intelligenceListHandler = { _, _ in [Self.makeSong(20), Self.makeSong(21)] }
         let store = TestStore(initialState: state) { PlaylistDetailFeature() } withDependencies: {
-            $0.netease.intelligenceList = { _, _ in [Self.makeSong(20), Self.makeSong(21)] }
+            $0.musicProvider = provider
+            $0.intelligence = provider
         }
         await store.send(.startHeartbeat)
         await store.receive(.delegate(.play(
@@ -279,8 +314,11 @@ final class PlaylistDetailFeatureTests: XCTestCase {
         var state = PlaylistDetailFeature.State(playlistID: 7)
         state.tracks = [Self.makeSong(1)]
         state.enableUnblock = true
+        var provider = MockMusicProvider()
+        provider.intelligenceListHandler = { _, _ in [] }
         let store = TestStore(initialState: state) { PlaylistDetailFeature() } withDependencies: {
-            $0.netease.intelligenceList = { _, _ in [] }
+            $0.musicProvider = provider
+            $0.intelligence = provider
         }
         await store.send(.startHeartbeat)
         await store.receive(.delegate(.toast(String(localized: "心动模式暂时不可用"))))
@@ -288,17 +326,22 @@ final class PlaylistDetailFeatureTests: XCTestCase {
 
     /// Nothing playable to seed from: no request at all.
     func testHeartbeatWithoutPlayableTracksIsSkipped() async {
+        var provider = MockMusicProvider()
+        provider.intelligenceListHandler = { _, _ in [Self.makeSong(20)] }
         let store = TestStore(initialState: PlaylistDetailFeature.State(playlistID: 7)) {
             PlaylistDetailFeature()
         } withDependencies: {
-            $0.netease.intelligenceList = { _, _ in [Self.makeSong(20)] }
+            $0.musicProvider = provider
+            $0.intelligence = provider
         }
         await store.send(.startHeartbeat)
     }
     func testWhitespaceFilterReturnsAllTracks() async {
         var state = PlaylistDetailFeature.State(playlistID: 1)
         state.tracks = [Self.makeSong(1), Self.makeSong(2)]
-        let store = TestStore(initialState: state) { PlaylistDetailFeature() }
+        let store = TestStore(initialState: state) { PlaylistDetailFeature() } withDependencies: {
+            $0.musicProvider = MockMusicProvider()
+        }
         XCTAssertEqual(store.state.filteredTracks, state.tracks)
         await store.send(.setFilter("   ")) { $0.filter = "   " }
         XCTAssertEqual(store.state.filteredTracks, state.tracks)
@@ -308,7 +351,9 @@ final class PlaylistDetailFeatureTests: XCTestCase {
         for loadState in [PlaylistDetailFeature.State.LoadState.loading, .loaded, .error("offline")] {
             var state = PlaylistDetailFeature.State(playlistID: 1)
             state.loadState = loadState
-            let store = TestStore(initialState: state) { PlaylistDetailFeature() }
+            let store = TestStore(initialState: state) { PlaylistDetailFeature() } withDependencies: {
+                $0.musicProvider = MockMusicProvider()
+            }
             await store.send(.onAppear)
             await store.send(.toggleSubscribe)
         }
@@ -317,21 +362,24 @@ final class PlaylistDetailFeatureTests: XCTestCase {
     func testChunkWithoutPrivilegesPreservesExistingPrivileges() async {
         let detail = Self.makeDetail(trackIDs: [10, 11], tracks: [Self.makeSong(10)])
         let privilege = Self.makePrivilege(10, 0)
+        var provider = MockMusicProvider()
+        provider.playlistDetailHandler = { id in
+            XCTAssertEqual(id, MusicID(1))
+            return PlaylistDetail(detail: detail, privileges: [privilege])
+        }
+        provider.songDetailsHandler = { ids in
+            XCTAssertEqual(ids, [MusicID(11)])
+            return [Self.makeSong(11)]
+        }
         let store = TestStore(initialState: PlaylistDetailFeature.State(playlistID: 1)) {
             PlaylistDetailFeature()
         } withDependencies: {
-            $0.netease.playlistDetail = { id in
-                XCTAssertEqual(id, 1)
-                return NeteaseAPI.PlaylistDetailResponse(playlist: detail, privileges: [privilege])
-            }
-            $0.netease.songDetails = { ids in
-                XCTAssertEqual(ids, [11])
-                return NeteaseAPI.SongDetailResponse(songs: [Self.makeSong(11)], privileges: nil)
-            }
+            $0.musicProvider = provider
         }
         await store.send(.onAppear) { $0.loadState = .loading }
-        await store.receive(.detailResponse(playlist: detail, privileges: [privilege])) {
-            $0.detail = detail
+        await store.receive(.detailResponse(
+            playlist: PlaylistDetail(detail: detail, privileges: [privilege]), privileges: [privilege])) {
+            $0.detail = PlaylistDetail(detail: detail, privileges: [privilege])
             $0.tracks = [Self.makeSong(10)]
             $0.privileges = [10: privilege]
             $0.loadState = .loaded
@@ -348,12 +396,15 @@ final class PlaylistDetailFeatureTests: XCTestCase {
         var state = PlaylistDetailFeature.State(playlistID: 7)
         state.tracks = [Self.makeSong(1)]
         state.enableUnblock = true
+        var provider = MockMusicProvider()
+        provider.intelligenceListHandler = { songID, playlistID in
+            XCTAssertEqual(songID, MusicID(1))
+            XCTAssertEqual(playlistID, MusicID(7))
+            throw error
+        }
         let store = TestStore(initialState: state) { PlaylistDetailFeature() } withDependencies: {
-            $0.netease.intelligenceList = { songID, playlistID in
-                XCTAssertEqual(songID, 1)
-                XCTAssertEqual(playlistID, 7)
-                throw error
-            }
+            $0.musicProvider = provider
+            $0.intelligence = provider
         }
         await store.send(.startHeartbeat)
         await store.receive(.delegate(.toast(error.localizedDescription)))
@@ -367,20 +418,21 @@ final class PlaylistDetailFeatureTests: XCTestCase {
         state.detail = detail
         state.tracks = [first]
         state.loadState = .loaded
-        nonisolated(unsafe) var requests: [[Int]] = []
+        nonisolated(unsafe) var requests: [[MusicID]] = []
+        var provider = MockMusicProvider()
+        provider.songDetailsHandler = { ids in
+            requests.append(ids)
+            if requests.count == 1 { throw URLError(.timedOut) }
+            return ids.map { Self.makeSong(Int($0.sourceID)!) }
+        }
         let store = TestStore(initialState: state) { PlaylistDetailFeature() } withDependencies: {
-            $0.netease.songDetails = { ids in
-                requests.append(ids)
-                if requests.count == 1 { throw URLError(.timedOut) }
-                return NeteaseAPI.SongDetailResponse(
-                    songs: ids.map { Self.makeSong($0) }, privileges: nil)
-            }
+            $0.musicProvider = provider
         }
         await store.send(.detailResponse(playlist: detail, privileges: nil))
         await store.receive(.isLoadingMoreChanged(true)) { $0.isLoadingMore = true }
         await store.receive(.chunksFinished) { $0.isLoadingMore = false }
         await store.finish()
-        XCTAssertEqual(requests, [Array(2...(PlaylistDetailFeature.chunkSize + 1))])
+        XCTAssertEqual(requests, [(2...(PlaylistDetailFeature.chunkSize + 1)).map(MusicID.init)])
         XCTAssertEqual(store.state.tracks, [first])
     }
 

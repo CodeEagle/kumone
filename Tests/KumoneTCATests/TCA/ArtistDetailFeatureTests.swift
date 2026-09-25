@@ -48,15 +48,17 @@ final class ArtistDetailFeatureTests: XCTestCase {
     func testLoadsArtistSplitsAlbumsAndFetchesSimilarWhenLoggedIn() async {
         var state = ArtistDetailFeature.State(artistID: 7)
         state.isLoggedIn = true
+        var provider = MockMusicProvider()
+        provider.artistHandler = { _ in
+            ArtistDetail(artist: Self.makeArtist(true), hotSongs: [Self.makeSong(1)])
+        }
+        provider.artistAlbumsHandler = { _, _, _ in
+            ArtistAlbums(
+                albums: [Self.makeAlbum(10, 12), Self.makeAlbum(11, 1)], hasMore: false)
+        }
+        provider.similarArtistsHandler = { _ in [Self.makeSimilar(20), Self.makeSimilar(21)] }
         let store = TestStore(initialState: state) { ArtistDetailFeature() } withDependencies: {
-            $0.netease.artist = { _ in
-                NeteaseAPI.ArtistResponse(artist: Self.makeArtist(true), hotSongs: [Self.makeSong(1)])
-            }
-            $0.netease.artistAlbums = { _, _, _ in
-                NeteaseAPI.ArtistAlbumsResponse(
-                    hotAlbums: [Self.makeAlbum(10, 12), Self.makeAlbum(11, 1)], more: false)
-            }
-            $0.netease.similarArtists = { _ in [Self.makeSimilar(20), Self.makeSimilar(21)] }
+            $0.musicProvider = provider
         }
         await store.send(.onAppear) { $0.loadState = ArtistDetailFeature.State.LoadState.loading }
         await store.receive(.artistResponse(
@@ -78,18 +80,23 @@ final class ArtistDetailFeatureTests: XCTestCase {
         }
     }
 
-    /// Logged out: the similar-artists endpoint is never hit (it is left
-    /// unimplemented, so a call would trap).
+    /// Logged out: the similar-artists endpoint is never hit.
     func testLoggedOutSkipsSimilarArtists() async {
+        var provider = MockMusicProvider()
+        provider.artistHandler = { _ in
+            ArtistDetail(artist: Self.makeArtist(), hotSongs: [])
+        }
+        provider.artistAlbumsHandler = { _, _, _ in
+            ArtistAlbums(albums: [], hasMore: false)
+        }
+        provider.similarArtistsHandler = { _ in
+            XCTFail("Logged-out users must not fetch similar artists")
+            return []
+        }
         let store = TestStore(initialState: ArtistDetailFeature.State(artistID: 7)) {
             ArtistDetailFeature()
         } withDependencies: {
-            $0.netease.artist = { _ in
-                NeteaseAPI.ArtistResponse(artist: Self.makeArtist(), hotSongs: [])
-            }
-            $0.netease.artistAlbums = { _, _, _ in
-                NeteaseAPI.ArtistAlbumsResponse(hotAlbums: [], more: false)
-            }
+            $0.musicProvider = provider
         }
         await store.send(.onAppear) { $0.loadState = ArtistDetailFeature.State.LoadState.loading }
         await store.receive(.artistResponse(artist: Self.makeArtist(), hotSongs: [])) {
@@ -102,10 +109,12 @@ final class ArtistDetailFeatureTests: XCTestCase {
 
     func testFailedLoadSurfacesError() async {
         let error = URLError(.badServerResponse)
+        var provider = MockMusicProvider()
+        provider.artistHandler = { _ in throw error }
         let store = TestStore(initialState: ArtistDetailFeature.State(artistID: 7)) {
             ArtistDetailFeature()
         } withDependencies: {
-            $0.netease.artist = { _ in throw error }
+            $0.musicProvider = provider
         }
         await store.send(.onAppear) { $0.loadState = ArtistDetailFeature.State.LoadState.loading }
         await store.receive(.loadFailed(error.localizedDescription)) {
@@ -119,8 +128,10 @@ final class ArtistDetailFeatureTests: XCTestCase {
         var state = ArtistDetailFeature.State(artistID: 7)
         state.artist = Self.makeArtist()
         state.hotSongs = [Self.makeSong(1), Self.makeSong(2)]
+        var provider = MockMusicProvider()
+        provider.artistHandler = { _ in throw URLError(.badServerResponse) }
         let store = TestStore(initialState: state) { ArtistDetailFeature() } withDependencies: {
-            $0.netease.artist = { _ in throw URLError(.badServerResponse) }
+            $0.musicProvider = provider
         }
         await store.send(.playAll)
         await store.receive(.delegate(.play(
@@ -134,11 +145,13 @@ final class ArtistDetailFeatureTests: XCTestCase {
     // MARK: - Follow
 
     func testFollowOptimisticThenConfirmed() async {
+        var provider = MockMusicProvider()
+        provider.artistHandler = { _ in throw URLError(.badServerResponse) }
+        provider.subscribeArtistHandler = { _, _ in }
         let store = TestStore(initialState: ArtistDetailFeature.State(artistID: 7)) {
             ArtistDetailFeature()
         } withDependencies: {
-            $0.netease.artist = { _ in throw URLError(.badServerResponse) }
-            $0.netease.subscribeArtist = { _, _ in }
+            $0.musicProvider = provider
         }
         await store.send(.toggleFollow) { $0.isFollowed = true }
         await store.receive(.delegate(.subscriptionChanged))
@@ -148,9 +161,11 @@ final class ArtistDetailFeatureTests: XCTestCase {
     func testUnfollowToastsTheOtherMessage() async {
         var state = ArtistDetailFeature.State(artistID: 7)
         state.isFollowed = true
+        var provider = MockMusicProvider()
+        provider.artistHandler = { _ in throw URLError(.badServerResponse) }
+        provider.subscribeArtistHandler = { _, _ in }
         let store = TestStore(initialState: state) { ArtistDetailFeature() } withDependencies: {
-            $0.netease.artist = { _ in throw URLError(.badServerResponse) }
-            $0.netease.subscribeArtist = { _, _ in }
+            $0.musicProvider = provider
         }
         await store.send(.toggleFollow) { $0.isFollowed = false }
         await store.receive(.delegate(.subscriptionChanged))
@@ -159,11 +174,13 @@ final class ArtistDetailFeatureTests: XCTestCase {
 
     func testFollowFailureRollsBackAndToasts() async {
         let error = URLError(.notConnectedToInternet)
+        var provider = MockMusicProvider()
+        provider.artistHandler = { _ in throw URLError(.badServerResponse) }
+        provider.subscribeArtistHandler = { _, _ in throw error }
         let store = TestStore(initialState: ArtistDetailFeature.State(artistID: 7)) {
             ArtistDetailFeature()
         } withDependencies: {
-            $0.netease.artist = { _ in throw URLError(.badServerResponse) }
-            $0.netease.subscribeArtist = { _, _ in throw error }
+            $0.musicProvider = provider
         }
         await store.send(.toggleFollow) { $0.isFollowed = true }
         await store.receive(.followReverted(to: false)) { $0.isFollowed = false }
@@ -173,7 +190,9 @@ final class ArtistDetailFeatureTests: XCTestCase {
         for loadState in [ArtistDetailFeature.State.LoadState.loading, .loaded, .error("offline")] {
             var state = ArtistDetailFeature.State(artistID: 7)
             state.loadState = loadState
-            let store = TestStore(initialState: state) { ArtistDetailFeature() }
+            let store = TestStore(initialState: state) { ArtistDetailFeature() } withDependencies: {
+                $0.musicProvider = MockMusicProvider()
+            }
             await store.send(.onAppear)
             await store.send(.playAll)
         }
@@ -185,18 +204,20 @@ final class ArtistDetailFeatureTests: XCTestCase {
         state.loadState = .loaded
         state.isLoggedIn = true
         state.similar = [Self.makeSimilar(20)]
+        var provider = MockMusicProvider()
+        provider.artistHandler = { id in
+            XCTAssertEqual(id, MusicID(7))
+            return ArtistDetail(artist: Self.makeArtist(), hotSongs: [])
+        }
+        provider.artistAlbumsHandler = { _, _, _ in
+            ArtistAlbums(albums: [], hasMore: false)
+        }
+        provider.similarArtistsHandler = { id in
+            XCTAssertEqual(id, MusicID(7))
+            throw URLError(.notConnectedToInternet)
+        }
         let store = TestStore(initialState: state) { ArtistDetailFeature() } withDependencies: {
-            $0.netease.artist = { id in
-                XCTAssertEqual(id, 7)
-                return NeteaseAPI.ArtistResponse(artist: Self.makeArtist(), hotSongs: [])
-            }
-            $0.netease.artistAlbums = { _, _, _ in
-                NeteaseAPI.ArtistAlbumsResponse(hotAlbums: [], more: false)
-            }
-            $0.netease.similarArtists = { id in
-                XCTAssertEqual(id, 7)
-                throw URLError(.notConnectedToInternet)
-            }
+            $0.musicProvider = provider
         }
         await store.send(.reload) { $0.loadState = .loading }
         await store.receive(.artistResponse(artist: Self.makeArtist(), hotSongs: [])) {

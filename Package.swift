@@ -88,17 +88,29 @@ let package = Package(
         .testTarget(
             name: "KumoneCoreTests",
             dependencies: ["KumoneCore", "KumoneShaders"],
-            path: "Tests/KumoneCoreTests"
+            path: "Tests/KumoneCoreTests",
+            swiftSettings: [
+                // Matches KumoneCore/KumoneTCA: mock handlers in @Sendable
+                // closures capture prebuilt non-Sendable fixtures, which is safe
+                // because tests run single-threaded under TestStore.
+                .swiftLanguageMode(.v5),
+            ]
         ),
         .testTarget(
             name: "KumoneTCATests",
             dependencies: ["KumoneCore", "KumoneTCA", "KumoneShaders"],
-            path: "Tests/KumoneTCATests"
+            path: "Tests/KumoneTCATests",
+            swiftSettings: [
+                .swiftLanguageMode(.v5),
+            ]
         ),
         .testTarget(
             name: "KumoneMacTests",
             dependencies: ["KumoneCore", "KumoneTCA", "KumoneMac"],
-            path: "Tests/KumoneMacTests"
+            path: "Tests/KumoneMacTests",
+            swiftSettings: [
+                .swiftLanguageMode(.v5),
+            ]
         ),
     ]
 )

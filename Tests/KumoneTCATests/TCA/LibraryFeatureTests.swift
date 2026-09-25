@@ -1,7 +1,7 @@
 import Foundation
 import ComposableArchitecture
 import Dependencies
-import KumoneCore
+@testable import KumoneCore
 @testable import KumoneTCA
 import XCTest
 
@@ -24,9 +24,15 @@ final class RecentsFeatureTests: XCTestCase {
         return try! JSONDecoder().decode(PlayRecordItem.self, from: Data(json.utf8))
     }
 
+    nonisolated private static func makeProviderRecord(_ id: Int, _ playCount: Int) -> PlayRecord {
+        PlayRecord(playCount: playCount, score: 100, song: makeSong(id))
+    }
+
     func testLoggedOutIsRejected() async {
+        var provider = MockMusicProvider()
+        provider.playRecordsHandler = { _, _ in fatalError("must not be called") }
         let store = TestStore(initialState: RecentsFeature.State()) { RecentsFeature() } withDependencies: {
-            $0.netease.playRecords = { _, _ in fatalError("must not be called") }
+            $0.playHistory = provider
         }
         await store.send(.onAppear) {
             $0.loadState = RecentsFeature.State.LoadState.error(String(localized: "登录后才能查看播放记录"))
@@ -36,12 +42,14 @@ final class RecentsFeatureTests: XCTestCase {
     func testLoadsAllTimeRecords() async {
         var state = RecentsFeature.State()
         state.userID = 42
+        var provider = MockMusicProvider()
+        provider.playRecordsHandler = { uid, week in
+            XCTAssertEqual(uid, MusicID(42))
+            XCTAssertFalse(week)
+            return [Self.makeProviderRecord(1, 9), Self.makeProviderRecord(2, 4)]
+        }
         let store = TestStore(initialState: state) { RecentsFeature() } withDependencies: {
-            $0.netease.playRecords = { uid, week in
-                XCTAssertEqual(uid, 42)
-                XCTAssertFalse(week)
-                return [Self.makeRecord(1, 9), Self.makeRecord(2, 4)]
-            }
+            $0.playHistory = provider
         }
         await store.send(.onAppear) { $0.loadState = RecentsFeature.State.LoadState.loading }
         await store.receive(.recordsResponse([Self.makeRecord(1, 9), Self.makeRecord(2, 4)])) {
@@ -56,11 +64,13 @@ final class RecentsFeatureTests: XCTestCase {
         state.userID = 42
         state.records = [Self.makeRecord(1, 9)]
         state.loadState = RecentsFeature.State.LoadState.loaded
+        var provider = MockMusicProvider()
+        provider.playRecordsHandler = { _, week in
+            XCTAssertTrue(week)
+            return [Self.makeProviderRecord(3, 2)]
+        }
         let store = TestStore(initialState: state) { RecentsFeature() } withDependencies: {
-            $0.netease.playRecords = { _, week in
-                XCTAssertTrue(week)
-                return [Self.makeRecord(3, 2)]
-            }
+            $0.playHistory = provider
         }
         await store.send(.toggleWeek) { $0.week = true }
         await store.receive(.recordsResponse([Self.makeRecord(3, 2)])) {
@@ -72,8 +82,10 @@ final class RecentsFeatureTests: XCTestCase {
     func testPlayAllAndPlayRecord() async {
         var state = RecentsFeature.State()
         state.records = [Self.makeRecord(1, 9), Self.makeRecord(2, 4)]
+        var provider = MockMusicProvider()
+        provider.playRecordsHandler = { _, _ in [] }
         let store = TestStore(initialState: state) { RecentsFeature() } withDependencies: {
-            $0.netease.playRecords = { _, _ in [] }
+            $0.playHistory = provider
         }
         await store.send(.playAll)
         await store.receive(.delegate(.play(
@@ -101,12 +113,14 @@ final class RecentsFeatureTests: XCTestCase {
         state.week = true
         state.records = [Self.makeRecord(1, 9)]
         state.loadState = .loaded
+        var provider = MockMusicProvider()
+        provider.playRecordsHandler = { uid, week in
+            XCTAssertEqual(uid, MusicID(42))
+            XCTAssertTrue(week)
+            throw error
+        }
         let store = TestStore(initialState: state) { RecentsFeature() } withDependencies: {
-            $0.netease.playRecords = { uid, week in
-                XCTAssertEqual(uid, 42)
-                XCTAssertTrue(week)
-                throw error
-            }
+            $0.playHistory = provider
         }
         await store.send(.reload)
         await store.receive(.loadFailed(error.localizedDescription)) {
@@ -126,8 +140,6 @@ final class CloudFeatureTests: XCTestCase {
         return try! JSONDecoder().decode(Track.self, from: Data(json.utf8))
     }
 
-    /// `CloudResponse` decodes itself (the quota fields arrive as numbers or
-    /// numeric strings), so the fixture is assembled as JSON text.
     nonisolated private static func itemJSON(_ id: Int, simpleSong: Bool) -> String {
         let song = """
             {"id": \(id), "name": "歌曲\(id)", "ar": [{"id": 1, "name": "歌手"}], \
@@ -148,25 +160,24 @@ final class CloudFeatureTests: XCTestCase {
         items: [String],
         size: Int64? = nil,
         maxSize: Int64? = nil
-    ) -> NeteaseAPI.CloudResponse {
-        var fields = ["\"data\": [\(items.joined(separator: ","))]", "\"hasMore\": false"]
-        if let size { fields.append("\"size\": \(size)") }
-        if let maxSize { fields.append("\"maxSize\": \(maxSize)") }
-        let json = "{\(fields.joined(separator: ", "))}"
-        return try! JSONDecoder().decode(
-            NeteaseAPI.CloudResponse.self, from: Data(json.utf8))
+    ) -> CloudStoragePage {
+        CloudStoragePage(
+            items: items.map { try! JSONDecoder().decode(CloudSongItem.self, from: Data($0.utf8)) },
+            hasMore: false, usedBytes: size ?? 0, maxBytes: maxSize ?? 0)
     }
 
     func testLoadsItemsAndQuota() async {
+        var provider = MockMusicProvider()
+        provider.cloudSongsHandler = { _, _ in
+            Self.makeCloudResponse(
+                items: [
+                    Self.itemJSON(1, simpleSong: true),
+                    Self.itemJSON(2, simpleSong: false),
+                ],
+                size: 1_610_612_736, maxSize: 5_368_709_120)
+        }
         let store = TestStore(initialState: CloudFeature.State()) { CloudFeature() } withDependencies: {
-            $0.netease.cloudSongs = { _, _ in
-                Self.makeCloudResponse(
-                    items: [
-                        Self.itemJSON(1, simpleSong: true),
-                        Self.itemJSON(2, simpleSong: false),
-                    ],
-                    size: 1_610_612_736, maxSize: 5_368_709_120)
-            }
+            $0.cloudStorage = provider
         }
         await store.send(.onAppear) { $0.loadState = CloudFeature.State.LoadState.loading }
         await store.receive(.itemsResponse(
@@ -182,10 +193,12 @@ final class CloudFeatureTests: XCTestCase {
     }
 
     func testMissingQuotaYieldsNoSizeInfo() async {
+        var provider = MockMusicProvider()
+        provider.cloudSongsHandler = { _, _ in
+            Self.makeCloudResponse(items: [])
+        }
         let store = TestStore(initialState: CloudFeature.State()) { CloudFeature() } withDependencies: {
-            $0.netease.cloudSongs = { _, _ in
-                Self.makeCloudResponse(items: [])
-            }
+            $0.cloudStorage = provider
         }
         await store.send(.onAppear) { $0.loadState = CloudFeature.State.LoadState.loading }
         await store.receive(.itemsResponse(items: [], sizeInfo: nil)) {
@@ -197,10 +210,12 @@ final class CloudFeatureTests: XCTestCase {
     func testPlayAllHandsThePlayableTracksToThePlayer() async {
         var state = CloudFeature.State()
         state.items = [Self.makeItem(1, simpleSong: true), Self.makeItem(2, simpleSong: false)]
+        var provider = MockMusicProvider()
+        provider.cloudSongsHandler = { _, _ in
+            Self.makeCloudResponse(items: [])
+        }
         let store = TestStore(initialState: state) { CloudFeature() } withDependencies: {
-            $0.netease.cloudSongs = { _, _ in
-                Self.makeCloudResponse(items: [])
-            }
+            $0.cloudStorage = provider
         }
         await store.send(.playAll)
         await store.receive(.delegate(.play(tracks: [Self.makeSong(1)], source: .cloud, context: .cloud)))
@@ -219,13 +234,14 @@ final class CloudFeatureTests: XCTestCase {
         state.items = [Self.makeItem(1, simpleSong: true)]
         state.sizeInfo = "old quota"
         state.loadState = .loaded
+        var provider = MockMusicProvider()
+        provider.cloudSongsHandler = { limit, offset in
+            XCTAssertEqual(limit, 100)
+            XCTAssertEqual(offset, 0)
+            return Self.makeCloudResponse(items: [])
+        }
         let store = TestStore(initialState: state) { CloudFeature() } withDependencies: {
-            $0.netease.cloudSongs = { limit, offset in
-                XCTAssertEqual(limit, 100)
-                XCTAssertEqual(offset, 0)
-                return try JSONDecoder().decode(
-                    NeteaseAPI.CloudResponse.self, from: Data(#"{"hasMore":false}"#.utf8))
-            }
+            $0.cloudStorage = provider
         }
         await store.send(.reload)
         await store.receive(.itemsResponse(items: [], sizeInfo: nil)) {
@@ -236,8 +252,10 @@ final class CloudFeatureTests: XCTestCase {
 
     func testCloudLoadFailureReportsError() async {
         let error = URLError(.notConnectedToInternet)
+        var provider = MockMusicProvider()
+        provider.cloudSongsHandler = { _, _ in throw error }
         let store = TestStore(initialState: CloudFeature.State()) { CloudFeature() } withDependencies: {
-            $0.netease.cloudSongs = { _, _ in throw error }
+            $0.cloudStorage = provider
         }
         await store.send(.onAppear) { $0.loadState = .loading }
         await store.receive(.loadFailed(error.localizedDescription)) {

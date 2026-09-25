@@ -1,7 +1,7 @@
 import ComposableArchitecture
 import Dependencies
 import Foundation
-import KumoneCore
+@testable import KumoneCore
 @testable import KumoneTCA
 import XCTest
 
@@ -78,11 +78,13 @@ final class LoginFeatureTests: XCTestCase {
     }
 
     func testSMSCodeSentStartsCooldown() async {
+        var provider = MockMusicProvider()
+        provider.sendSMSCodeHandler = { _, _ in }
         let store = TestStore(initialState: LoginFeature.State(mode: .sms)) {
             LoginFeature()
         } withDependencies: {
             $0.continuousClock = ImmediateClock()
-            $0.netease.sendSMSCode = { _, _ in }
+            $0.musicProvider = provider
         }
         await store.send(.sendCode) {
             $0.isSendingCode = true
@@ -102,11 +104,13 @@ final class LoginFeatureTests: XCTestCase {
     }
 
     func testSMSLoginSucceeds() async {
+        var provider = MockMusicProvider()
+        provider.loginCellphoneHandler = { _, _, _ in }
         let store = TestStore(initialState: LoginFeature.State(mode: .sms)) {
             LoginFeature()
         } withDependencies: {
             $0.continuousClock = ImmediateClock()
-            $0.netease.loginCellphone = { _, _, _ in }
+            $0.musicProvider = provider
         }
         await store.send(.loginWithCode) {
             $0.isLoggingIn = true
@@ -122,11 +126,13 @@ final class LoginFeatureTests: XCTestCase {
     }
 
     func testSMSFailureShowsMessage() async {
+        var provider = MockMusicProvider()
+        provider.loginCellphoneHandler = { _, _, _ in throw URLError(.badServerResponse) }
         let store = TestStore(initialState: LoginFeature.State(mode: .sms)) {
             LoginFeature()
         } withDependencies: {
             $0.continuousClock = ImmediateClock()
-            $0.netease.loginCellphone = { _, _, _ in throw URLError(.badServerResponse) }
+            $0.musicProvider = provider
         }
         await store.send(.loginWithCode) {
             $0.isLoggingIn = true
@@ -154,17 +160,18 @@ final class LoginFeatureTests: XCTestCase {
         let failure = URLError(.notConnectedToInternet)
         let error = AppError(wrapping: failure)
         nonisolated(unsafe) var checks = 0
+        var provider = MockMusicProvider()
+        provider.qrLoginURLHandler = { URL(string: "qr:\($0)")! }
+        provider.qrCheckHandler = { key in
+            XCTAssertEqual(key, "")
+            checks += 1
+            throw failure
+        }
         let store = TestStore(initialState: LoginFeature.State(qrLoginURL: "stale")) {
             LoginFeature()
         } withDependencies: {
-            $0.musicProvider = MockMusicProvider()
             $0.continuousClock = ImmediateClock()
-            $0.netease.qrLoginURL = { "qr:\($0)" }
-            $0.netease.qrCheck = { key in
-                XCTAssertEqual(key, "")
-                checks += 1
-                throw failure
-            }
+            $0.musicProvider = provider
         }
         await store.send(.onAppear)
         await store.receive(.startQR) { $0.qrLoginURL = nil }
@@ -183,16 +190,20 @@ final class LoginFeatureTests: XCTestCase {
         let error = AppError(wrapping: failure)
         let waiting = NeteaseAPI.QRCheckResponse(code: 801, message: nil, nickname: nil, avatarUrl: nil)
         nonisolated(unsafe) var checks = 0
+        var provider = MockMusicProvider()
+        provider.qrCheckHandler = { key in
+            XCTAssertEqual(key, "key")
+            checks += 1
+            if checks == 3 {
+                return LoginCheck(code: waiting.code, message: waiting.message, nickname: waiting.nickname, avatar: nil)
+            }
+            throw failure
+        }
         let store = TestStore(initialState: LoginFeature.State(
             phase: .failed("old"), qrLoginURL: "qr:key", unikey: "key"
         )) { LoginFeature() } withDependencies: {
             $0.continuousClock = ImmediateClock()
-            $0.netease.qrCheck = { key in
-                XCTAssertEqual(key, "key")
-                checks += 1
-                if checks == 3 { return waiting }
-                throw failure
-            }
+            $0.musicProvider = provider
         }
         await store.send(.onAppear)
         await store.receive(.startQR) { $0.phase = .waiting }
@@ -205,11 +216,13 @@ final class LoginFeatureTests: XCTestCase {
     func testSwitchingToLoadingQRStartsPolling() async {
         let failure = URLError(.notConnectedToInternet)
         let error = AppError(wrapping: failure)
+        var provider = MockMusicProvider()
+        provider.qrCheckHandler = { _ in throw failure }
         let store = TestStore(initialState: LoginFeature.State(mode: .sms, unikey: "key")) {
             LoginFeature()
         } withDependencies: {
             $0.continuousClock = ImmediateClock()
-            $0.netease.qrCheck = { _ in throw failure }
+            $0.musicProvider = provider
         }
         await store.send(.switchMode(.qr)) { $0.mode = .qr }
         await store.receive(.startQR) { $0.phase = .waiting }
@@ -234,14 +247,16 @@ final class LoginFeatureTests: XCTestCase {
     func testSMSInputAndSendFailureAndZeroCooldownGuard() async {
         let failure = URLError(.notConnectedToInternet)
         let error = AppError(wrapping: failure)
+        var provider = MockMusicProvider()
+        provider.sendSMSCodeHandler = { phone, country in
+            XCTAssertEqual(phone, "13800000000")
+            XCTAssertEqual(country, "86")
+            throw failure
+        }
         let store = TestStore(initialState: LoginFeature.State(mode: .sms)) {
             LoginFeature()
         } withDependencies: {
-            $0.netease.sendSMSCode = { phone, country in
-                XCTAssertEqual(phone, "13800000000")
-                XCTAssertEqual(country, "86")
-                throw failure
-            }
+            $0.musicProvider = provider
         }
         await store.send(.setPhone("13800000000")) { $0.phone = "13800000000" }
         await store.send(.setCode("123456")) { $0.code = "123456" }
@@ -276,14 +291,16 @@ final class LoginFeatureTests: XCTestCase {
 
     func testSwitchingToSMSCancelsPendingQRPoll() async {
         let clock = TestClock()
+        var provider = MockMusicProvider()
+        provider.qrCheckHandler = { _ in
+            XCTFail("Switching modes must cancel the pending poll")
+            return LoginCheck(code: 801, message: nil, nickname: nil, avatar: nil)
+        }
         let store = TestStore(initialState: LoginFeature.State(unikey: "existing")) {
             LoginFeature()
         } withDependencies: {
             $0.continuousClock = clock
-            $0.netease.qrCheck = { _ in
-                XCTFail("Switching modes must cancel the pending poll")
-                return .init(code: 801, message: nil, nickname: nil, avatarUrl: nil)
-            }
+            $0.musicProvider = provider
         }
         await store.send(.startQR) { $0.phase = .waiting }
         await store.send(.switchMode(.sms)) { $0.mode = .sms }
@@ -293,65 +310,17 @@ final class LoginFeatureTests: XCTestCase {
     }
 
     func testQRKeyProviderFailureEndsPollingWithFailureResponse() async {
-        struct FailingQRKeyProvider: MusicProvider {
-            let base = MockMusicProvider()
-            var isLoggedIn: Bool { base.isLoggedIn }
-            var supportedMethods: [LoginMethod] { base.supportedMethods }
-            func qrLoginURL(_ unikey: String) -> URL { base.qrLoginURL(unikey) }
-            func logout() async { await base.logout() }
-            func refreshLogin() async { await base.refreshLogin() }
-            func qrKey() async throws -> String { throw URLError(.notConnectedToInternet) }
-            func qrCheck(_ unikey: String) async throws -> LoginCheck { try await base.qrCheck(unikey) }
-            func sendSMSCode(phone: String, countryCode: String) async throws { try await base.sendSMSCode(phone: phone, countryCode: countryCode) }
-            func loginCellphone(phone: String, captcha: String, countryCode: String) async throws { try await base.loginCellphone(phone: phone, captcha: captcha, countryCode: countryCode) }
-            func userAccount() async throws -> UserProfile { try await base.userAccount() }
-            func userPlaylists(uid: MusicID, limit: Int, offset: Int) async throws -> [PlaylistSummary] { try await base.userPlaylists(uid: uid, limit: limit, offset: offset) }
-            func likedTrackIDs(uid: MusicID) async throws -> [MusicID] { try await base.likedTrackIDs(uid: uid) }
-            func likeTrack(_ id: MusicID, like: Bool) async throws { try await base.likeTrack(id, like: like) }
-            func likedAlbums(limit: Int, offset: Int) async throws -> [AlbumSummary] { try await base.likedAlbums(limit: limit, offset: offset) }
-            func likedArtists(limit: Int, offset: Int) async throws -> [ArtistSummary] { try await base.likedArtists(limit: limit, offset: offset) }
-            func playlistDetail(id: MusicID) async throws -> PlaylistDetail { try await base.playlistDetail(id: id) }
-            func playlistBrief(id: MusicID) async throws -> PlaylistBriefInfo { try await base.playlistBrief(id: id) }
-            func createPlaylist(name: String, isPrivate: Bool) async throws -> MusicID? { try await base.createPlaylist(name: name, isPrivate: isPrivate) }
-            func deletePlaylist(_ id: MusicID) async throws { try await base.deletePlaylist(id) }
-            func subscribePlaylist(_ id: MusicID, subscribe: Bool) async throws { try await base.subscribePlaylist(id, subscribe: subscribe) }
-            func playlistTracks(_ op: PlaylistOp, playlistID: MusicID, trackIDs: [MusicID]) async throws { try await base.playlistTracks(op, playlistID: playlistID, trackIDs: trackIDs) }
-            func songURL(ids: [MusicID], quality: SongQuality) async throws -> [SongURLData] { try await base.songURL(ids: ids, quality: quality) }
-            func songDetails(ids: [MusicID]) async throws -> [Track] { try await base.songDetails(ids: ids) }
-            func lyric(id: MusicID) async throws -> LyricResponse { try await base.lyric(id: id) }
-            func scrobbleStart(trackID: MusicID, sourceID: MusicID) async { await base.scrobbleStart(trackID: trackID, sourceID: sourceID) }
-            func scrobbleFinish(trackID: MusicID, sourceID: MusicID, seconds: Int) async { await base.scrobbleFinish(trackID: trackID, sourceID: sourceID, seconds: seconds) }
-            func similarSongs(id: MusicID, limit: Int) async throws -> [Track] { try await base.similarSongs(id: id, limit: limit) }
-            func search(_ keywords: String, category: SearchCategory, limit: Int, offset: Int) async throws -> SearchResult { try await base.search(keywords, category: category, limit: limit, offset: offset) }
-            func searchSuggest(_ keywords: String) async throws -> SearchSuggestion { try await base.searchSuggest(keywords) }
-            func searchDefaultKeyword() async throws -> String? { try await base.searchDefaultKeyword() }
-            func toplists() async throws -> [Chart] { try await base.toplists() }
-            func topArtists(limit: Int) async throws -> [ArtistSummary] { try await base.topArtists(limit: limit) }
-            func newAlbums(area: String, limit: Int, offset: Int) async throws -> [AlbumSummary] { try await base.newAlbums(area: area, limit: limit, offset: offset) }
-            func personalizedNewSongs(limit: Int) async throws -> [Track] { try await base.personalizedNewSongs(limit: limit) }
-            func dislikeRecommendedSong(_ id: MusicID) async throws -> Track { try await base.dislikeRecommendedSong(id) }
-            func personalizedPlaylists(limit: Int) async throws -> [PlaylistSummary] { try await base.personalizedPlaylists(limit: limit) }
-            func recommendResource() async throws -> [PlaylistSummary] { try await base.recommendResource() }
-            func dailyRecommendSongs() async throws -> [Track] { try await base.dailyRecommendSongs() }
-            func topPlaylists(category: String, order: String, limit: Int, offset: Int) async throws -> ChartList { try await base.topPlaylists(category: category, order: order, limit: limit, offset: offset) }
-            func highQualityPlaylists(category: String, limit: Int, before: Int?) async throws -> HighQualityList { try await base.highQualityPlaylists(category: category, limit: limit, before: before) }
-            func album(id: MusicID) async throws -> AlbumDetail { try await base.album(id: id) }
-            func albumDynamic(id: MusicID) async throws -> AlbumDynamic { try await base.albumDynamic(id: id) }
-            func subscribeAlbum(_ id: MusicID, subscribe: Bool) async throws { try await base.subscribeAlbum(id, subscribe: subscribe) }
-            func artist(id: MusicID) async throws -> ArtistDetail { try await base.artist(id: id) }
-            func artistAlbums(id: MusicID, limit: Int, offset: Int) async throws -> ArtistAlbums { try await base.artistAlbums(id: id, limit: limit, offset: offset) }
-            func subscribeArtist(_ id: MusicID, subscribe: Bool) async throws { try await base.subscribeArtist(id, subscribe: subscribe) }
-            func similarArtists(id: MusicID) async throws -> [ArtistSummary] { try await base.similarArtists(id: id) }
-        }
         let failure = AppError(wrapping: URLError(.notConnectedToInternet))
+        var provider = MockMusicProvider()
+        provider.qrKeyHandler = { throw URLError(.notConnectedToInternet) }
+        provider.qrCheckHandler = { _ in
+            XCTFail("A failed key request must not begin polling")
+            return LoginCheck(code: 801, message: nil, nickname: nil, avatar: nil)
+        }
         let store = TestStore(initialState: LoginFeature.State(qrLoginURL: "stale")) {
             LoginFeature()
         } withDependencies: {
-            $0.musicProvider = FailingQRKeyProvider()
-            $0.netease.qrCheck = { _ in
-                XCTFail("A failed key request must not begin polling")
-                return .init(code: 801, message: nil, nickname: nil, avatarUrl: nil)
-            }
+            $0.musicProvider = provider
         }
         await store.send(.startQR) { $0.qrLoginURL = nil }
         await store.receive(.qrKeyResponse(.failure(failure))) {
