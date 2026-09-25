@@ -6,10 +6,11 @@ import os.log
 /// When NetEase refuses to serve a track (no copyright / delisted / paid),
 /// resolve an alternative stream from third-party sources.
 ///
-/// Provider order mirrors UnblockNeteaseMusic/server:
+/// Provider order prioritizes original NetEase IDs before search matches:
 /// 1. pyncmd — GD Studio API, resolves by the ORIGINAL NetEase id (best fidelity)
-/// 2. kuwo   — fuzzy search + duration match (±5 s), then convert_url
+/// 2. lx     — configured LX source, resolves by the original NetEase id
 /// 3. kugou  — fuzzy search + duration match, tracker URL
+/// 4. kuwo   — fuzzy search + duration match (±5 s), then convert_url
 public enum UnblockService {
     private static let log = Logger(subsystem: "im.missuo.kumone", category: "unblock")
 
@@ -21,6 +22,9 @@ public enum UnblockService {
     public static func resolve(_ track: Track) async -> Resolved? {
         if let url = await pyncmd(track) {
             return Resolved(url: url, source: "pyncmd")
+        }
+        if let url = await lx(track) {
+            return Resolved(url: url, source: String(localized: "LX 解析"))
         }
         // kugou before kuwo: kuwo's convert_url increasingly serves a
         // "请在酷我音乐APP播放" promo clip instead of the real audio, so keep it
@@ -72,6 +76,18 @@ public enum UnblockService {
               let url = URL(string: urlValue.replacingOccurrences(of: "http://", with: "https://"))
         else { return nil }
         return url
+    }
+
+    // MARK: - lx
+
+    private static func lx(_ track: Track) async -> URL? {
+        await lx(track, api: LXMusicAPI())
+    }
+
+    /// Inject an API with an isolated session/settings for offline replay tests.
+    static func lx(_ track: Track, api: LXMusicAPI) async -> URL? {
+        // Track has no platform identifier; like pyncmd, this assumes a NetEase ID.
+        try? await api.songURL(source: "wy", songID: String(track.id), quality: .standard)
     }
 
     // MARK: - kuwo
