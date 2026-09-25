@@ -54,12 +54,12 @@ public enum UnblockService {
         return list.first
     }
 
-    private static func get(_ urlString: String, userAgent: String = "Mozilla/5.0") async -> Data? {
+    private static func get(_ urlString: String, userAgent: String = "Mozilla/5.0", session: URLSession = .shared) async -> Data? {
         guard let url = URL(string: urlString) else { return nil }
         var request = URLRequest(url: url)
         request.timeoutInterval = 10
         request.setValue(userAgent, forHTTPHeaderField: "User-Agent")
-        guard let (data, response) = try? await URLSession.shared.data(for: request),
+        guard let (data, response) = try? await session.data(for: request),
               (response as? HTTPURLResponse).map({ (200..<300).contains($0.statusCode) }) ?? false
         else { return nil }
         return data
@@ -92,16 +92,30 @@ public enum UnblockService {
 
     // MARK: - kuwo
 
-    private static func kuwo(_ track: Track) async -> URL? {
-        let query = keyword(for: track)
-            .addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
-        let searchURL = "https://search.kuwo.cn/r.s?&correct=1&vipver=1&stype=comprehensive&encoding=utf8"
-            + "&rformat=json&mobi=1&show_copyright_off=1&searchapi=6&all=\(query)"
-        guard let data = await get(searchURL),
+    static func kuwo(_ track: Track, session: URLSession = .shared) async -> URL? {
+        var components = URLComponents(string: "https://search.kuwo.cn/r.s")!
+        components.queryItems = [
+            URLQueryItem(name: "correct", value: "1"),
+            URLQueryItem(name: "vipver", value: "1"),
+            URLQueryItem(name: "stype", value: "comprehensive"),
+            URLQueryItem(name: "encoding", value: "utf8"),
+            URLQueryItem(name: "rformat", value: "json"),
+            URLQueryItem(name: "mobi", value: "1"),
+            URLQueryItem(name: "show_copyright_off", value: "1"),
+            URLQueryItem(name: "searchapi", value: "6"),
+            URLQueryItem(name: "all", value: keyword(for: track)),
+        ]
+        guard let searchURL = components.url,
+              let data = await get(searchURL.absoluteString, session: session),
               let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let content = obj["content"] as? [[String: Any]], content.count >= 2,
-              let musicpage = content[1]["musicpage"] as? [String: Any],
-              let abslist = musicpage["abslist"] as? [[String: Any]], !abslist.isEmpty
+              let content = obj["content"] as? [Any],
+              let abslist = content.compactMap({ block -> [[String: Any]]? in
+                  guard let block = block as? [String: Any],
+                        let musicpage = block["musicpage"] as? [String: Any],
+                        let list = musicpage["abslist"] as? [[String: Any]], !list.isEmpty
+                  else { return nil }
+                  return list
+              }).first
         else { return nil }
 
         struct KuwoSong {
@@ -112,13 +126,13 @@ public enum UnblockService {
             guard let musicrid = item["MUSICRID"] as? String,
                   let rid = musicrid.components(separatedBy: "_").last else { return nil }
             let duration = Int((item["DURATION"] as? String) ?? "") ?? (item["DURATION"] as? Int ?? 0)
-            return KuwoSong(rid: rid, durationMS: duration * 1000)
+            return KuwoSong(rid: rid, durationMS: milliseconds(fromSeconds: duration))
         }
         guard let match = selectMatch(songs, durationMS: track.durationMS, duration: \.durationMS)
         else { return nil }
 
         let convertURL = "https://antiserver.kuwo.cn/anti.s?type=convert_url&format=mp3&response=url&rid=MUSIC_\(match.rid)"
-        guard let body = await get(convertURL, userAgent: "okhttp/3.10.0"),
+        guard let body = await get(convertURL, userAgent: "okhttp/3.10.0", session: session),
               let text = String(data: body, encoding: .utf8),
               let range = text.range(of: #"http[^\s$"]+"#, options: .regularExpression),
               let url = URL(string: String(text[range]))
@@ -128,11 +142,16 @@ public enum UnblockService {
 
     // MARK: - kugou
 
-    private static func kugou(_ track: Track) async -> URL? {
-        let query = keyword(for: track)
-            .addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
-        let searchURL = "http://mobilecdn.kugou.com/api/v3/search/song?format=json&keyword=\(query)&page=1&pagesize=10"
-        guard let data = await get(searchURL),
+    static func kugou(_ track: Track, session: URLSession = .shared) async -> URL? {
+        var components = URLComponents(string: "http://mobilecdn.kugou.com/api/v3/search/song")!
+        components.queryItems = [
+            URLQueryItem(name: "format", value: "json"),
+            URLQueryItem(name: "keyword", value: keyword(for: track)),
+            URLQueryItem(name: "page", value: "1"),
+            URLQueryItem(name: "pagesize", value: "10"),
+        ]
+        guard let searchURL = components.url,
+              let data = await get(searchURL.absoluteString, session: session),
               let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let dataObj = obj["data"] as? [String: Any],
               let info = dataObj["info"] as? [[String: Any]], !info.isEmpty
@@ -147,7 +166,7 @@ public enum UnblockService {
             guard let hash = item["hash"] as? String else { return nil }
             let albumID = (item["album_id"] as? String) ?? String(item["album_id"] as? Int ?? 0)
             let duration = item["duration"] as? Int ?? 0
-            return KugouSong(hash: hash, albumID: albumID, durationMS: duration * 1000)
+            return KugouSong(hash: hash, albumID: albumID, durationMS: milliseconds(fromSeconds: duration))
         }
         guard let match = selectMatch(songs, durationMS: track.durationMS, duration: \.durationMS)
         else { return nil }
@@ -156,7 +175,7 @@ public enum UnblockService {
             .map { String(format: "%02x", $0) }.joined()
         let trackURL = "https://trackercdn.kugou.com/i/v2/?key=\(key)&hash=\(match.hash)"
             + "&appid=1005&pid=2&cmd=25&behavior=play&album_id=\(match.albumID)"
-        guard let body = await get(trackURL),
+        guard let body = await get(trackURL, session: session),
               let obj2 = try? JSONSerialization.jsonObject(with: body) as? [String: Any],
               let urls = obj2["url"] as? [String],
               let first = urls.first, let url = URL(string: first)

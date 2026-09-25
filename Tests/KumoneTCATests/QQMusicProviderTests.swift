@@ -120,7 +120,10 @@ final class QQMusicProviderTests: XCTestCase {
             (#"{"code":0,"req_0":{"code":2001,"data":[]}}"#, .business(code: 2001)),
             (#"{"code":0,"req_0":{"code":0}}"#, .invalidResponse),
             (#"{"code":0}"#, .invalidResponse),
-            (#"{"req_0":{"code":0}}"#, .invalidResponse)
+            (#"{"req_0":{"code":0}}"#, .invalidResponse),
+            ("<html>not JSON</html>", .invalidResponse),
+            (#"{"code":"invalid"}"#, .invalidResponse),
+            (#"{"code":0,"req_0":{"code":0,"data":{"lyric":42}}}"#, .invalidResponse)
         ] {
             response = Data(json.utf8)
             do { _ = try await provider.lyric(id: mid); XCTFail("Expected failure") }
@@ -129,6 +132,9 @@ final class QQMusicProviderTests: XCTestCase {
         status = 503
         do { _ = try await provider.lyric(id: mid); XCTFail("Expected HTTP failure") }
         catch { XCTAssertEqual(error as? QQMusicAPIError, .httpStatus(503)) }
+        QQFixtureProtocol.handler = { _ in throw URLError(.timedOut) }
+        do { _ = try await provider.lyric(id: mid); XCTFail("Expected transport failure") }
+        catch { XCTAssertEqual((error as? URLError)?.code, .timedOut) }
         // These methods must fail before attempting transport.
         QQFixtureProtocol.handler = { _ in XCTFail("Unexpected network request"); throw URLError(.badURL) }
         do { _ = try await provider.search("test", category: .songs, limit: 10, offset: 0); XCTFail() }
@@ -139,6 +145,18 @@ final class QQMusicProviderTests: XCTestCase {
         catch { XCTAssertEqual(error as? QQMusicAPIError, .invalidIdentifier) }
         let zero = try await provider.personalizedPlaylists(limit: 0)
         XCTAssertTrue(zero.isEmpty)
+    }
+
+    func testSongDurationBoundaries() throws {
+        for (seconds, expected) in [
+            (Int.min, 0), (-1, 0), (0, 0), (232, 232_000),
+            (Int.max / 1000, (Int.max / 1000) * 1000),
+            (Int.max / 1000 + 1, 0), (Int.max, 0)
+        ] {
+            let data = Data("{\"id\":1,\"mid\":\"fixture\",\"interval\":\(seconds)}".utf8)
+            let song = try JSONDecoder().decode(QQMusicAPI.Song.self, from: data)
+            XCTAssertEqual(song.track.durationMS, expected, "seconds: \(seconds)")
+        }
     }
 
     private func fixture(_ name: String) throws -> Data {

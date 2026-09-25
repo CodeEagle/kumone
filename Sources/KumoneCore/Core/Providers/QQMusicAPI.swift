@@ -109,16 +109,20 @@ public struct QQMusicAPI: Sendable {
         let (data, response) = try await session.data(for: request)
         guard let http = response as? HTTPURLResponse else { throw QQMusicAPIError.invalidResponse }
         guard (200..<300).contains(http.statusCode) else { throw QQMusicAPIError.httpStatus(http.statusCode) }
-        let decoder = JSONDecoder()
-        let status = try decoder.decode(Status.self, from: data)
-        guard let code = status.code else { throw QQMusicAPIError.invalidResponse }
-        guard code == 0 else { throw QQMusicAPIError.business(code: code) }
-        guard let code = status.req_0?.code else { throw QQMusicAPIError.invalidResponse }
-        guard code == 0 else { throw QQMusicAPIError.business(code: code) }
-        guard let payload = try decoder.decode(Response<T>.self, from: data).req_0.data else {
+        do {
+            let decoder = JSONDecoder()
+            let status = try decoder.decode(Status.self, from: data)
+            guard let code = status.code else { throw QQMusicAPIError.invalidResponse }
+            guard code == 0 else { throw QQMusicAPIError.business(code: code) }
+            guard let code = status.req_0?.code else { throw QQMusicAPIError.invalidResponse }
+            guard code == 0 else { throw QQMusicAPIError.business(code: code) }
+            guard let payload = try decoder.decode(Response<T>.self, from: data).req_0.data else {
+                throw QQMusicAPIError.invalidResponse
+            }
+            return payload
+        } catch is DecodingError {
             throw QQMusicAPIError.invalidResponse
         }
-        return payload
     }
 
     private struct Hotkeys: Codable { let vec_hotkey: [Hotkey]? }
@@ -156,7 +160,7 @@ public struct QQMusicAPI: Sendable {
             Track(id: id, name: name ?? "", artists: (singer ?? []).map {
                 ArtistRef(id: $0.id ?? 0, name: $0.name ?? "")
             }, album: AlbumRef(id: album?.id ?? 0, name: album?.name ?? "", picUrl: nil),
-                durationMS: (interval ?? 0) * 1000, alias: [], transNames: [], fee: 0,
+                durationMS: milliseconds(fromSeconds: interval ?? 0), alias: [], transNames: [], fee: 0,
                 mvID: 0, trackNo: 0, disc: nil, noCopyright: false, isCloud: false,
                 embeddedPrivilege: nil)
         }
