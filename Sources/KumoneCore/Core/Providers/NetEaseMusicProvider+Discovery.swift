@@ -74,8 +74,8 @@ extension NetEaseMusicProvider: MusicDiscovery, MusicAlbum, MusicArtist {
     // MARK: - MusicAlbum
 
     public func album(id: MusicID) async throws -> AlbumDetail {
-        // AlbumDetailResponse{ album, songs } → 直接取 album（Models 层已归一化字段）。
-        try await NeteaseAPI.album(id: neteaseID(id)).album
+        let response = try await NeteaseAPI.album(id: neteaseID(id))
+        return AlbumDetail(detail: response.album, songs: response.songs)
     }
 
     public func albumDynamic(id: MusicID) async throws -> AlbumDynamic {

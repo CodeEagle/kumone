@@ -22,7 +22,16 @@ extension NetEaseMusicProvider: MusicPlayback, MusicSearch {
 
     public func songDetails(ids: [MusicID]) async throws -> [Track] {
         let neteaseIDs = ids.map { Int($0.sourceID) ?? 0 }
-        return try await NeteaseAPI.songDetails(ids: neteaseIDs).songs
+        let response = try await NeteaseAPI.songDetails(ids: neteaseIDs)
+        let privilegesByID = Dictionary(
+            (response.privileges ?? []).map { ($0.id, $0) },
+            uniquingKeysWith: { _, latest in latest }
+        )
+        return response.songs.map { track in
+            var track = track
+            track.embeddedPrivilege = privilegesByID[track.id] ?? track.embeddedPrivilege
+            return track
+        }
     }
 
     public func lyric(id: MusicID) async throws -> LyricResponse {

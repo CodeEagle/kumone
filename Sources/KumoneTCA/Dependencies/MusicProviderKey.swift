@@ -54,6 +54,48 @@ extension DependencyValues {
     }
 }
 
+/// Optional capability resolved from the active provider; unsupported providers return nil.
+public struct MusicPlayHistoryKey: DependencyKey {
+    public static var liveValue: any MusicPlayHistory? {
+        MusicProviderKey.registry[MusicProviderKey.activeProviderID] as? any MusicPlayHistory
+    }
+}
+
+extension DependencyValues {
+    public var playHistory: any MusicPlayHistory? {
+        get { self[MusicPlayHistoryKey.self] }
+        set { self[MusicPlayHistoryKey.self] = newValue }
+    }
+}
+
+/// Optional capability resolved from the active provider; unsupported providers return nil.
+public struct MusicCloudStorageKey: DependencyKey {
+    public static var liveValue: any MusicCloudStorage? {
+        MusicProviderKey.registry[MusicProviderKey.activeProviderID] as? any MusicCloudStorage
+    }
+}
+
+extension DependencyValues {
+    public var cloudStorage: any MusicCloudStorage? {
+        get { self[MusicCloudStorageKey.self] }
+        set { self[MusicCloudStorageKey.self] = newValue }
+    }
+}
+
+/// Optional capability resolved from the active provider; unsupported providers return nil.
+public struct MusicIntelligenceKey: DependencyKey {
+    public static var liveValue: any MusicIntelligence? {
+        MusicProviderKey.registry[MusicProviderKey.activeProviderID] as? any MusicIntelligence
+    }
+}
+
+extension DependencyValues {
+    public var intelligence: any MusicIntelligence? {
+        get { self[MusicIntelligenceKey.self] }
+        set { self[MusicIntelligenceKey.self] = newValue }
+    }
+}
+
 extension MusicProviderKey {
     /// executable 层在启动最早期注册各 provider 的 live 实现。
     ///

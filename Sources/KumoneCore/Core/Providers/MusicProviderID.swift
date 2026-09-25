@@ -62,7 +62,19 @@ public enum SongQuality: Hashable, Sendable {
     case standard
     case high
     case lossless
+    case hires
     case immersive
+
+    public init?(neteaseLevel: String) {
+        switch neteaseLevel {
+        case "standard": self = .standard
+        case "higher", "exhigh": self = .high
+        case "lossless": self = .lossless
+        case "hires": self = .hires
+        case "sky": self = .immersive
+        default: return nil
+        }
+    }
 
     /// Aligns with the `level` strings NetEase accepts and echoes back in
     /// `SongURLData.level`; `sky` is NetEase's immersive (spatial audio) tier.
@@ -71,6 +83,7 @@ public enum SongQuality: Hashable, Sendable {
         case .standard: return "standard"
         case .high: return "exhigh"
         case .lossless: return "lossless"
+        case .hires: return "hires"
         case .immersive: return "sky"
         }
     }

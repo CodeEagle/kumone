@@ -53,7 +53,7 @@ public struct Track: Codable, Hashable, Identifiable, Sendable {
     /// Cloud-disk song marker (`pc` field present).
     public let isCloud: Bool
     /// Some endpoints (cloudsearch, FM) embed the privilege in the track itself.
-    public let embeddedPrivilege: TrackPrivilege?
+    public var embeddedPrivilege: TrackPrivilege?
 
     public init(
         id: Int, name: String, artists: [ArtistRef], album: AlbumRef,

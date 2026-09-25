@@ -46,9 +46,8 @@ extension NetEaseMusicProvider: MusicLibrary, MusicPlaylist {
     // MARK: - MusicPlaylist
 
     public func playlistDetail(id: MusicID) async throws -> PlaylistDetail {
-        // PlaylistDetailResponse{ playlist, privileges? } → 直接取 playlist
-        // （通用模型 PlaylistDetail 已在 Decodable 层兼容 picUrl/coverImgUrl 等字段名）。
-        try await NeteaseAPI.playlistDetail(id: neteaseID(id)).playlist
+        let response = try await NeteaseAPI.playlistDetail(id: neteaseID(id))
+        return PlaylistDetail(detail: response.playlist, privileges: response.privileges)
     }
 
     public func playlistBrief(id: MusicID) async throws -> PlaylistBriefInfo {

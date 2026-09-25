@@ -103,13 +103,17 @@ public struct PlaylistDetail: Decodable, Hashable {
     public let specialType: Int
     public let updateTime: Int
 
+    public let privileges: [TrackPrivilege]?
+
     private enum CodingKeys: String, CodingKey {
+        case privileges
         case id, name, coverImgUrl, creator, description, trackCount, playCount
         case subscribedCount, subscribed, trackIds, tracks, specialType, updateTime
     }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
+        privileges = try? c.decode([TrackPrivilege].self, forKey: .privileges)
         id = try c.decode(Int.self, forKey: .id)
         name = (try? c.decode(String.self, forKey: .name)) ?? ""
         coverImgUrl = try? c.decode(String.self, forKey: .coverImgUrl)
@@ -123,6 +127,24 @@ public struct PlaylistDetail: Decodable, Hashable {
         tracks = (try? c.decode([Track].self, forKey: .tracks)) ?? []
         specialType = (try? c.decode(Int.self, forKey: .specialType)) ?? 0
         updateTime = (try? c.decode(Int.self, forKey: .updateTime)) ?? 0
+    }
+
+    /// Preserves detail metadata while attaching data from the response envelope.
+    init(detail: PlaylistDetail, privileges: [TrackPrivilege]?) {
+        self.id = detail.id
+        self.name = detail.name
+        self.coverImgUrl = detail.coverImgUrl
+        self.creator = detail.creator
+        self.description = detail.description
+        self.trackCount = detail.trackCount
+        self.playCount = detail.playCount
+        self.subscribedCount = detail.subscribedCount
+        self.subscribed = detail.subscribed
+        self.trackIds = detail.trackIds
+        self.tracks = detail.tracks
+        self.specialType = detail.specialType
+        self.updateTime = detail.updateTime
+        self.privileges = privileges
     }
 }
 
@@ -194,12 +216,16 @@ public struct AlbumDetail: Decodable, Hashable {
     public let size: Int
     public let subType: String?
 
+    public let songs: [Track]
+
     private enum CodingKeys: String, CodingKey {
+        case songs
         case id, name, picUrl, artist, publishTime, description, company, size, subType
     }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
+        songs = (try? c.decode([Track].self, forKey: .songs)) ?? []
         id = try c.decode(Int.self, forKey: .id)
         name = (try? c.decode(String.self, forKey: .name)) ?? ""
         picUrl = try? c.decode(String.self, forKey: .picUrl)
@@ -209,6 +235,20 @@ public struct AlbumDetail: Decodable, Hashable {
         company = try? c.decode(String.self, forKey: .company)
         size = (try? c.decode(Int.self, forKey: .size)) ?? 0
         subType = try? c.decode(String.self, forKey: .subType)
+    }
+
+    /// Preserves detail metadata while attaching data from the response envelope.
+    init(detail: AlbumDetail, songs: [Track]) {
+        self.id = detail.id
+        self.name = detail.name
+        self.picUrl = detail.picUrl
+        self.artist = detail.artist
+        self.publishTime = detail.publishTime
+        self.description = detail.description
+        self.company = detail.company
+        self.size = detail.size
+        self.subType = detail.subType
+        self.songs = songs
     }
 }
 
