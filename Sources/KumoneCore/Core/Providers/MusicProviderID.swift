@@ -37,6 +37,7 @@ public enum MusicProviderID: String, Hashable, Sendable, Codable {
     case netease
     case qq
     case kuwo
+    case lx
 }
 
 /// Coarse search categories shared by every provider.

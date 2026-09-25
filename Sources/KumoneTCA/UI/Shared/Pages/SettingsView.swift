@@ -13,6 +13,10 @@ public struct SettingsView: View {
     @SwiftUI.Bindable var store: StoreOf<SettingsFeature>
     let appStore: StoreOf<AppFeature>
 
+    @AppStorage("lx.baseURL") private var lxBaseURL = ""
+    @AppStorage("lx.apiKey") private var lxAPIKey = ""
+    @AppStorage("lx.platform") private var lxPlatform = "wy"
+
     @State private var cacheSize: String = String(localized: "计算中…")
 
     public var body: some View {
@@ -118,6 +122,21 @@ public struct SettingsView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 #endif
+            }
+
+            Section("LX 自部署解析源") {
+                TextField("服务地址", text: $lxBaseURL)
+                SecureField("API Key", text: $lxAPIKey)
+                Picker("LX 歌曲默认平台", selection: $lxPlatform) {
+                    Text("网易云 (wy)").tag("wy")
+                    Text("咪咕 (mg)").tag("mg")
+                    Text("酷狗 (kg)").tag("kg")
+                    Text("酷我 (kw)").tag("kw")
+                    Text("QQ (tx)").tag("tx")
+                }
+                Text("填写自行部署的 LX-Source 服务地址；仅提供链接和歌词解析。")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
 
             Section("存储") {

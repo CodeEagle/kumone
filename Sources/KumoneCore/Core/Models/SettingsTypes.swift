@@ -1,3 +1,5 @@
+import Foundation
+
 public enum AudioQuality: String, CaseIterable, Identifiable {
     case standard
     case higher
@@ -88,5 +90,24 @@ public enum NowPlayingMode: String, CaseIterable, Identifiable {
         case .immersive: return String(localized: "沉浸模式")
         case .minimal: return String(localized: "简洁模式")
         }
+    }
+}
+
+/// Configuration for a user-operated LX-Source service.
+public struct LXSourceSettings: Equatable, Sendable {
+    public var baseURL: String
+    public var apiKey: String
+    public var platform: String
+
+    public init(baseURL: String = "", apiKey: String = "", platform: String = "wy") {
+        self.baseURL = baseURL
+        self.apiKey = apiKey
+        self.platform = platform
+    }
+
+    public static var current: Self {
+        Self(baseURL: UserDefaults.standard.string(forKey: "lx.baseURL") ?? "",
+             apiKey: UserDefaults.standard.string(forKey: "lx.apiKey") ?? "",
+             platform: UserDefaults.standard.string(forKey: "lx.platform") ?? "wy")
     }
 }

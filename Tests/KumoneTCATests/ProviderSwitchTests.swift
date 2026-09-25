@@ -6,7 +6,7 @@ import XCTest
 final class ProviderSwitchTests: XCTestCase {
     /// 本测试专门验证 registry 解析，故不使用 withDependencies 覆盖结果。
     /// 修改全局状态的窗口不跨 await，并恢复完整快照（通常为 .netease）。
-    private func resolveProviders() -> (qq: any MusicProvider, kuwo: any MusicProvider, unregistered: any MusicProvider) {
+    private func resolveProviders() -> (qq: any MusicProvider, kuwo: any MusicProvider, lx: any MusicProvider, unregistered: any MusicProvider) {
         let originalRegistry = MusicProviderKey.registry
         let originalID = MusicProviderKey.activeProviderID
         defer {
@@ -36,6 +36,15 @@ final class ProviderSwitchTests: XCTestCase {
         XCTAssertTrue(kuwo.supportedMethods.isEmpty)
         assertOptionalCapabilities(available: false)
 
+        MusicProviderKey.register(LXMusicProvider(api: LXMusicAPI(settings: { LXSourceSettings() })), for: .lx)
+        MusicProviderKey.activeProviderID = .lx
+        let lx = MusicProviderKey.liveValue
+        XCTAssertTrue(lx is LXMusicProvider)
+        XCTAssertFalse(lx.isLoggedIn)
+        XCTAssertTrue(lx.supportedMethods.isEmpty)
+        XCTAssertEqual(lx.qrLoginURL("unused").absoluteString, "about:blank")
+        assertOptionalCapabilities(available: false)
+
         MusicProviderKey.registry.removeValue(forKey: .kuwo)
         MusicProviderKey.activeProviderID = .kuwo
         let unregistered = MusicProviderKey.liveValue
@@ -47,7 +56,7 @@ final class ProviderSwitchTests: XCTestCase {
         MusicProviderKey.activeProviderID = .netease
         XCTAssertTrue(MusicProviderKey.liveValue is NetEaseMusicProvider)
         assertOptionalCapabilities(available: true)
-        return (qq, kuwo, unregistered)
+        return (qq, kuwo, lx, unregistered)
     }
 
     private func assertOptionalCapabilities(available: Bool, file: StaticString = #filePath, line: UInt = #line) {
@@ -60,6 +69,10 @@ final class ProviderSwitchTests: XCTestCase {
     func testSwitchingResolvesPartialProviderAndUnregisteredFallback() async {
         // 先同步解析并恢复全局状态，再调用无状态 provider，避免 await 期间污染其它测试。
         let providers = resolveProviders()
+        do { _ = try await providers.lx.songURL(ids: [.source(id: "1", provider: .lx)], quality: .standard); XCTFail() }
+        catch { XCTAssertEqual(error as? LXAPIError, .notConfigured) }
+        do { _ = try await providers.lx.search("test", category: .songs, limit: 10, offset: 0); XCTFail() }
+        catch { XCTAssertEqual(error as? LXAPIError, .business(code: -1)) }
         // Transport-backed search and playback are covered by Kuwo fixture tests.
         do { _ = try await providers.kuwo.lyric(id: .source(id: "6686351", provider: .kuwo)); XCTFail() }
         catch { XCTAssertEqual(error as? KuwoAPIError, .lyricUnavailable) }
