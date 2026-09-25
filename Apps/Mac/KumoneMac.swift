@@ -11,6 +11,7 @@ enum KumoneMain {
         // while `AppDelegate` builds its store below — so registration must
         // precede it.
         MusicProviderKey.register(NetEaseMusicProvider(), for: .netease)
+        MusicProviderKey.register(QQMusicProvider(), for: .qq)
 
         let app = NSApplication.shared
         let delegate = AppDelegate()

@@ -24,11 +24,9 @@ public struct MusicProviderKey: DependencyKey {
     /// registry 仅用于 app 启动时选定生产 provider。
     static var registry: [MusicProviderID: any MusicProvider] = [:]
 
+    /// 启动时注册生产实现；未注册的源使用哨兵报告未实现，避免换源时崩溃。
     public static var liveValue: any MusicProvider {
-        guard let provider = registry[activeProviderID] else {
-            fatalError("No MusicProvider registered for \(activeProviderID)")
-        }
-        return provider
+        registry[activeProviderID] ?? UnimplementedProvider()
     }
 }
 
