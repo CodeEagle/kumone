@@ -176,7 +176,7 @@ public struct AccountFeature {
                     }
                 }
 
-            case let .likeResponse(.success, trackID: _):
+            case .likeResponse(.success, trackID: _):
                 return .none
 
             case let .likeResponse(.failure, trackID):

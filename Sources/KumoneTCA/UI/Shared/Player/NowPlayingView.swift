@@ -158,7 +158,7 @@ struct NowPlayingView: View {
                 }
             }
         }
-        .onChange(of: isShaderPickerOpen) { _ in
+        .onChange(of: isShaderPickerOpen) {
             scheduleZenHoverChange()
         }
         .onDisappear {
@@ -179,18 +179,18 @@ struct NowPlayingView: View {
             showLyricsOnMobile = settings.nowPlayingMode == .immersive
             showQueueOnMobile = false
         }
-        .onChange(of: settings.nowPlayingMode) { _ in
+        .onChange(of: settings.nowPlayingMode) {
             showLyricsOnMobile = settings.nowPlayingMode == .immersive
             showQueueOnMobile = false
         }
-        .onChange(of: player.currentTrack?.id) { _ in
+        .onChange(of: player.currentTrack?.id) {
             if settings.nowPlayingMode == .minimal || settings.nowPlayingMode == .vinyl {
                 showLyricsOnMobile = false
             }
         }
         #endif
         #if os(macOS)
-        .onChange(of: hasLyricsColumn) { hasColumn in
+        .onChange(of: hasLyricsColumn) { _, hasColumn in
             if lyricsColumnWasVisible && !hasColumn && showLyricsColumn && isWindowHovered {
                 lyricsColumnHold = true
             }
@@ -1113,10 +1113,10 @@ struct NowPlayingView: View {
                     GeometryReader { geo in
                         Color.clear
                             .onAppear { viewportFrame = geo.frame(in: .global) }
-                            .onChange(of: geo.frame(in: .global)) { viewportFrame = $0 }
+                            .onChange(of: geo.frame(in: .global)) { _, frame in viewportFrame = frame }
                     }
                 )
-                .onChange(of: player.lyricsCursorIndex) { index in
+                .onChange(of: player.lyricsCursorIndex) { _, index in
                     guard index != activeIndex else { return }
                     activeIndex = index
                     guard !isUserScrolling, let index else { return }
@@ -1291,7 +1291,7 @@ struct EdgeBlur: ViewModifier {
                 GeometryReader { geo in
                     Color.clear
                         .onAppear { midY = geo.frame(in: .global).midY }
-                        .onChange(of: geo.frame(in: .global).midY) { midY = $0 }
+                        .onChange(of: geo.frame(in: .global).midY) { _, value in midY = value }
                 }
             )
             .blur(radius: radius)
@@ -1346,11 +1346,11 @@ private struct IOSImmersiveLyricsColumn: View {
                         GeometryReader { geo in
                             Color.clear
                                 .onAppear { viewportFrame = geo.frame(in: .global) }
-                                .onChange(of: geo.frame(in: .global)) { viewportFrame = $0 }
+                                .onChange(of: geo.frame(in: .global)) { _, frame in viewportFrame = frame }
                         }
                     )
                     .accessibilityIdentifier("syncedLyricsScroll")
-                    .onChange(of: player.lyricsCursorIndex) { index in
+                    .onChange(of: player.lyricsCursorIndex) { _, index in
                         guard index != activeIndex else { return }
                         activeIndex = index
                         guard !isUserScrolling, let index else { return }
@@ -2022,7 +2022,7 @@ private struct IOSMinimalLyricsColumn: View {
                                 }
                             }
                         }
-                        .onChange(of: player.progress) { _ in
+                        .onChange(of: player.progress) {
                             let index = lyrics.activeIndex(at: player.progress + 0.2)
                             guard index != activeIndex else { return }
                             activeIndex = index
@@ -2033,7 +2033,7 @@ private struct IOSMinimalLyricsColumn: View {
                                 proxy.scrollTo(index, anchor: .center)
                             }
                         }
-                        .onChange(of: player.currentTrack?.id) { _ in
+                        .onChange(of: player.currentTrack?.id) {
                             activeIndex = nil
                             selectedIndex = nil
                             nearestIndex = nil

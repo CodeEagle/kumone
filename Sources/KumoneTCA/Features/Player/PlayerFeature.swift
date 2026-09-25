@@ -223,20 +223,20 @@ public struct PlayerFeature {
                 // re-resolves the source then).
                 return .merge(
                     .run { [playback] send in
-                        for await seconds in await playback.timeTicks() {
+                        for await seconds in playback.timeTicks() {
                             await send(.timeTick(seconds))
                         }
                     },
                     .run { [playback] send in
-                        for await _ in await playback.itemEnded() { await send(.itemEnded) }
+                        for await _ in playback.itemEnded() { await send(.itemEnded) }
                     },
                     .run { [playback] send in
-                        for await buffering in await playback.bufferingChanged() {
+                        for await buffering in playback.bufferingChanged() {
                             await send(.bufferingChanged(buffering))
                         }
                     },
                     .run { [playback] send in
-                        for await isPlaying in await playback.isPlayingChanged() {
+                        for await isPlaying in playback.isPlayingChanged() {
                             await send(.isPlayingChanged(isPlaying))
                         }
                     },

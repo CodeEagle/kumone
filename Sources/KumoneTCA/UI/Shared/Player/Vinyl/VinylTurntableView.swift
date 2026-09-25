@@ -73,14 +73,14 @@ public struct VinylTurntableView: View {
                 rotationState.start(at: Date())
             }
         }
-        .onChange(of: isPlaying) { playing in
+        .onChange(of: isPlaying) { _, playing in
             if playing {
                 rotationState.start(at: Date())
             } else {
                 rotationState.stop(at: Date())
             }
         }
-        .onChange(of: trackId) { _ in
+        .onChange(of: trackId) {
             // Temporarily lift tonearm on track change
             isTransitioningTrack = true
             Task { @MainActor in

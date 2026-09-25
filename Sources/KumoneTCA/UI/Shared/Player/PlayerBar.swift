@@ -58,7 +58,7 @@ struct PlayerBar: View {
         Button {
             guard player.hasCurrentTrack else { return }
             withAnimation(AppAnimation.smooth) {
-                appStore.send(.presentNowPlaying)
+                _ = appStore.send(.presentNowPlaying)
             }
         } label: {
             CachedAsyncImage(url: player.currentTrack?.album.picUrl?.resizedImageURL(128))

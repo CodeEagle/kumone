@@ -24,21 +24,26 @@ final class LyricTapGate {
     private init() {
         #if os(macOS)
         // The gate is a singleton that outlives the app, so the observers are
-        // registered once and never removed.
+        // registered once and never removed. The .main delivery queue lets us
+        // assert isolation synchronously, preserving notification/click ordering.
         let center = NotificationCenter.default
         center.addObserver(
             forName: NSApplication.didBecomeActiveNotification,
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            self?.markActivated()
+            MainActor.assumeIsolated {
+                self?.markActivated()
+            }
         }
         center.addObserver(
             forName: NSApplication.willResignActiveNotification,
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            self?.markDeactivated()
+            MainActor.assumeIsolated {
+                self?.markDeactivated()
+            }
         }
         #endif
     }

@@ -96,7 +96,7 @@ public struct AppFeature {
     }
 
     /// Pages pushed onto the detail stack.
-    @Reducer(state: .equatable, action: .equatable)
+    @Reducer
     public enum Path {
         case playlist(PlaylistDetailFeature)
         /// The radar family, whose recommendations come from a different pool.
@@ -412,3 +412,6 @@ public struct AppFeature {
         }
     }
 }
+
+extension AppFeature.Path.State: Equatable {}
+extension AppFeature.Path.Action: Equatable {}

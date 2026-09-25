@@ -48,7 +48,7 @@ struct SearchView: View {
         .onSubmit(of: .search) {
             store.send(.setQuery(searchText))
         }
-        .onChange(of: searchText) { newValue in
+        .onChange(of: searchText) { _, newValue in
             store.send(.setQuery(newValue))
         }
         #endif

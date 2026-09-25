@@ -71,7 +71,7 @@ struct LyricsPanel: View {
                     }
                     .padding(.horizontal, 20)
                 }
-                .onChange(of: player.lyricsCursorIndex) { index in
+                .onChange(of: player.lyricsCursorIndex) { _, index in
                     guard index != activeIndex else { return }
                     activeIndex = index
                     guard !isUserScrolling, let index else { return }
@@ -82,7 +82,7 @@ struct LyricsPanel: View {
                 .onAppear {
                     adoptCursor(proxy: proxy)
                 }
-                .onChange(of: player.currentTrack?.id) { _ in
+                .onChange(of: player.currentTrack?.id) {
                     activeIndex = nil
                     proxy.scrollTo(0, anchor: .top)
                 }
