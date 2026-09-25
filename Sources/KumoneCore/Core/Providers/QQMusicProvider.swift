@@ -1,12 +1,16 @@
 import Foundation
 
-// QQ 音乐接入骨架：真实 QQ API 客户端接入前，所有可抛错能力均抛未实现错误，
-// 不伪造数据。协议规定的无错误返回操作为空操作，不支持任何登录方式。
+// QQ 音乐匿名接入：热搜、榜单、推荐歌单和歌词使用已验证接口。
+// 尚未接入的能力继续明确抛错，不支持任何登录方式。
 // 刻意只实现主协议，四个可选能力由 registry 解析为 nil。
 public struct QQMusicProvider: MusicProvider {
     private let fallback = UnimplementedProvider()
 
-    public init() {}
+    private let api: QQMusicAPI
+
+    public init(api: QQMusicAPI = QQMusicAPI()) {
+        self.api = api
+    }
 
     public var isLoggedIn: Bool { fallback.isLoggedIn }
     public var supportedMethods: [LoginMethod] { fallback.supportedMethods }
@@ -98,7 +102,7 @@ public struct QQMusicProvider: MusicProvider {
     // MARK: - MusicPlayback
 
     public func songURL(ids: [MusicID], quality: SongQuality) async throws -> [SongURLData] {
-        try await fallback.songURL(ids: ids, quality: quality)
+        throw QQMusicAPIError.loginRequired
     }
 
     public func songDetails(ids: [MusicID]) async throws -> [Track] {
@@ -106,7 +110,16 @@ public struct QQMusicProvider: MusicProvider {
     }
 
     public func lyric(id: MusicID) async throws -> LyricResponse {
-        try await fallback.lyric(id: id)
+        guard case .source(_, .qq) = id else { throw QQMusicAPIError.invalidIdentifier }
+        let lyrics = try await api.lyric(songMID: id.sourceID)
+        func body(_ encoded: String?) -> LyricResponse.LyricBody? {
+            guard let encoded, let data = Data(base64Encoded: encoded),
+                  let text = String(data: data, encoding: .utf8) else { return nil }
+            return .init(lyric: text)
+        }
+        return LyricResponse(lrc: body(lyrics.lyric), tlyric: body(lyrics.trans),
+            romalrc: body(lyrics.roma), yrc: nil, ytlrc: nil, yromalrc: nil,
+            lyricUser: nil, transUser: nil, nolyric: nil, uncollected: nil)
     }
 
     public func scrobbleStart(trackID: MusicID, sourceID: MusicID) async {
@@ -124,7 +137,7 @@ public struct QQMusicProvider: MusicProvider {
     // MARK: - MusicSearch
 
     public func search(_ keywords: String, category: SearchCategory, limit: Int, offset: Int) async throws -> SearchResult {
-        try await fallback.search(keywords, category: category, limit: limit, offset: offset)
+        throw QQMusicAPIError.searchUnavailable
     }
 
     public func searchSuggest(_ keywords: String) async throws -> SearchSuggestion {
@@ -132,13 +145,17 @@ public struct QQMusicProvider: MusicProvider {
     }
 
     public func searchDefaultKeyword() async throws -> String? {
-        try await fallback.searchDefaultKeyword()
+        try await api.hotkeys().first
     }
 
     // MARK: - MusicDiscovery
 
     public func toplists() async throws -> [Chart] {
-        try await fallback.toplists()
+        try await api.toplists().map {
+            Chart(id: .source(id: String($0.topId), provider: .qq), name: $0.title ?? "",
+                  coverURL: $0.picUrl.flatMap(URL.init(string:)),
+                  updateFrequency: $0.updateTime, playCount: $0.listenNum ?? 0)
+        }
     }
 
     public func topArtists(limit: Int) async throws -> [ArtistSummary] {
@@ -158,7 +175,8 @@ public struct QQMusicProvider: MusicProvider {
     }
 
     public func personalizedPlaylists(limit: Int) async throws -> [PlaylistSummary] {
-        try await fallback.personalizedPlaylists(limit: limit)
+        guard limit > 0 else { return [] }
+        return try await api.recommendFeed(from: 0, size: limit).prefix(limit).map(PlaylistSummary.init(qq:))
     }
 
     public func recommendResource() async throws -> [PlaylistSummary] {
@@ -207,5 +225,21 @@ public struct QQMusicProvider: MusicProvider {
 
     public func similarArtists(id: MusicID) async throws -> [ArtistSummary] {
         try await fallback.similarArtists(id: id)
+    }
+}
+
+// Keep the existing common model intact; QQ lacks the remaining NetEase metadata.
+private extension PlaylistSummary {
+    init(qq: QQMusicAPI.PlaylistBasic) {
+        id = qq.tid
+        name = qq.title ?? ""
+        coverURL = qq.cover?.medium_url
+        playCount = qq.play_cnt ?? 0
+        trackCount = qq.song_cnt ?? 0
+        copywriter = nil
+        creator = nil
+        specialType = 0
+        privacy = 0
+        subscribed = false
     }
 }

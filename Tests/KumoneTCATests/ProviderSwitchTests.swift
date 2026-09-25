@@ -56,7 +56,10 @@ final class ProviderSwitchTests: XCTestCase {
             do {
                 _ = try await provider.search("测试", category: .songs, limit: 10, offset: 0)
                 XCTFail("未接入的搜索能力应抛错")
+            } catch QQMusicAPIError.searchUnavailable {
+                XCTAssertTrue(provider is QQMusicProvider)
             } catch UnimplementedProviderError.search {
+                XCTAssertTrue(provider is UnimplementedProvider)
                 XCTAssertEqual(UnimplementedProviderError.search.errorDescription, "该源未实现搜索能力域")
             } catch {
                 XCTFail("搜索返回了非预期错误：\(error)")
