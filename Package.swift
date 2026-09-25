@@ -100,6 +100,7 @@ let package = Package(
             name: "KumoneTCATests",
             dependencies: ["KumoneCore", "KumoneTCA", "KumoneShaders"],
             path: "Tests/KumoneTCATests",
+            resources: [.copy("Fixtures")],
             swiftSettings: [
                 .swiftLanguageMode(.v5),
             ]

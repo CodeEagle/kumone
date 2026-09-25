@@ -91,8 +91,14 @@ public struct KuwoMusicAPI: Sendable {
         var charts: [Chart] = []
         for (id, name) in [("93", "酷我飙升榜"), ("16", "酷我热歌榜"), ("17", "酷我新歌榜")] {
             let content = try await bangContent(id: id, offset: 0, num: 1)
+            let coverURL = content.pic.flatMap { pic -> URL? in
+                guard !pic.isEmpty, !pic.hasSuffix("/"),
+                      let url = URL(string: pic), !url.hasDirectoryPath,
+                      !url.pathExtension.isEmpty else { return nil }
+                return url
+            }
             charts.append(Chart(id: .source(id: id, provider: .kuwo), name: name,
-                coverURL: content.pic.flatMap(URL.init(string:)), updateFrequency: content.pub, playCount: 0))
+                coverURL: coverURL, updateFrequency: content.pub, playCount: 0))
         }
         return charts
     }

@@ -88,7 +88,19 @@ final class KuwoMusicProviderTests: XCTestCase {
         let charts = try await provider.toplists()
         XCTAssertEqual(charts.map(\.id.sourceID), ["93", "16", "17"])
         XCTAssertEqual(charts.map(\.name), ["酷我飙升榜", "酷我热歌榜", "酷我新歌榜"])
-        XCTAssertTrue(charts.allSatisfy { $0.updateFrequency == "2026-09-25" && $0.coverURL != nil })
+        XCTAssertTrue(charts.allSatisfy { $0.updateFrequency == "2026-09-25" })
+        XCTAssertNil(charts[0].coverURL)
+        for (index, id) in [(1, "16"), (2, "17")] {
+            let content = try JSONDecoder().decode(KuwoMusicAPI.BangContent.self, from: fixtures[id]!)
+            XCTAssertEqual(charts[index].coverURL?.absoluteString, try XCTUnwrap(content.pic))
+            XCTAssertFalse(charts[index].coverURL?.pathExtension.isEmpty ?? true)
+        }
+        for pic in ["", "http://img1.kuwo.cn/cover", "http://img1.kuwo.cn/cover/?v=1"] {
+            let body = try JSONSerialization.data(withJSONObject: ["pic": pic, "musiclist": []])
+            KuwoFixtureProtocol.handler = { _ in (200, body) }
+            let invalidCovers = try await api.bangList()
+            XCTAssertTrue(invalidCovers.allSatisfy { $0.coverURL == nil }, pic)
+        }
         for (body, error) in [("{}", KuwoAPIError.invalidResponse), ("{\"code\":401}", .business(code: 401)),
                               ("{\"success\":false}", .unavailable), ("garbage", .invalidResponse)] {
             KuwoFixtureProtocol.handler = { _ in (200, Data(body.utf8)) }

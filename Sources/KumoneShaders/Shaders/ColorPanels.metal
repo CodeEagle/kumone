@@ -25,9 +25,6 @@ constant float colorPanelsZLimit = 0.5;
 static float2 colorPanelsGetPanel(float angle, float2 uv, float invLength,
                                   float aa, float a1, float a2,
                                   float blur, float scale, bool edges) {
-    const float TWO_PI = 6.28318530718;
-    const float PI = 3.14159265358979;
-
     float sinA = sin(angle);
     float cosA = cos(angle);
 
