@@ -104,6 +104,9 @@ public final class ShaderLayerView: MTKView {
         #if os(macOS)
         return window?.backingScaleFactor
             ?? NSScreen.main?.backingScaleFactor ?? 1
+        #elseif os(visionOS)
+        // visionOS has no UIScreen; fall back to the view's own scale factor.
+        return window?.contentScaleFactor ?? 2
         #else
         return window?.screen.scale ?? UIScreen.main.scale
         #endif
