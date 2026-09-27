@@ -15,15 +15,15 @@ struct KumoneMetalCompiler: BuildToolPlugin {
             throw PluginError.notCompilableTarget(target.name)
         }
 
-        let packageRoot = context.package.directory
-        let shadersRoot = packageRoot.appending("Sources/KumoneShaders")
+        let packageRoot = context.package.directoryURL
+        let shadersRoot = packageRoot.appendingPathComponent("Sources/KumoneShaders")
 
         // Inputs: every .metal under Shaders, plus the shared header.
-        let metalFiles = try collectMetalFiles(in: shadersRoot.appending("Shaders"))
-        let header = shadersRoot.appending("include/KumoneShaderTypes.h")
+        let metalFiles = try collectMetalFiles(in: shadersRoot.appendingPathComponent("Shaders"))
+        let header = shadersRoot.appendingPathComponent("include/KumoneShaderTypes.h")
 
-        let outputDir = context.pluginWorkDirectory
-        let output = outputDir.appending("default.metallib")
+        let outputDir = context.pluginWorkDirectoryURL
+        let output = outputDir.appendingPathComponent("default.metallib")
 
         // Resolve the Metal compiler through xcrun. `context.tool(named:)` only
         // sees tools SwiftPM explicitly allows, and `metallib` is not among
@@ -34,24 +34,24 @@ struct KumoneMetalCompiler: BuildToolPlugin {
         // .metallib. Two commands: the compile step is the one that needs the
         // include path; the archive just bundles.
         var commands: [Command] = []
-        var airFiles: [Path] = []
+        var airFiles: [URL] = []
 
         for source in metalFiles {
-            let air = outputDir.appending(source.stem + ".air")
+            let air = outputDir.appendingPathComponent(source.deletingPathExtension().lastPathComponent + ".air")
             airFiles.append(air)
 
             commands.append(
                 .buildCommand(
-                    displayName: "Compiling Metal shader \(source.lastComponent)",
+                    displayName: "Compiling Metal shader \(source.lastPathComponent)",
                     executable: metal,
                     arguments: [
                         "-c",
                         "-target", "air64-apple-macos15.0",
-                        "-I", shadersRoot.appending("include").string,
+                        "-I", shadersRoot.appendingPathComponent("include").path,
                         "-fmetal-math-mode=fast",
                         "-fmetal-math-fp32-functions=fast",
-                        "-o", air.string,
-                        source.string,
+                        "-o", air.path,
+                        source.path,
                     ],
                     inputFiles: [source, header],
                     outputFiles: [air]
@@ -67,7 +67,7 @@ struct KumoneMetalCompiler: BuildToolPlugin {
             .buildCommand(
                 displayName: "Archiving default.metallib",
                 executable: metallib,
-                arguments: airFiles.map(\.string) + ["-o", output.string],
+                arguments: airFiles.map(\.path) + ["-o", output.path],
                 inputFiles: airFiles,
                 outputFiles: [output]
             )
@@ -79,18 +79,17 @@ struct KumoneMetalCompiler: BuildToolPlugin {
 
 // MARK: - Helpers
 
-func collectMetalFiles(in directory: Path) throws -> [Path] {
+func collectMetalFiles(in directory: URL) throws -> [URL] {
     let manager = FileManager.default
     guard let entries = try? manager.contentsOfDirectory(
-        at: URL(fileURLWithPath: directory.string),
+        at: directory,
         includingPropertiesForKeys: nil
     ) else {
         return []
     }
     return entries
         .filter { $0.pathExtension.lowercased() == "metal" }
-        .map { Path($0.path) }
-        .sorted { $0.string < $1.string }
+        .sorted { $0.path < $1.path }
 }
 
 enum PluginError: Error {
@@ -100,7 +99,7 @@ enum PluginError: Error {
 }
 
 /// Resolves a tool through xcrun when it isn't visible to the plugin directly.
-func xcrunFind(tool name: String) throws -> Path {
+func xcrunFind(tool name: String) throws -> URL {
     let process = Process()
     process.executableURL = URL(fileURLWithPath: "/usr/bin/xcrun")
     process.arguments = ["--find", name]
@@ -113,5 +112,5 @@ func xcrunFind(tool name: String) throws -> Path {
     guard let output = String(data: data, encoding: .utf8) else {
         throw PluginError.toolNotFound(name)
     }
-    return Path(output.trimmingCharacters(in: .whitespacesAndNewlines))
+    return URL(fileURLWithPath: output.trimmingCharacters(in: .whitespacesAndNewlines))
 }

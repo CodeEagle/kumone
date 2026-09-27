@@ -55,6 +55,10 @@ import KumoneCore
 import UIKit
 import SwiftUI
 
+/// SwiftUI `UIViewRepresentable` bridge. Lives in the UI layer because
+/// `UIViewRepresentable` is a SwiftUI type and Core must not import SwiftUI.
+public typealias PlatformViewRepresentable = UIViewRepresentable
+
 public extension Image {
     init(platformImage: PlatformImage) {
         self.init(uiImage: platformImage)
