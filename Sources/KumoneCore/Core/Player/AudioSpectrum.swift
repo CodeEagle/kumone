@@ -367,8 +367,12 @@ private final class SpectrumStore: @unchecked Sendable {
         } else {
             // Planar: one buffer per channel, each holding the quantum's samples.
             guard bufferCount == channelCount else { return }
+            let elementSize = isFloat ? MemoryLayout<Float>.size : MemoryLayout<Int16>.size
             for channel in 0..<bufferCount {
-                guard let data = planarBuffer(bufferList, channel).mData else { continue }
+                let buffer = planarBuffer(bufferList, channel)
+                guard let data = buffer.mData else { continue }
+                // A short or padded buffer must not be read past its real payload.
+                guard Int(buffer.mDataByteSize) >= (baseFrame + n) * elementSize else { continue }
                 if isFloat {
                     let src = data.assumingMemoryBound(to: Float.self).advanced(by: baseFrame)
                     vDSP_vadd(dest, 1, src, 1, dest, 1, vDSP_Length(n))

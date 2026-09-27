@@ -211,10 +211,14 @@ public struct PlaylistDetailFeature {
     /// in chunks so a 1000-song list does not arrive in one request.
     private func loadRemainingEffect(state: State) -> Effect<Action> {
         guard let detail = state.detail,
-              state.tracks.count < detail.trackIds.count
+              detail.tracks.count < detail.trackIds.count
         else { return .none }
 
-        let remaining = detail.trackIds.map(\.id).dropFirst(state.tracks.count)
+        // Skip by the ORIGINAL first-batch count. The first batch is filtered
+        // for rejected recommendations after it arrives, so state.tracks.count
+        // can be smaller than the batch actually consumed; paging from it would
+        // re-request songs that were already shown.
+        let remaining = detail.trackIds.map(\.id).dropFirst(detail.tracks.count)
         let chunks = stride(from: 0, to: remaining.count, by: Self.chunkSize)
             .map { Array(remaining.dropFirst($0).prefix(Self.chunkSize)) }
 
