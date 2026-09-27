@@ -390,9 +390,13 @@ private final class SpectrumStore: @unchecked Sendable {
 
     /// Element access for the variable-length `mBuffers` array of a planar list.
     private func planarBuffer(_ bufferList: UnsafePointer<AudioBufferList>, _ index: Int) -> AudioBuffer {
-        bufferList.withMemoryRebound(to: AudioBuffer.self, capacity: Int(bufferList.pointee.mNumberBuffers)) { ptr in
-            ptr[index]
-        }
+        // Rebinding the list base to `AudioBuffer` reads the wrong offsets —
+        // `mBuffers` starts 8 bytes in (after mNumberBuffers plus alignment
+        // padding) — and trips withMemoryRebound's stride precondition for any
+        // list of more than one buffer (AudioBufferList.stride 24 is not a
+        // multiple of AudioBuffer.stride 16). The system's variable-length
+        // accessor handles both the offset and the bounds.
+        UnsafeMutableAudioBufferListPointer(UnsafeMutablePointer(mutating: bufferList))[index]
     }
 
     /// One FFT over `ring`, folded into the published levels.

@@ -138,6 +138,113 @@ final class AudioSpectrumIngestTests: XCTestCase {
         AudioSpectrum.shared.markIdle()
     }
 
+    /// Feeds the spectrum a planar (one-buffer-per-channel) stereo signal. The
+    /// AudioBufferList is heap-allocated: the C layout stores a variable-length
+    /// buffer array that a stack `AudioBufferList` value only has room for one
+    /// element of.
+    private func feedPlanar(left: inout [Float], right: inout [Float],
+                            frameCount: Int, format: AVAudioFormat) {
+        left.withUnsafeBufferPointer { lb in
+            right.withUnsafeBufferPointer { rb in
+                var buffers = [
+                    AudioBuffer(mNumberChannels: 1,
+                                mDataByteSize: UInt32(lb.count * MemoryLayout<Float>.size),
+                                mData: UnsafeMutableRawPointer(mutating: lb.baseAddress)),
+                    AudioBuffer(mNumberChannels: 1,
+                                mDataByteSize: UInt32(rb.count * MemoryLayout<Float>.size),
+                                mData: UnsafeMutableRawPointer(mutating: rb.baseAddress)),
+                ]
+                buffers.withUnsafeBufferPointer { bp in
+                    let header = MemoryLayout<AudioBufferList>.offset(of: \.mBuffers) ?? 8
+                    let raw = UnsafeMutableRawPointer.allocate(
+                        byteCount: header + bp.count * MemoryLayout<AudioBuffer>.size,
+                        alignment: MemoryLayout<AudioBufferList>.alignment)
+                    defer { raw.deallocate() }
+                    raw.assumingMemoryBound(to: UInt32.self).pointee = UInt32(bp.count)
+                    let dst = (raw + header).assumingMemoryBound(to: AudioBuffer.self)
+                    for i in 0..<bp.count { dst[i] = bp[i] }
+                    AudioSpectrum.shared.ingest(
+                        raw.assumingMemoryBound(to: AudioBufferList.self),
+                        frameCount: UInt32(frameCount),
+                        format: format)
+                }
+            }
+        }
+    }
+
+    /// Planar (non-interleaved) stereo: one buffer per channel. The planar path
+    /// walks `mBuffers` per channel instead of striding through one buffer, and
+    /// the band assignment has to come out identical to the interleaved feed.
+    func testIngestHandlesPlanarStereo() {
+        AudioSpectrum.shared.beginPreparing()
+
+        guard let format = AVAudioFormat(
+            commonFormat: .pcmFormatFloat32, sampleRate: 44_100,
+            channels: 2, interleaved: false)
+        else { return }
+        let frameCount = 44_100   // one second
+        var left = [Float](repeating: 0, count: frameCount)
+        var right = [Float](repeating: 0, count: frameCount)
+        for i in 0..<frameCount {
+            let v = sinf(2 * .pi * 60 * Float(i) / 44_100) * 0.8
+            left[i] = v
+            right[i] = v
+        }
+
+        for _ in 0..<8 {
+            feedPlanar(left: &left, right: &right,
+                       frameCount: frameCount, format: format)
+        }
+
+        XCTAssertTrue(AudioSpectrum.shared.isLive, "planar ingest never reported live audio")
+        XCTAssertGreaterThan(AudioSpectrum.shared.level(at: 0), 0.05,
+                             "low band stayed flat for a loud bass sine fed as planar PCM")
+        XCTAssertLessThan(AudioSpectrum.shared.level(at: 3), 0.1,
+                          "high band moved for a pure bass sine fed as planar PCM")
+
+        AudioSpectrum.shared.markIdle()
+    }
+
+    /// A planar buffer whose `mDataByteSize` is smaller than the reported frame
+    /// count must not be read past its real payload. The guard is the planar
+    /// counterpart of the interleaved bounds check; without it the vDSP reads
+    /// run off the end of a short buffer.
+    func testIngestPlanarBufferShorterThanFrameCountDoesNotOverread() {
+        // Matches AudioSpectrum.fftSize, which is private.
+        let fftWindow = 512
+        AudioSpectrum.shared.beginPreparing()
+
+        guard let format = AVAudioFormat(
+            commonFormat: .pcmFormatFloat32, sampleRate: 44_100,
+            channels: 2, interleaved: false)
+        else { return }
+        let realFrames = 64
+        var left = [Float](repeating: 0, count: realFrames)
+        var right = [Float](repeating: 0, count: realFrames)
+        for i in 0..<realFrames {
+            let v = sinf(2 * .pi * 60 * Float(i) / 44_100) * 0.8
+            left[i] = v
+            right[i] = v
+        }
+
+        // The buffers only hold 64 frames; claim a full 512-frame window. The
+        // bounds check has to refuse the overread rather than scan past the end.
+        feedPlanar(left: &left, right: &right, frameCount: fftWindow, format: format)
+        XCTAssertFalse(AudioSpectrum.shared.isLive,
+                       "an overreported planar frame count should not produce live audio")
+
+        // Feeding the same buffers with an honest frame count still works, which
+        // proves the guard rejected the data rather than breaking the path.
+        for _ in 0..<(fftWindow / realFrames + 1) {
+            feedPlanar(left: &left, right: &right,
+                       frameCount: realFrames, format: format)
+        }
+        XCTAssertTrue(AudioSpectrum.shared.isLive,
+                      "honest planar quanta should still accumulate to live audio")
+
+        AudioSpectrum.shared.markIdle()
+    }
+
     /// Float32 interleaved PCM (the other format a decoder can hand the tap)
     /// feeds the same path.
     func testIngestAcceptsFloat32() {
