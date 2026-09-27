@@ -77,7 +77,7 @@ public final class ShaderDiscovery {
         // The vertex stage and helpers live in the shared types header, which
         // is compiled into the default library alongside every bundled shader.
         guard let library = defaultLibrary() else { return [] }
-        guard let names = try? library.functionNames else { return [] }
+        let names = library.functionNames
 
         return names
             .filter { $0.hasPrefix(ShaderNaming.fragmentPrefix) }
@@ -119,7 +119,7 @@ public final class ShaderDiscovery {
 
         switch descriptor.origin {
         case .bundled:
-            guard let library = try? defaultLibrary() else { return nil }
+            guard let library = defaultLibrary() else { return nil }
             cache[descriptor] = library
             return library
         case .userFile(let url):
