@@ -105,7 +105,7 @@ public final class ShaderLayerView: MTKView {
         return window?.backingScaleFactor
             ?? NSScreen.main?.backingScaleFactor ?? 1
         #else
-        return window?.screen?.scale ?? UIScreen.main.scale
+        return window?.screen.scale ?? UIScreen.main.scale
         #endif
     }
 
