@@ -147,7 +147,9 @@ public struct SearchFeature {
         return .run { [provider] send in
             // Runs one endpoint, turning a failure into a `loadFailed` action
             // so the tab stays reloadable instead of caching an empty result.
-            func attempt(
+            // `@Sendable` is required because the 综合 fan-out runs four of these
+            // concurrently via `async let`.
+            @Sendable func attempt(
                 _ category: SearchCategory,
                 _ limit: Int,
                 makeResults: @Sendable (SearchResult) -> Results
