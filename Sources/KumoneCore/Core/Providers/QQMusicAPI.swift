@@ -91,7 +91,7 @@ public struct QQMusicAPI: Sendable {
     private func request<P: Encodable, T: Decodable>(module: String, method: String, param: P) async throws -> T {
         var request = URLRequest(url: URL(string: "https://u.y.qq.com/cgi-bin/musicu.fcg")!)
         request.httpMethod = "POST"
-        request.timeoutInterval = 30
+        request.timeoutInterval = AnonymousSession.requestTimeout
         request.httpShouldHandleCookies = false
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("https://y.qq.com/", forHTTPHeaderField: "Referer")

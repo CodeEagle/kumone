@@ -134,26 +134,6 @@ public struct ExploreFeature {
         }
     }
 
-    // Preserve the existing view models; Chart has no track previews or track count.
-    private struct ChartPayload: Encodable {
-        let id: Int
-        let name: String
-        let coverImgUrl: String?
-        let updateFrequency: String?
-        let playCount: Int
-    }
-
-    private static func decodeChart<T: Decodable>(_ chart: Chart, as type: T.Type) throws -> T {
-        guard let id = Int(chart.id.sourceID) else {
-            throw DecodingError.dataCorrupted(.init(
-                codingPath: [], debugDescription: "Chart ID is not an integer: \(chart.id.sourceID)"))
-        }
-        let payload = ChartPayload(
-            id: id, name: chart.name, coverImgUrl: chart.coverURL?.absoluteString,
-            updateFrequency: chart.updateFrequency, playCount: chart.playCount)
-        return try JSONDecoder().decode(type, from: JSONEncoder().encode(payload))
-    }
-
     private func loadEffect(state: State) -> Effect<Action> {
         .run { [provider] send in
             let category = state.selectedCategory
@@ -165,7 +145,7 @@ public struct ExploreFeature {
             switch category {
             case "排行榜":
                 let lists = (try? await provider.toplists()) ?? []
-                await send(.pageLoaded(.toplists(lists.compactMap { try? Self.decodeChart($0, as: ToplistItem.self) })))
+                await send(.pageLoaded(.toplists(lists.compactMap { try? decodeChart($0, as: ToplistItem.self) })))
 
             case "推荐歌单":
                 let lists = (try? await provider.personalizedPlaylists(limit: 100)) ?? []
@@ -191,7 +171,7 @@ public struct ExploreFeature {
                 if let result {
                     let nextOffset = offset + Self.pageSize
                     await send(.pageLoaded(.playlists(
-                        appended: result.charts.compactMap { try? Self.decodeChart($0, as: PlaylistSummary.self) }.deduped(against: seen),
+                        appended: result.charts.compactMap { try? decodeChart($0, as: PlaylistSummary.self) }.deduped(against: seen),
                         hasMore: result.hasMore && nextOffset < Self.maxOffset,
                         cursor: Cursor(offset: nextOffset, highQualityBefore: before))))
                 } else {

@@ -141,26 +141,6 @@ public struct HomeFeature {
         }
     }
 
-    // Preserve the existing view models; Chart has no track previews or track count.
-    private struct ChartPayload: Encodable {
-        let id: Int
-        let name: String
-        let coverImgUrl: String?
-        let updateFrequency: String?
-        let playCount: Int
-    }
-
-    private static func decodeChart<T: Decodable>(_ chart: Chart, as type: T.Type) throws -> T {
-        guard let id = Int(chart.id.sourceID) else {
-            throw DecodingError.dataCorrupted(.init(
-                codingPath: [], debugDescription: "Chart ID is not an integer: \(chart.id.sourceID)"))
-        }
-        let payload = ChartPayload(
-            id: id, name: chart.name, coverImgUrl: chart.coverURL?.absoluteString,
-            updateFrequency: chart.updateFrequency, playCount: chart.playCount)
-        return try JSONDecoder().decode(type, from: JSONEncoder().encode(payload))
-    }
-
     private func loadEffect(state: State) -> Effect<Action> {
         .run { [provider] send in
             let loggedIn = state.isLoggedIn
@@ -175,7 +155,7 @@ public struct HomeFeature {
                 recommendPlaylists: await playlists,
                 radarPlaylists: [],
                 toplists: (await toplists ?? [])
-                    .compactMap { try? Self.decodeChart($0, as: ToplistItem.self) }
+                    .compactMap { try? decodeChart($0, as: ToplistItem.self) }
                     .filter { Self.featuredToplistIDs.contains($0.id) },
                 newAlbums: await albums ?? [],
                 topArtists: Array((await artists ?? []).shuffled().prefix(6)),

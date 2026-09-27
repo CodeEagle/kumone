@@ -102,7 +102,10 @@ public enum LyricsParser {
             lines.append(LyricLine(id: idx, time: lineStart, text: trimmed, words: words))
             idx += 1
         }
-        return lines
+        // IDs preserve input order, including when multiple lines share a time.
+        return lines.sorted {
+            $0.time == $1.time ? $0.id < $1.id : $0.time < $1.time
+        }
     }
 
     public static func parse(_ response: LyricResponse) -> ParsedLyrics {

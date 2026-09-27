@@ -31,6 +31,8 @@ struct SearchView: View {
                     if store.isLoading && currentEmpty {
                         ProgressView()
                             .frame(maxWidth: .infinity, minHeight: 300)
+                    } else if store.failedTabs.contains(store.tab) {
+                        searchFailure
                     } else {
                         tabContent
                     }
@@ -56,6 +58,17 @@ struct SearchView: View {
         .task(id: store.tab) {
             store.send(.load)
         }
+    }
+
+    /// Shown when the current tab's load failed. The failure is not cached as
+    /// an empty success, so the tab stays reloadable.
+    private var searchFailure: some View {
+        VStack(spacing: 12) {
+            EmptyStateView(icon: "exclamationmark.triangle", title: "搜索失败", subtitle: "网络异常，请重试")
+            Button("重试") { store.send(.load) }
+                .buttonStyle(.borderedProminent)
+        }
+        .frame(maxWidth: .infinity, minHeight: 300)
     }
 
     private var tabBinding: Binding<SearchFeature.State.Tab> {

@@ -86,7 +86,7 @@ final class SearchFeatureTests: XCTestCase {
                 playlists: [Self.makePlaylist(4)])
         }
         await store.send(.load) { $0.isLoading = true }
-        await store.receive(.loaded(tab: .all, results: SearchFeature.Results(
+        await store.receive(.loaded(query: "周", tab: .all, results: SearchFeature.Results(
             songs: [Self.makeSong(1)],
             artists: [Self.makeArtist(2)],
             albums: [Self.makeAlbum(3)],
@@ -119,7 +119,7 @@ final class SearchFeatureTests: XCTestCase {
             $0.tab = .artists
         }
         await store.receive(.load) { $0.isLoading = true }
-        await store.receive(.loaded(tab: .artists, results: SearchFeature.Results(
+        await store.receive(.loaded(query: "周", tab: .artists, results: SearchFeature.Results(
             artists: [Self.makeArtist(5)]
         ))) {
             $0.loadedTabs = [.all, .artists]
@@ -173,7 +173,7 @@ final class SearchFeatureTests: XCTestCase {
             $0.query = "周"
         }
         await store.receive(.load) { $0.isLoading = true }
-        await store.receive(.loaded(tab: .all, results: SearchFeature.Results(
+        await store.receive(.loaded(query: "周", tab: .all, results: SearchFeature.Results(
             songs: [Self.makeSong(7)]
         ))) {
             $0.loadedTabs = [.all]
@@ -187,7 +187,7 @@ final class SearchFeatureTests: XCTestCase {
             $0.songs = []
         }
         await store.receive(.load) { $0.isLoading = true }
-        await store.receive(.loaded(tab: .all, results: SearchFeature.Results())) {
+        await store.receive(.loaded(query: "周杰伦", tab: .all, results: SearchFeature.Results())) {
             $0.loadedTabs = [.all]
             $0.isLoading = false
         }
@@ -259,7 +259,7 @@ final class SearchFeatureTests: XCTestCase {
             }
             await store.send(.selectTab(tab)) { $0.tab = tab }
             await store.receive(.load) { $0.isLoading = true }
-            await store.receive(.loaded(tab: tab, results: results)) {
+            await store.receive(.loaded(query: "搜索词", tab: tab, results: results)) {
                 $0.loadedTabs = [tab]
                 $0.isLoading = false
                 switch tab {
@@ -288,7 +288,7 @@ final class SearchFeatureTests: XCTestCase {
                 $0.musicProvider = provider
             }
             await store.send(.load) { $0.isLoading = true }
-            await store.receive(.loaded(tab: tab, results: SearchFeature.Results())) {
+            await store.receive(.loaded(query: "搜索词", tab: tab, results: SearchFeature.Results())) {
                 $0.loadedTabs = [tab]
                 $0.isLoading = false
             }
@@ -296,7 +296,9 @@ final class SearchFeatureTests: XCTestCase {
         }
     }
 
-    func testEveryTabTreatsSearchFailureAsEmptyResults() async {
+    /// A failed search is reported as a failure, not cached as a successful
+    /// empty result: the tab stays reloadable and the view can offer a retry.
+    func testSearchFailureMarksTheTabFailedAndKeepsItReloadable() async {
         for tab in SearchFeature.State.Tab.allCases {
             var state = SearchFeature.State(query: "搜索词")
             state.tab = tab
@@ -308,12 +310,68 @@ final class SearchFeatureTests: XCTestCase {
                 $0.musicProvider = provider
             }
             await store.send(.load) { $0.isLoading = true }
-            await store.receive(.loaded(tab: tab, results: SearchFeature.Results())) {
-                $0.loadedTabs = [tab]
+            await store.receive(.loadFailed(query: "搜索词", tab: tab)) {
                 $0.isLoading = false
+                $0.failedTabs = [tab]
             }
+            // The failure was not recorded as a successful empty result, so a
+            // retry is still possible.
+            XCTAssertEqual(store.state.loadedTabs, [])
             await store.finish()
         }
+    }
+
+    /// The 综合 tab keeps whichever categories succeeded and only reports a
+    /// failure when every endpoint failed.
+    func testAllTabKeepsPartialResultsAndFailsOnlyWhenEverythingFails() async {
+        var state = SearchFeature.State(query: "周")
+        state.tab = .all
+        var provider = MockMusicProvider()
+        provider.searchHandler = { keywords, category, limit, offset in
+            switch category {
+            case .songs:
+                return SearchResult(songs: [Self.makeSong(1)], albums: [], artists: [],
+                                    playlists: [], counts: SearchCounts(songs: 0, albums: 0, artists: 0, playlists: 0))
+            default:
+                throw URLError(.notConnectedToInternet)
+            }
+        }
+        let store = TestStore(initialState: state) {
+            SearchFeature()
+        } withDependencies: {
+            $0.musicProvider = provider
+        }
+        await store.send(.load) { $0.isLoading = true }
+        await store.receive(.loaded(query: "周", tab: .all, results: SearchFeature.Results(
+            songs: [Self.makeSong(1)]
+        ))) {
+            $0.loadedTabs = [.all]
+            $0.songs = [Self.makeSong(1)]
+            $0.isLoading = false
+        }
+        XCTAssertEqual(store.state.failedTabs, [])
+        await store.finish()
+    }
+
+    /// A response delivered for an earlier query must not overwrite the results
+    /// of the query the user has since typed.
+    func testIgnoresResponsesDeliveredForAnEarlierQuery() async {
+        var state = SearchFeature.State(query: "新查询")
+        state.tab = .songs
+        state.songs = [Self.makeSong(1)]
+        state.loadedTabs = [.songs]
+        let store = TestStore(initialState: state) {
+            SearchFeature()
+        } withDependencies: {
+            $0.continuousClock = ImmediateClock()
+            _ = makeSearch(&$0)
+        }
+        let stale = SearchFeature.Results(songs: [Self.makeSong(2)])
+        await store.send(.loaded(query: "旧查询", tab: .songs, results: stale))
+        await store.send(.loadFailed(query: "旧查询", tab: .songs))
+        XCTAssertEqual(store.state.songs, [Self.makeSong(1)])
+        XCTAssertEqual(store.state.failedTabs, [])
+        await store.finish()
     }
 
     func testPlaybackDelegateLeavesSearchStateUnchanged() async {

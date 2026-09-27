@@ -100,7 +100,7 @@ public struct KuwoMusicAPI: Sendable {
         var components = URLComponents(string: endpoint)!
         components.queryItems = query.sorted { $0.key < $1.key }.map { URLQueryItem(name: $0.key, value: $0.value) }
         var request = URLRequest(url: components.url!)
-        request.timeoutInterval = 30
+        request.timeoutInterval = AnonymousSession.requestTimeout
         request.httpShouldHandleCookies = false
         request.setValue("http://www.kuwo.cn/", forHTTPHeaderField: "Referer")
         request.setValue("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36", forHTTPHeaderField: "User-Agent")

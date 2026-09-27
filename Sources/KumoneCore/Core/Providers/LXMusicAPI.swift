@@ -129,7 +129,7 @@ public struct LXMusicAPI: Sendable {
         guard let url = components.url else { throw LXAPIError.parseFailed }
         var request = URLRequest(url: url)
         request.httpMethod = "GET"
-        request.timeoutInterval = 30
+        request.timeoutInterval = AnonymousSession.requestTimeout
         request.httpShouldHandleCookies = false
         if !config.apiKey.isEmpty { request.setValue(config.apiKey, forHTTPHeaderField: "X-LxM-Auth") }
         let (data, response) = try await session.data(for: request)

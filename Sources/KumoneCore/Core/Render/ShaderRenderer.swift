@@ -25,13 +25,11 @@ public final class ShaderRenderer: NSObject, MTKViewDelegate {
     private let commandQueue: any MTLCommandQueue
 
     private var pipelineState: (any MTLRenderPipelineState)?
-    private var currentDescriptor: ShaderDescriptor?
     private var uniformBuffer: any MTLBuffer?
     private let uniformStride: Int
 
     private var bridge = ShaderAudioBridge()
     private var startTime: CFTimeInterval = 0
-    private var lastDrawableTime: CFTimeInterval = 0
 
     /// Set when a shader fails to build, so the host can show why instead of a
     /// black screen with no explanation.
@@ -98,7 +96,6 @@ public final class ShaderRenderer: NSObject, MTKViewDelegate {
 
         do {
             pipelineState = try device.makeRenderPipelineState(descriptor: pipelineDescriptor)
-            currentDescriptor = descriptor
             lastError = nil
             return true
         } catch {
@@ -110,7 +107,6 @@ public final class ShaderRenderer: NSObject, MTKViewDelegate {
 
     public func unload() {
         pipelineState = nil
-        currentDescriptor = nil
         lastError = nil
     }
 

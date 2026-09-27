@@ -19,6 +19,9 @@ public struct SearchFeature {
         public var isLoading = false
         /// Which tabs already have results for the current query.
         public var loadedTabs: Set<Tab> = []
+        /// Tabs whose last load for this query failed, so the view can offer a
+        /// retry instead of showing an empty result as if it were a match.
+        public var failedTabs: Set<Tab> = []
 
         public init(query: String = "") {
             self.query = query
@@ -42,7 +45,8 @@ public struct SearchFeature {
         /// Loads the current tab for the current query (no-op if already loaded
         /// or if the query is blank).
         case load
-        case loaded(tab: State.Tab, results: Results)
+        case loaded(query: String, tab: State.Tab, results: Results)
+        case loadFailed(query: String, tab: State.Tab)
         case delegate(Delegate)
     }
 
@@ -73,6 +77,7 @@ public struct SearchFeature {
                 guard query != state.query else { return .none }
                 state.query = query
                 state.loadedTabs = []
+                state.failedTabs = []
                 state.songs = []
                 state.artists = []
                 state.albums = []
@@ -92,8 +97,14 @@ public struct SearchFeature {
                 state.isLoading = true
                 return effect
 
-            case let .loaded(tab, results):
+            case let .loaded(query, tab, results):
+                guard query == state.query.trimmingCharacters(in: .whitespacesAndNewlines) else {
+                    // A response from an earlier query arrived after the query
+                    // changed; it must not overwrite the current results.
+                    return .none
+                }
                 state.loadedTabs.insert(tab)
+                state.failedTabs.remove(tab)
                 switch tab {
                 case .all:
                     state.songs = results.songs
@@ -112,6 +123,16 @@ public struct SearchFeature {
                 state.isLoading = false
                 return .none
 
+            case let .loadFailed(query, tab):
+                guard query == state.query.trimmingCharacters(in: .whitespacesAndNewlines) else {
+                    return .none
+                }
+                // A failure is not a result: keep the tab reloadable and let the
+                // view offer a retry instead of caching an empty success.
+                state.isLoading = false
+                state.failedTabs.insert(tab)
+                return .none
+
             case .delegate:
                 return .none
             }
@@ -124,33 +145,54 @@ public struct SearchFeature {
 
         let tab = state.tab
         return .run { [provider] send in
+            // Runs one endpoint, turning a failure into a `loadFailed` action
+            // so the tab stays reloadable instead of caching an empty result.
+            func attempt(
+                _ category: SearchCategory,
+                _ limit: Int,
+                makeResults: @Sendable (SearchResult) -> Results
+            ) async -> Action {
+                do {
+                    let result = try await provider.search(query, category: category, limit: limit, offset: 0)
+                    return .loaded(query: query, tab: tab, results: makeResults(result))
+                } catch {
+                    return .loadFailed(query: query, tab: tab)
+                }
+            }
+
             switch tab {
             case .all:
-                async let songs = try? await provider.search(query, category: .songs, limit: 12, offset: 0)
-                async let artists = try? await provider.search(query, category: .artists, limit: 10, offset: 0)
-                async let albums = try? await provider.search(query, category: .albums, limit: 10, offset: 0)
-                async let playlists = try? await provider.search(query, category: .playlists, limit: 10, offset: 0)
-                await send(.loaded(tab: tab, results: Results(
-                    songs: await songs?.songs ?? [],
-                    artists: await artists?.artists ?? [],
-                    albums: await albums?.albums ?? [],
-                    playlists: await playlists?.playlists ?? [])))
+                async let songs = attempt(.songs, 12) { Results(songs: $0.songs) }
+                async let artists = attempt(.artists, 10) { Results(artists: $0.artists) }
+                async let albums = attempt(.albums, 10) { Results(albums: $0.albums) }
+                async let playlists = attempt(.playlists, 10) { Results(playlists: $0.playlists) }
+                let attempts = await [songs, artists, albums, playlists]
+                var merged = Results()
+                var everythingFailed = true
+                for pending in attempts {
+                    if case let .loaded(_, _, results) = pending {
+                        everythingFailed = false
+                        merged.songs += results.songs
+                        merged.artists += results.artists
+                        merged.albums += results.albums
+                        merged.playlists += results.playlists
+                    }
+                }
+                await send(everythingFailed
+                    ? .loadFailed(query: query, tab: tab)
+                    : .loaded(query: query, tab: tab, results: merged))
 
             case .songs:
-                let result = try? await provider.search(query, category: .songs, limit: 100, offset: 0)
-                await send(.loaded(tab: tab, results: Results(songs: result?.songs ?? [])))
+                await send(await attempt(.songs, 100) { Results(songs: $0.songs) })
 
             case .artists:
-                let result = try? await provider.search(query, category: .artists, limit: 50, offset: 0)
-                await send(.loaded(tab: tab, results: Results(artists: result?.artists ?? [])))
+                await send(await attempt(.artists, 50) { Results(artists: $0.artists) })
 
             case .albums:
-                let result = try? await provider.search(query, category: .albums, limit: 50, offset: 0)
-                await send(.loaded(tab: tab, results: Results(albums: result?.albums ?? [])))
+                await send(await attempt(.albums, 50) { Results(albums: $0.albums) })
 
             case .playlists:
-                let result = try? await provider.search(query, category: .playlists, limit: 50, offset: 0)
-                await send(.loaded(tab: tab, results: Results(playlists: result?.playlists ?? [])))
+                await send(await attempt(.playlists, 50) { Results(playlists: $0.playlists) })
             }
         }
     }
