@@ -54,15 +54,6 @@ struct ShaderImporter: View {
             onResult(.failure(.directoryUnavailable))
             return
         }
-        ShaderDirectory.ensureExists()
-
-        let destination = directory.appendingPathComponent(source.lastPathComponent)
-
-        // A shader of the same name already there: overwrite. The user picked
-        // the file, so the newer version is the one they want.
-        if FileManager.default.fileExists(atPath: destination.path) {
-            try? FileManager.default.removeItem(at: destination)
-        }
 
         do {
             // Accessing security-scoped resources on iOS requires the start/stop
@@ -70,15 +61,66 @@ struct ShaderImporter: View {
             let didStart = source.startAccessingSecurityScopedResource()
             defer { if didStart { source.stopAccessingSecurityScopedResource() } }
 
-            try FileManager.default.copyItem(at: source, to: destination)
+            // The installer copies through a temporary sibling file and only
+            // replaces the destination once the copy has fully succeeded, so a
+            // failure can never leave the user with a missing shader.
+            let installed = try ShaderInstaller.install(source, into: directory)
             ShaderLibrary.shared.reload()
 
             isImporting = false
-            onResult(.success(destination.deletingPathExtension().lastPathComponent))
+            onResult(.success(installed.deletingPathExtension().lastPathComponent))
         } catch {
             isImporting = false
             onResult(.failure(.copyFailed(error.localizedDescription)))
         }
+    }
+}
+
+// MARK: - File installation
+
+enum ShaderInstaller {
+    /// Copies `source` into `directory` under its own name, atomically replacing
+    /// whatever is already there.
+    ///
+    /// The copy lands in a temporary file next to the destination first and
+    /// only swaps into place once it has fully succeeded, so a failed import
+    /// never deletes a shader the user already had. Errors are thrown rather
+    /// than swallowed, and a source that already lives at the destination is
+    /// left untouched.
+    static func install(_ source: URL, into directory: URL) throws -> URL {
+        let destination = directory.appendingPathComponent(source.lastPathComponent)
+
+        // Picking a file that is already installed: nothing to do. Returning
+        // success without a copy also avoids deleting the only copy the user
+        // has when source and destination resolve to the same path.
+        if source.standardizedFileURL.path == destination.standardizedFileURL.path {
+            return destination
+        }
+
+        let manager = FileManager.default
+        try manager.createDirectory(at: directory, withIntermediateDirectories: true)
+
+        // Temporaries live in the destination folder so the final move is a
+        // same-directory rename, and they are hidden so a crash mid-import
+        // cannot leave a stray entry for the shader scanner to pick up.
+        var temporary = directory.appendingPathComponent(".kumone-import-\(UUID().uuidString).tmp")
+        while temporary.standardizedFileURL.path == source.standardizedFileURL.path {
+            temporary = directory.appendingPathComponent(".kumone-import-\(UUID().uuidString).tmp")
+        }
+
+        do {
+            try manager.copyItem(at: source, to: temporary)
+
+            // `replaceItemAt` is atomic and handles the "nothing there yet"
+            // case, so this is the only mutation of the destination.
+            _ = try manager.replaceItemAt(destination, withItemAt: temporary)
+        } catch {
+            // Never leave the leftovers of a failed import behind.
+            try? manager.removeItem(at: temporary)
+            throw error
+        }
+
+        return destination
     }
 }
 

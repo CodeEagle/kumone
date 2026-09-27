@@ -71,7 +71,7 @@ public struct PlaylistSummary: Decodable, Hashable, Identifiable, Sendable {
             ?? (try? c.decode(String.self, forKey: .coverImgUrl))
         let count = (try? c.decode(Double.self, forKey: .playCount))
             ?? (try? c.decode(Double.self, forKey: .playcount)) ?? 0
-        playCount = Int(count)
+        playCount = count.safeIntValue()
         trackCount = (try? c.decode(Int.self, forKey: .trackCount)) ?? 0
         copywriter = try? c.decode(String.self, forKey: .copywriter)
         creator = try? c.decode(PlaylistCreator.self, forKey: .creator)
@@ -120,7 +120,7 @@ public struct PlaylistDetail: Decodable, Hashable {
         creator = try? c.decode(PlaylistCreator.self, forKey: .creator)
         description = try? c.decode(String.self, forKey: .description)
         trackCount = (try? c.decode(Int.self, forKey: .trackCount)) ?? 0
-        playCount = Int((try? c.decode(Double.self, forKey: .playCount)) ?? 0)
+        playCount = ((try? c.decode(Double.self, forKey: .playCount)) ?? 0).safeIntValue()
         subscribedCount = (try? c.decode(Int.self, forKey: .subscribedCount)) ?? 0
         subscribed = (try? c.decode(Bool.self, forKey: .subscribed)) ?? false
         trackIds = (try? c.decode([TrackIDRef].self, forKey: .trackIds)) ?? []
@@ -303,7 +303,7 @@ public struct ToplistItem: Decodable, Hashable, Identifiable {
         coverImgUrl = try? c.decode(String.self, forKey: .coverImgUrl)
         updateFrequency = try? c.decode(String.self, forKey: .updateFrequency)
         tracks = (try? c.decode([ToplistTrackPreview].self, forKey: .tracks)) ?? []
-        playCount = Int((try? c.decode(Double.self, forKey: .playCount)) ?? 0)
+        playCount = ((try? c.decode(Double.self, forKey: .playCount)) ?? 0).safeIntValue()
     }
 }
 
