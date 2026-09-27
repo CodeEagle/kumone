@@ -20,18 +20,22 @@ public enum UnblockService {
     }
 
     public static func resolve(_ track: Track) async -> Resolved? {
+        guard !Task.isCancelled else { return nil }
         if let url = await pyncmd(track) {
             return Resolved(url: url, source: "pyncmd")
         }
+        guard !Task.isCancelled else { return nil }
         if let url = await lx(track) {
             return Resolved(url: url, source: String(localized: "LX 解析"))
         }
         // kugou before kuwo: kuwo's convert_url increasingly serves a
         // "请在酷我音乐APP播放" promo clip instead of the real audio, so keep it
         // as the last resort rather than the first fallback (#44).
+        guard !Task.isCancelled else { return nil }
         if let url = await kugou(track) {
             return Resolved(url: url, source: String(localized: "酷狗音乐"))
         }
+        guard !Task.isCancelled else { return nil }
         if let url = await kuwo(track) {
             return Resolved(url: url, source: String(localized: "酷我音乐"))
         }

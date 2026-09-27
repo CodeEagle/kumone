@@ -27,16 +27,7 @@ public struct QQMusicAPI: Sendable {
     private let session: URLSession
 
     public init(session: URLSession? = nil) {
-        if let session {
-            self.session = session
-        } else {
-            let configuration = URLSessionConfiguration.ephemeral
-            configuration.httpShouldSetCookies = false
-            configuration.httpCookieStorage = nil
-            configuration.timeoutIntervalForRequest = 30
-            configuration.timeoutIntervalForResource = 60
-            self.session = URLSession(configuration: configuration)
-        }
+        self.session = session ?? AnonymousSession.make()
     }
 
     public func hotkeys() async throws -> [String] {

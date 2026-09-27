@@ -25,6 +25,17 @@ final class UnblockServiceTests: XCTestCase {
         super.tearDown()
     }
 
+    func testAlreadyCancelledResolveReturnsNil() async {
+        let task = Task {
+            // Cancel deterministically before entering resolve, without a scheduling race.
+            withUnsafeCurrentTask { $0?.cancel() }
+            XCTAssertTrue(Task.isCancelled)
+            return await UnblockService.resolve(track)
+        }
+        let result = await task.value
+        XCTAssertNil(result)
+    }
+
     func testLXUnconfiguredReturnsNilWithoutRequest() async {
         UnblockLXFixtureProtocol.handler = { _ in
             XCTFail("An unconfigured LX source must not send a request")

@@ -24,14 +24,7 @@ public struct KuwoMusicAPI: Sendable {
     private let session: URLSession
 
     public init(session: URLSession? = nil) {
-        if let session { self.session = session } else {
-            let config = URLSessionConfiguration.ephemeral
-            config.httpShouldSetCookies = false
-            config.httpCookieStorage = nil
-            config.timeoutIntervalForRequest = 30
-            config.timeoutIntervalForResource = 60
-            self.session = URLSession(configuration: config)
-        }
+        self.session = session ?? AnonymousSession.make()
     }
 
     static func validRID(_ rid: String) -> Bool {

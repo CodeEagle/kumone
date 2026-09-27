@@ -15,8 +15,15 @@ extension NetEaseMusicProvider: MusicPlayback, MusicSearch {
     // MARK: - MusicPlayback
 
     public func songURL(ids: [MusicID], quality: SongQuality) async throws -> [SongURLData] {
-        // netease 的 id 恒为数字字符串；非数字属上游数据错误，`?? 0` 会在调试期暴露。
-        let neteaseIDs = ids.map { Int($0.sourceID) ?? 0 }
+        // Validate the entire batch before issuing a request.
+        let neteaseIDs = try ids.map { id -> Int in
+            guard case .source(let sourceID, .netease) = id,
+                  let value = Int(sourceID), value > 0 else {
+                throw NeteaseAPIError.business(
+                    code: -1, message: String(localized: "网易歌曲 ID 无效：必须是网易来源的正整数 ID"))
+            }
+            return value
+        }
         return try await NeteaseAPI.songURL(ids: neteaseIDs, level: quality.neteaseLevel)
     }
 

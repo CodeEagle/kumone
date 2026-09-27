@@ -36,14 +36,7 @@ public struct LXMusicAPI: Sendable {
     public init(session: URLSession? = nil,
                 settings: @escaping @Sendable () -> LXSourceSettings = { .current }) {
         self.settings = settings
-        if let session { self.session = session } else {
-            let configuration = URLSessionConfiguration.ephemeral
-            configuration.httpShouldSetCookies = false
-            configuration.httpCookieStorage = nil
-            configuration.timeoutIntervalForRequest = 30
-            configuration.timeoutIntervalForResource = 60
-            self.session = URLSession(configuration: configuration)
-        }
+        self.session = session ?? AnonymousSession.make()
     }
 
     static func qualityParameter(_ quality: SongQuality) throws -> String {
