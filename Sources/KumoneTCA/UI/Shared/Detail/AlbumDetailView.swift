@@ -98,7 +98,7 @@ struct AlbumDetailView: View {
         }
         .onDisappear {
             hasStartedHeroFlight = false
-            HeroFlightDirector.shared.end()
+            HeroFlightDirector.shared.end(id: heroID)
         }
     }
 

@@ -182,17 +182,19 @@ public struct MainWindow: View {
     /// lands on the mini artwork, which reappears as the stand-in vanishes.
     private func flyBackToMiniPlayer() {
         guard let artworkFrame = HeroFrameStore.shared.frame(for: HeroID.nowPlayingArtworkTarget),
-              let miniFrame = HeroFlightDirector.shared.miniHomeFrame
+              let miniFrame = HeroFlightDirector.shared.miniHomeFrames[HeroID.nowPlayingArtwork]
                 ?? HeroFrameStore.shared.frame(for: HeroID.nowPlayingArtwork)
         else { return }
         let isPlaying = store.player.isPlaying
         HeroProbe.shared.begin(HeroID.nowPlayingArtwork)
         HeroProbe.shared.recordSource(
+            id: HeroID.nowPlayingArtwork,
             frame: artworkFrame,
             scale: isPlaying ? 1 : 0.95,
             cornerRadius: 18
         )
         HeroProbe.shared.recordTarget(
+            id: HeroID.nowPlayingArtwork,
             frame: miniFrame,
             scale: 1,
             cornerRadius: Theme.Radius.small
@@ -201,8 +203,7 @@ public struct MainWindow: View {
             id: HeroID.nowPlayingArtwork,
             // The 128pt artwork is what both ends already have cached, so the
             // stand-in shows the real cover immediately.
-            artworkURL: store.player.currentTrack?.album.picUrl?.resizedImageURL(128),
-            cornerRadius: Theme.Radius.small,
+            content: .artwork(url: store.player.currentTrack?.album.picUrl?.resizedImageURL(128), cornerRadius: Theme.Radius.small),
             targetFrame: miniFrame,
             targetScale: 1
         )

@@ -63,6 +63,7 @@ struct PlayerBar: View {
             HeroProbe.shared.begin(heroID)
             if let sourceFrame = HeroFrameStore.shared.frame(for: heroID) {
                 HeroProbe.shared.recordSource(
+                    id: heroID,
                     frame: sourceFrame,
                     scale: HeroFrameStore.shared.scale(for: heroID) ?? 1,
                     cornerRadius: Theme.Radius.small
@@ -81,7 +82,7 @@ struct PlayerBar: View {
                         .strokeBorder(.primary.opacity(0.1), lineWidth: 0.5)
                 )
                 .shadow(color: .black.opacity(0.2), radius: 4, y: 2)
-                .opacity(heroFlight.active?.id == HeroID.nowPlayingArtwork ? 0 : 1)
+                .opacity(heroFlight.active[HeroID.nowPlayingArtwork] != nil ? 0 : 1)
         }
         .buttonStyle(.pressable)
         .noFocusRing()

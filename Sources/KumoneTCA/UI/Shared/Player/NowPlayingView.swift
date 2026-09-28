@@ -810,17 +810,16 @@ struct NowPlayingView: View {
         } action: { targetFrame in
             guard appStore?.isNowPlayingPresented == true,
                   !hasStartedHeroFlight,
-                  HeroProbe.shared.currentSourceFrame != nil
+                  HeroProbe.shared.sourceFrame(for: HeroID.nowPlayingArtwork) != nil
             else { return }
             let targetScale: CGFloat = player.isPlaying ? 1 : 0.95
-            HeroProbe.shared.recordTarget(frame: targetFrame, scale: targetScale, cornerRadius: 18)
+            HeroProbe.shared.recordTarget(id: HeroID.nowPlayingArtwork, frame: targetFrame, scale: targetScale, cornerRadius: 18)
             HeroFlightDirector.shared.start(
                 id: HeroID.nowPlayingArtwork,
                 // The 128pt artwork is what the PlayerBar already has cached,
                 // so the stand-in shows the real cover immediately instead of
                 // a placeholder while the 512pt version loads.
-                artworkURL: player.currentTrack?.album.picUrl?.resizedImageURL(128),
-                cornerRadius: 18,
+                content: .artwork(url: player.currentTrack?.album.picUrl?.resizedImageURL(128), cornerRadius: 18),
                 targetFrame: targetFrame,
                 targetScale: targetScale
             )
@@ -849,7 +848,7 @@ struct NowPlayingView: View {
         .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
         // The hero stand-in owns the artwork for the whole flight, in both
         // directions; the real one reappears the instant the stand-in lands.
-        .opacity(heroFlight.active?.id == HeroID.nowPlayingArtwork ? 0 : 1)
+        .opacity(heroFlight.active[HeroID.nowPlayingArtwork] != nil ? 0 : 1)
         .shadow(color: .black.opacity(0.45), radius: 36, y: 18)
         .scaleEffect(player.isPlaying ? 1 : 0.95)
         .animation(AppAnimation.bouncy, value: player.isPlaying)

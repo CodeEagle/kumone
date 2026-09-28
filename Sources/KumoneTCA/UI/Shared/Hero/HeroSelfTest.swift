@@ -51,7 +51,7 @@ public enum HeroSelfTest {
 
         // Arm the probe from the cached source geometry and open the page.
         HeroProbe.shared.begin(heroID)
-        HeroProbe.shared.recordSource(frame: sourceFrame, scale: sourceScale)
+        HeroProbe.shared.recordSource(id: heroID, frame: sourceFrame, scale: sourceScale)
         appStore.send(.presentNowPlaying)
 
         // The flight springs on the next layout pass; wait for it to settle and

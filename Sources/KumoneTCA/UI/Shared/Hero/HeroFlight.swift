@@ -32,12 +32,7 @@ struct HeroFlight: View {
     }
 
     var body: some View {
-        CachedAsyncImage(url: flight.artworkURL, animated: false) {
-            RoundedRectangle(cornerRadius: flight.cornerRadius, style: .continuous)
-                // Opaque: the stand-in has to be visible while the artwork
-                // loads, or the flight is invisible against the page.
-                .fill(.secondary)
-        }
+        flightContent
         // The frame interpolates size as well as position — a 38pt mini
         // artwork grows into the full Now Playing cover — so the landing
         // measurement matches the target instead of the source size.
@@ -60,9 +55,9 @@ struct HeroFlight: View {
             // frame we assigned ourselves instead of measuring it.
             if !recordedInitialFrame {
                 recordedInitialFrame = true
-                HeroProbe.shared.recordProxyState(.initial, frame: global)
+                HeroProbe.shared.recordProxyState(.initial, id: flight.id, frame: global)
             } else {
-                HeroProbe.shared.recordProxyState(.animating, frame: global)
+                HeroProbe.shared.recordProxyState(.animating, id: flight.id, frame: global)
             }
         }
         .position(
@@ -70,9 +65,9 @@ struct HeroFlight: View {
             y: frame.midY - containerFrame.origin.y
         )
         .onAppear {
-            HeroProbe.shared.recordViewport(containerFrame)
+            HeroProbe.shared.recordViewport(containerFrame, id: flight.id)
             #if os(macOS)
-            HeroProbe.shared.recordWindowScale(NSApp.keyWindow?.backingScaleFactor ?? 1)
+            HeroProbe.shared.recordWindowScale(NSApp.keyWindow?.backingScaleFactor ?? 1, id: flight.id)
             #endif
             withAnimation(AppAnimation.heroSpring) {
                 frame = flight.target
@@ -81,20 +76,39 @@ struct HeroFlight: View {
                 guard !finished else { return }
                 finished = true
                 if let measuredFrame {
-                    HeroProbe.shared.recordProxyState(.landed, frame: measuredFrame)
+                    HeroProbe.shared.recordProxyState(.landed, id: flight.id, frame: measuredFrame)
                 } else {
                     // Fail closed: no geometry ever arrived, so report the
                     // landing as unmeasured instead of papering over the gap
                     // with the target frame we asked for.
-                    HeroProbe.shared.recordProxyState(.unmeasured, frame: flight.target)
+                    HeroProbe.shared.recordProxyState(.unmeasured, id: flight.id, frame: flight.target)
                 }
                 HeroProbe.shared.recordLanding(
+                    id: flight.id,
                     frame: measuredFrame ?? flight.target,
                     scale: flight.targetScale,
                     cornerRadius: flight.cornerRadius
                 )
-                HeroFlightDirector.shared.end()
+                HeroFlightDirector.shared.end(id: flight.id)
             }
+        }
+    }
+
+    @ViewBuilder
+    private var flightContent: some View {
+        switch flight.content {
+        case let .artwork(url, cornerRadius):
+            CachedAsyncImage(url: url, animated: false) {
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    // Opaque while the artwork loads, as in the original flight.
+                    .fill(.secondary)
+            }
+        case .text, .icon:
+            // Reserved for later phases; no callers mount these payloads yet.
+            Color.clear
+                .onAppear {
+                    assertionFailure("Text and icon hero rendering is not implemented")
+                }
         }
     }
 }
@@ -109,7 +123,7 @@ extension View {
     }
 }
 
-/// Reads the active flight from the director and renders it. Kept separate so
+/// Reads the active flights from the director and renders them. Kept separate so
 /// the overlay only redraws when a flight starts or ends, and so the flight can
 /// translate global frames into the overlay's local coordinate space.
 private struct HeroFlightHost: View {
@@ -117,7 +131,7 @@ private struct HeroFlightHost: View {
 
     var body: some View {
         GeometryReader { proxy in
-            if let flight = director.active {
+            ForEach(director.active.values.sorted { $0.id < $1.id }) { flight in
                 HeroFlight(
                     flight: flight,
                     containerFrame: proxy.frame(in: .global)

@@ -14,6 +14,7 @@ enum HeroTrigger {
         HeroProbe.shared.begin(heroID)
         if let frame = HeroFrameStore.shared.frame(for: heroID) {
             HeroProbe.shared.recordSource(
+                id: heroID,
                 frame: frame,
                 scale: HeroFrameStore.shared.scale(for: heroID) ?? 1
             )

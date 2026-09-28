@@ -1,7 +1,7 @@
 import KumoneCore
 import SwiftUI
 
-/// Directs one hero flight at a time. A trigger records the source geometry in
+/// Directs independently identified hero flights. A trigger records the source geometry in
 /// `HeroProbe`, the presentation machinery shows the target, the target's
 /// `.heroAnchor` reports its frame, and then `start(_:)` mounts the flying
 /// stand-in. When the stand-in settles it reports its landing to `HeroProbe`
@@ -12,7 +12,7 @@ final class HeroFlightDirector: ObservableObject {
 
     struct Flight: Identifiable, Equatable {
         let id: String
-        let artworkURL: URL?
+        let content: HeroContent
         let source: CGRect
         let target: CGRect
         /// The resting scale the target view applies, which the flight has to
@@ -21,11 +21,11 @@ final class HeroFlightDirector: ObservableObject {
         /// The resting scale the source view applies, so the stand-in starts at
         /// the source's visual size and ends at the target's.
         let sourceScale: CGFloat
-        let cornerRadius: CGFloat
+        var cornerRadius: CGFloat { content.cornerRadius }
 
         static func == (lhs: Flight, rhs: Flight) -> Bool {
             lhs.id == rhs.id
-                && lhs.artworkURL == rhs.artworkURL
+                && lhs.content == rhs.content
                 && lhs.source.approximately(rhs.source)
                 && lhs.target.approximately(rhs.target)
                 && lhs.targetScale == rhs.targetScale
@@ -34,20 +34,20 @@ final class HeroFlightDirector: ObservableObject {
         }
     }
 
-    @Published var active: Flight?
+    @Published var active: [String: Flight] = [:]
 
     /// The frame the mini artwork occupied when the present flight launched —
     /// its home. The sidebar hides while the Now Playing page is up and the
     /// mini artwork drifts left, so the store's live value at dismiss time is
     /// the wrong target; the return flight flies back to this snapshot.
-    var miniHomeFrame: CGRect?
+    var miniHomeFrames: [String: CGRect] = [:]
 
     /// The source geometry recorded by the trigger (`HeroProbe.recordSource`),
     /// read back here rather than from `HeroFrameStore`: source and target
     /// share one anchor id, so by the time the target reports its frame the
     /// store's entry for that id already holds the *target* geometry.
-    var recordedSourceFrame: CGRect? {
-        HeroProbe.shared.currentSourceFrame
+    func recordedSourceFrame(for id: String) -> CGRect? {
+        HeroProbe.shared.sourceFrame(for: id)
     }
 
     /// Pairs an already-recorded source with a freshly measured target and
@@ -55,26 +55,24 @@ final class HeroFlightDirector: ObservableObject {
     /// yet — the caller retries from `.onGeometryChange` until it appears.
     func start(
         id: String,
-        artworkURL: URL?,
-        cornerRadius: CGFloat,
+        content: HeroContent,
         targetFrame: CGRect,
         targetScale: CGFloat
     ) {
-        guard let source = recordedSourceFrame else { return }
-        miniHomeFrame = source
-        active = Flight(
+        guard let source = recordedSourceFrame(for: id) else { return }
+        miniHomeFrames[id] = source
+        active[id] = Flight(
             id: id,
-            artworkURL: artworkURL,
+            content: content,
             source: source,
             target: targetFrame,
             targetScale: targetScale,
-            sourceScale: HeroProbe.shared.currentSourceScale,
-            cornerRadius: cornerRadius
+            sourceScale: HeroProbe.shared.sourceScale(for: id)
         )
     }
 
-    func end() {
-        active = nil
+    func end(id: String) {
+        active.removeValue(forKey: id)
     }
 }
 

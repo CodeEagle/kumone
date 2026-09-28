@@ -19,13 +19,12 @@ struct HeroTargetModifier: ViewModifier {
             proxy.frame(in: .global)
         } action: { targetFrame in
             guard !hasStarted,
-                  HeroProbe.shared.currentSourceID == id
+                  HeroProbe.shared.sourceID(for: id) == id
             else { return }
-            HeroProbe.shared.recordTarget(frame: targetFrame, scale: 1)
+            HeroProbe.shared.recordTarget(id: id, frame: targetFrame, scale: 1)
             HeroFlightDirector.shared.start(
                 id: id,
-                artworkURL: artworkURL,
-                cornerRadius: cornerRadius,
+                content: .artwork(url: artworkURL, cornerRadius: cornerRadius),
                 targetFrame: targetFrame,
                 targetScale: 1
             )

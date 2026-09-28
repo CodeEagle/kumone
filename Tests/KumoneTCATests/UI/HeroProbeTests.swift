@@ -264,14 +264,14 @@ struct HeroProbeTests {
         let source = CGRect(x: 20, y: 700, width: 38, height: 38)
         let target = CGRect(x: 438, y: 300, width: 320, height: 320)
         probe.begin(id)
-        probe.recordSource(frame: source, hidden: sourceHidden)
-        probe.recordTarget(frame: target, cornerRadius: 12)
-        probe.recordViewport(CGRect(x: 0, y: 0, width: 800, height: 750))
-        probe.recordProxyState(.unmeasured, frame: source)
-        probe.recordProxyState(.initial, frame: source)
-        probe.recordProxyState(.animating, frame: target)
-        probe.recordProxyState(.landed, frame: target)
-        probe.recordLanding(frame: target, cornerRadius: 12)
+        probe.recordSource(id: id, frame: source, hidden: sourceHidden)
+        probe.recordTarget(id: id, frame: target, cornerRadius: 12)
+        probe.recordViewport(CGRect(x: 0, y: 0, width: 800, height: 750), id: id)
+        probe.recordProxyState(.unmeasured, id: id, frame: source)
+        probe.recordProxyState(.initial, id: id, frame: source)
+        probe.recordProxyState(.animating, id: id, frame: target)
+        probe.recordProxyState(.landed, id: id, frame: target)
+        probe.recordLanding(id: id, frame: target, cornerRadius: 12)
 
         let archived = probe.records.last { $0.id == id }
         #expect(archived?.samples.map(\.sourceVisible) == [!sourceHidden, false, false, false])
@@ -285,12 +285,12 @@ struct HeroProbeTests {
         let probe = HeroProbe.shared
         let id = "unit-test-\(UUID().uuidString)"
         probe.begin(id)
-        probe.recordSource(frame: CGRect(x: 20, y: 700, width: 38, height: 38), scale: 1)
-        probe.recordTarget(frame: CGRect(x: 438, y: 300, width: 320, height: 320), scale: 0.95, cornerRadius: 12)
-        probe.recordProxyState(.initial, frame: CGRect(x: 20, y: 700, width: 38, height: 38))
-        probe.recordProxyState(.landed, frame: CGRect(x: 438, y: 300, width: 320, height: 320))
-        probe.recordViewport(CGRect(x: 0, y: 0, width: 800, height: 750))
-        let verdict = probe.recordLanding(frame: CGRect(x: 438, y: 300, width: 320, height: 320), scale: 0.95, cornerRadius: 12)
+        probe.recordSource(id: id, frame: CGRect(x: 20, y: 700, width: 38, height: 38), scale: 1)
+        probe.recordTarget(id: id, frame: CGRect(x: 438, y: 300, width: 320, height: 320), scale: 0.95, cornerRadius: 12)
+        probe.recordProxyState(.initial, id: id, frame: CGRect(x: 20, y: 700, width: 38, height: 38))
+        probe.recordProxyState(.landed, id: id, frame: CGRect(x: 438, y: 300, width: 320, height: 320))
+        probe.recordViewport(CGRect(x: 0, y: 0, width: 800, height: 750), id: id)
+        let verdict = probe.recordLanding(id: id, frame: CGRect(x: 438, y: 300, width: 320, height: 320), scale: 0.95, cornerRadius: 12)
 
         #expect(verdict == .pass)
         let archived = probe.records.last { $0.id == id }
@@ -308,13 +308,121 @@ struct HeroProbeTests {
         let probe = HeroProbe.shared
         let id = "unit-test-\(UUID().uuidString)"
         probe.begin(id)
-        probe.recordSource(frame: CGRect(x: 20, y: 700, width: 38, height: 38), scale: 1)
-        probe.recordTarget(frame: CGRect(x: 438, y: 300, width: 320, height: 320), scale: 0.95, cornerRadius: 12)
-        probe.recordProxyState(.initial, frame: CGRect(x: 20, y: 700, width: 38, height: 38))
-        probe.recordProxyState(.landed, frame: CGRect(x: 438, y: 300, width: 320, height: 320))
-        let verdict = probe.recordLanding(frame: CGRect(x: 438, y: 300, width: 320, height: 320), scale: 0.95, cornerRadius: 12)
+        probe.recordSource(id: id, frame: CGRect(x: 20, y: 700, width: 38, height: 38), scale: 1)
+        probe.recordTarget(id: id, frame: CGRect(x: 438, y: 300, width: 320, height: 320), scale: 0.95, cornerRadius: 12)
+        probe.recordProxyState(.initial, id: id, frame: CGRect(x: 20, y: 700, width: 38, height: 38))
+        probe.recordProxyState(.landed, id: id, frame: CGRect(x: 438, y: 300, width: 320, height: 320))
+        let verdict = probe.recordLanding(id: id, frame: CGRect(x: 438, y: 300, width: 320, height: 320), scale: 0.95, cornerRadius: 12)
 
         #expect(verdict.isFailure)
         #expect(verdict.failureReason?.contains("viewport not recorded") ?? false)
+    }
+
+    @MainActor
+    @Test func overlappingRecordsLandIndependently() {
+        let probe = HeroProbe()
+        let first = "first"
+        let second = "second"
+        let source = CGRect(x: 20, y: 20, width: 38, height: 38)
+        let otherSource = CGRect(x: 80, y: 20, width: 38, height: 38)
+        let target = CGRect(x: 100, y: 100, width: 200, height: 200)
+        let otherTarget = CGRect(x: 400, y: 100, width: 200, height: 200)
+        let viewport = CGRect(x: 0, y: 0, width: 800, height: 750)
+        probe.begin(first)
+        probe.recordSource(id: first, frame: source, scale: 0.95, cornerRadius: 4)
+        probe.begin(second)
+        probe.recordSource(id: second, frame: otherSource, cornerRadius: 8, hidden: true)
+        probe.recordTarget(id: second, frame: otherTarget, scale: 0.95, cornerRadius: 18)
+        probe.recordTarget(id: first, frame: target, cornerRadius: 12)
+        probe.recordViewport(viewport, id: first)
+        probe.recordViewport(viewport.insetBy(dx: -10, dy: -10), id: second)
+        probe.recordWindowScale(2, id: first)
+        probe.recordWindowScale(1, id: second)
+        probe.recordProxyState(.initial, id: first, frame: source)
+        probe.recordProxyState(.initial, id: second, frame: otherSource)
+        #expect(probe.sourceID(for: first) == first)
+        #expect(probe.sourceID(for: second) == second)
+        #expect(probe.sourceID(for: "missing") == nil)
+        #expect(probe.sourceScale(for: first) == 0.95)
+        #expect(probe.sourceScale(for: second) == 1)
+
+        probe.recordProxyState(.landed, id: second, frame: otherTarget)
+        #expect(probe.recordLanding(id: second, frame: otherTarget, scale: 0.95, cornerRadius: 18) == .pass)
+        #expect(probe.sourceFrame(for: second) == nil)
+        #expect(probe.sourceID(for: second) == nil)
+        #expect(probe.sourceFrame(for: first) == source)
+        probe.recordProxyState(.landed, id: first, frame: target)
+        #expect(probe.recordLanding(id: first, frame: target, cornerRadius: 12) == .pass)
+        #expect(probe.records.map(\.id) == [second, first])
+        #expect(probe.records.map(\.windowScale) == [1, 2])
+        #expect(probe.records.map(\.sourceCornerRadius) == [8, 4])
+        #expect(probe.records.map(\.sourceHidden) == [true, false])
+        #expect(probe.records.map(\.viewportFrame) == [viewport.insetBy(dx: -10, dy: -10), viewport])
+        #expect(probe.records.map { $0.samples.map(\.frame) } == [[otherSource, otherTarget], [source, target]])
+        #expect(probe.sourceFrame(for: first) == nil)
+        // Late callbacks cannot re-create or archive a completed record twice.
+        probe.recordSource(id: second, frame: source)
+        probe.recordProxyState(.animating, id: second, frame: source)
+        #expect(probe.recordLanding(id: second, frame: otherTarget).isFailure)
+        #expect(probe.records.count == 2)
+        #expect(probe.sourceID(for: second) == nil)
+    }
+
+    @MainActor
+    @Test func beginningAgainResetsOnlyItsOwnRecord() {
+        let probe = HeroProbe()
+        probe.begin("first")
+        probe.begin("second")
+        probe.recordSource(id: "first", frame: .zero, scale: 0.95)
+        probe.recordSource(id: "second", frame: .zero, scale: 0.9)
+        probe.begin("first")
+        #expect(probe.sourceID(for: "first") == nil)
+        #expect(probe.sourceScale(for: "first") == 1)
+        #expect(probe.sourceID(for: "second") == "second")
+        #expect(probe.sourceScale(for: "second") == 0.9)
+    }
+
+    @MainActor
+    @Test func directorStartsAndEndsFlightsByID() {
+        let probe = HeroProbe.shared
+        let director = HeroFlightDirector()
+        let first = UUID().uuidString
+        let second = UUID().uuidString
+        let missing = UUID().uuidString
+        let source = CGRect(x: 20, y: 20, width: 38, height: 38)
+        let otherSource = CGRect(x: 80, y: 20, width: 38, height: 38)
+        let target = CGRect(x: 100, y: 100, width: 200, height: 200)
+        let artwork = HeroContent.artwork(url: URL(string: "https://example.com/cover.jpg"), cornerRadius: 18)
+        probe.begin(first)
+        probe.recordSource(id: first, frame: source, scale: 0.95)
+        probe.begin(second)
+        probe.recordSource(id: second, frame: otherSource)
+        defer {
+            probe.recordLanding(id: first, frame: target)
+            probe.recordLanding(id: second, frame: target)
+        }
+        director.start(id: first, content: artwork, targetFrame: target, targetScale: 1)
+        director.start(id: second, content: .artwork(url: nil, cornerRadius: 4), targetFrame: target, targetScale: 0.95)
+        director.start(id: missing, content: artwork, targetFrame: target, targetScale: 1)
+        #expect(director.active.count == 2)
+        #expect(director.active[missing] == nil)
+        #expect(director.miniHomeFrames[missing] == nil)
+        #expect(director.recordedSourceFrame(for: missing) == nil)
+        #expect(director.active[first]?.content == artwork)
+        #expect(director.active[first]?.source == source)
+        #expect(director.active[first]?.sourceScale == 0.95)
+        #expect(director.active[second]?.source == otherSource)
+        #expect(director.active[second]?.targetScale == 0.95)
+        #expect(director.active[second]?.cornerRadius == 4)
+        #expect(director.miniHomeFrames[first] == source)
+        #expect(director.miniHomeFrames[second] == otherSource)
+        director.end(id: first)
+        #expect(director.active[first] == nil)
+        #expect(director.active[second] != nil)
+        #expect(director.miniHomeFrames[first] == source)
+        director.end(id: missing)
+        #expect(director.active.count == 1)
+        director.end(id: second)
+        #expect(director.active.isEmpty)
     }
 }

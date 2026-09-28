@@ -91,48 +91,45 @@ final class HeroProbe: ObservableObject {
     static let logFilePath = "/tmp/kumone-hero.log"
 
     @Published private(set) var records: [Record] = []
-    private var current = Record(id: "none")
+    private var active: [String: Record] = [:]
 
-    /// The source geometry the current transition recorded, for
-    /// `HeroFlightDirector` to pair against the target. Read here rather than
-    /// from `HeroFrameStore` because source and target share one anchor id and
-    /// the store's entry gets overwritten by the target.
-    var currentSourceFrame: CGRect? {
-        current.sourceFrame
+    /// Read the armed source rather than the anchor store, whose entry may
+    /// already have been overwritten by the target sharing this id.
+    func sourceFrame(for id: String) -> CGRect? {
+        active[id]?.sourceFrame
     }
 
-    /// The id of the transition whose source is currently armed. A detail page
-    /// reached without an armed card (a track's context menu, a sidebar item)
-    /// has no source to fly from and must not borrow one an earlier card left
-    /// behind, so the target gate compares this against its own hero id.
-    var currentSourceID: String? {
-        current.sourceFrame != nil ? current.id : nil
+    /// A target may launch only when its own source has been armed. Sources
+    /// belonging to other simultaneous flights must not open this gate.
+    func sourceID(for id: String) -> String? {
+        sourceFrame(for: id) != nil ? id : nil
     }
 
-    var currentSourceScale: CGFloat {
-        current.sourceScale
+    func sourceScale(for id: String) -> CGFloat {
+        active[id]?.sourceScale ?? 1
     }
 
     func begin(_ id: String) {
-        current = Record(id: id)
+        active[id] = Record(id: id)
     }
 
-    func recordSource(frame: CGRect, scale: CGFloat = 1, cornerRadius: CGFloat? = nil, hidden: Bool = false) {
-        current.sourceFrame = frame
-        current.sourceScale = scale
-        current.sourceCornerRadius = cornerRadius
-        current.sourceHidden = hidden
+    func recordSource(id: String, frame: CGRect, scale: CGFloat = 1, cornerRadius: CGFloat? = nil, hidden: Bool = false) {
+        active[id]?.sourceFrame = frame
+        active[id]?.sourceScale = scale
+        active[id]?.sourceCornerRadius = cornerRadius
+        active[id]?.sourceHidden = hidden
     }
 
-    func recordTarget(frame: CGRect, scale: CGFloat = 1, cornerRadius: CGFloat? = nil) {
-        current.targetFrame = frame
-        current.targetScale = scale
-        current.targetCornerRadius = cornerRadius
+    func recordTarget(id: String, frame: CGRect, scale: CGFloat = 1, cornerRadius: CGFloat? = nil) {
+        active[id]?.targetFrame = frame
+        active[id]?.targetScale = scale
+        active[id]?.targetCornerRadius = cornerRadius
     }
 
     /// Visibility follows the reported phase and source-hidden state; callers
     /// must report the phase when the corresponding views actually change.
-    func recordProxyState(_ phase: Phase, frame: CGRect) {
+    func recordProxyState(_ phase: Phase, id: String, frame: CGRect) {
+        guard var current = active[id] else { return }
         if phase == .initial, current.proxyInitialFrame == nil {
             current.proxyInitialFrame = frame
         }
@@ -146,27 +143,31 @@ final class HeroProbe: ObservableObject {
             targetVisible: targetVisible,
             proxyVisible: proxyVisible
         ))
+        active[id] = current
         let line = "HERO PROXY \(current.id) \(phase.rawValue) \(Self.frameDescription(frame))"
         KumoneLogger.hero.notice("\(line, privacy: .public)")
         Self.writeFile(line)
     }
 
-    func recordWindowScale(_ scale: CGFloat) {
-        current.windowScale = scale
+    func recordWindowScale(_ scale: CGFloat, id: String) {
+        active[id]?.windowScale = scale
     }
 
     /// Records the frame of the surface hosting the flight — the area the user
     /// can see — so the judgement can reject a transition whose target was
     /// measured off-screen.
-    func recordViewport(_ frame: CGRect) {
-        current.viewportFrame = frame
+    func recordViewport(_ frame: CGRect, id: String) {
+        active[id]?.viewportFrame = frame
     }
 
     /// Called when the flying stand-in settles. Judges it against the target
     /// geometry, archives the record, and writes the verdict to the system log
     /// and the probe log file. Returns the verdict for in-app assertions.
     @discardableResult
-    func recordLanding(frame: CGRect, scale: CGFloat = 1, cornerRadius: CGFloat? = nil) -> Verdict {
+    func recordLanding(id: String, frame: CGRect, scale: CGFloat = 1, cornerRadius: CGFloat? = nil) -> Verdict {
+        guard var current = active.removeValue(forKey: id) else {
+            return .fail("no active record for \(id)")
+        }
         current.landedFrame = frame
         current.landedScale = scale
         current.landedCornerRadius = cornerRadius
