@@ -8,8 +8,9 @@ ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 cd "$ROOT"
 
 CONF="${1:-debug}"
-APP_NAME="Kumone"
-BUNDLE_ID="im.missuo.Kumone"
+APP_NAME="${APP_NAME:-Kumone}"
+BUNDLE_ID="${BUNDLE_ID:-im.missuo.Kumone}"
+SWIFT_PRODUCT="${SWIFT_PRODUCT:-Kumone}"
 # Version resolution: environment > version.env > defaults.
 ENV_MARKETING_VERSION="${MARKETING_VERSION:-}"
 ENV_BUILD_NUMBER="${BUILD_NUMBER:-}"
@@ -33,13 +34,13 @@ for arch in ${ARCHES:-}; do
 done
 
 # ${arr[@]+...} keeps macOS's bash 3.2 happy under set -u with empty arrays
-swift build -c "$CONF" ${ARCH_FLAGS[@]+"${ARCH_FLAGS[@]}"} --product "$APP_NAME"
+swift build -c "$CONF" ${ARCH_FLAGS[@]+"${ARCH_FLAGS[@]}"} --product "$SWIFT_PRODUCT"
 BIN_PATH="$(swift build -c "$CONF" ${ARCH_FLAGS[@]+"${ARCH_FLAGS[@]}"} --show-bin-path)"
 
 rm -rf "$BUILD_DIR"
 mkdir -p "$APP_BUNDLE/Contents/MacOS" "$APP_BUNDLE/Contents/Resources"
 
-cp "$BIN_PATH/$APP_NAME" "$APP_BUNDLE/Contents/MacOS/$APP_NAME"
+cp "$BIN_PATH/$SWIFT_PRODUCT" "$APP_BUNDLE/Contents/MacOS/$APP_NAME"
 chmod +x "$APP_BUNDLE/Contents/MacOS/$APP_NAME"
 
 # Embed Sparkle.framework (SwiftPM binary artifact) into Contents/Frameworks.
