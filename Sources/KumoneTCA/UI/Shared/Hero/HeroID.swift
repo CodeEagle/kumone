@@ -13,9 +13,33 @@ enum HeroID {
     static let nowPlayingPlayPause = "now-playing-play-pause"
     static let nowPlayingPlayPauseTarget = "now-playing-play-pause-target"
 
+    static let nowPlayingPrevious = "now-playing-previous"
+    static let nowPlayingPreviousTarget = "now-playing-previous-target"
+
+    static let nowPlayingNext = "now-playing-next"
+    static let nowPlayingNextTarget = "now-playing-next-target"
+
+    static let nowPlayingLike = "now-playing-like"
+    static let nowPlayingLikeTarget = "now-playing-like-target"
+
+    static let nowPlayingShuffle = "now-playing-shuffle"
+    static let nowPlayingShuffleTarget = "now-playing-shuffle-target"
+
+    static let nowPlayingRepeat = "now-playing-repeat"
+    static let nowPlayingRepeatTarget = "now-playing-repeat-target"
+
+    static let nowPlayingFMTrash = "now-playing-fm-trash"
+    static let nowPlayingFMTrashTarget = "now-playing-fm-trash-target"
+
     static let nowPlayingPairs: [(source: String, target: String)] = [
         (nowPlayingArtwork, nowPlayingArtworkTarget),
         (nowPlayingPlayPause, nowPlayingPlayPauseTarget),
+        (nowPlayingPrevious, nowPlayingPreviousTarget),
+        (nowPlayingNext, nowPlayingNextTarget),
+        (nowPlayingLike, nowPlayingLikeTarget),
+        (nowPlayingShuffle, nowPlayingShuffleTarget),
+        (nowPlayingRepeat, nowPlayingRepeatTarget),
+        (nowPlayingFMTrash, nowPlayingFMTrashTarget),
     ]
 
     /// Card cover -> detail-page header. One id per item so the source card and

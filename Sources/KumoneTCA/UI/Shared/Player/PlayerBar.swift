@@ -52,6 +52,10 @@ struct PlayerBar: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             if let track = player.currentTrack {
                 LikeButton(trackID: track.id, appStore: appStore)
+                #if os(macOS)
+                .heroAnchor(HeroID.nowPlayingLike)
+                .opacity(heroFlight.active[HeroID.nowPlayingLike] != nil ? 0 : 1)
+                #endif
             }
         }
     }
@@ -66,7 +70,8 @@ struct PlayerBar: View {
                     id: pair.source,
                     frame: sourceFrame,
                     scale: HeroFrameStore.shared.scale(for: pair.source) ?? 1,
-                    cornerRadius: pair.source == HeroID.nowPlayingArtwork ? Theme.Radius.small : 15
+                    cornerRadius: pair.source == HeroID.nowPlayingArtwork ? Theme.Radius.small
+                        : (pair.source == HeroID.nowPlayingPlayPause ? 15 : 0)
                 )
             }
             withAnimation(AppAnimation.smooth) {
@@ -98,6 +103,10 @@ struct PlayerBar: View {
                     PlayerIconButton(icon: "trash", size: 12) {
                         appStore.send(.player(.fmTrash))
                     }
+                    #if os(macOS)
+                    .heroAnchor(HeroID.nowPlayingFMTrash)
+                    .opacity(heroFlight.active[HeroID.nowPlayingFMTrash] != nil ? 0 : 1)
+                    #endif
                     .help("不喜欢，换一首")
                 } else {
                     PlayerIconButton(
@@ -106,18 +115,30 @@ struct PlayerBar: View {
                     ) {
                         appStore.send(.player(.toggleShuffle))
                     }
+                    #if os(macOS)
+                    .heroAnchor(HeroID.nowPlayingShuffle)
+                    .opacity(heroFlight.active[HeroID.nowPlayingShuffle] != nil ? 0 : 1)
+                    #endif
                     .help("随机播放")
                 }
 
                 PlayerIconButton(icon: "backward.fill", size: 14, disabled: player.isFMMode) {
                     appStore.send(.player(.previous))
                 }
+                #if os(macOS)
+                .heroAnchor(HeroID.nowPlayingPrevious)
+                .opacity(heroFlight.active[HeroID.nowPlayingPrevious] != nil ? 0 : 1)
+                #endif
 
                 playPauseButton
 
                 PlayerIconButton(icon: "forward.fill", size: 14) {
                     appStore.send(.player(.next))
                 }
+                #if os(macOS)
+                .heroAnchor(HeroID.nowPlayingNext)
+                .opacity(heroFlight.active[HeroID.nowPlayingNext] != nil ? 0 : 1)
+                #endif
 
                 if player.isFMMode {
                     Image(systemName: "wave.3.right.circle.fill")
@@ -132,6 +153,10 @@ struct PlayerBar: View {
                     ) {
                         appStore.send(.player(.cycleRepeatMode))
                     }
+                    #if os(macOS)
+                    .heroAnchor(HeroID.nowPlayingRepeat)
+                    .opacity(heroFlight.active[HeroID.nowPlayingRepeat] != nil ? 0 : 1)
+                    #endif
                     .help("循环模式")
                 }
             }

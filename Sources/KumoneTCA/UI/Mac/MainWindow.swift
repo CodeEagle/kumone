@@ -187,15 +187,43 @@ public struct MainWindow: View {
                     ?? HeroFrameStore.shared.frame(for: pair.source)
             else { continue }
             let isArtwork = pair.source == HeroID.nowPlayingArtwork
-            let content: HeroContent = isArtwork
-                ? .artwork(url: store.player.currentTrack?.album.picUrl?.resizedImageURL(128), cornerRadius: Theme.Radius.small)
-                : .icon(name: store.player.isPlaying ? "pause.fill" : "play.fill",
-                        tint: .white, background: .accent, diameter: 30, fontSize: 12.5)
+            let content: HeroContent
+            switch pair.source {
+            case HeroID.nowPlayingArtwork:
+                content = .artwork(url: store.player.currentTrack?.album.picUrl?.resizedImageURL(128), cornerRadius: Theme.Radius.small)
+            case HeroID.nowPlayingPlayPause:
+                content = .icon(name: store.player.isPlaying ? "pause.fill" : "play.fill",
+                                tint: .white, background: .accent, diameter: 30, fontSize: 12.5)
+            case HeroID.nowPlayingPrevious:
+                guard !store.player.isFMMode else { continue }
+                content = .icon(name: "backward.fill", tint: .primary, background: .none, diameter: 26, fontSize: 14, weight: .medium)
+            case HeroID.nowPlayingNext:
+                content = .icon(name: "forward.fill", tint: .primary, background: .none, diameter: 26, fontSize: 14, weight: .medium)
+            case HeroID.nowPlayingLike:
+                guard let track = store.player.currentTrack else { continue }
+                let liked = store.account.isLiked(track.id)
+                content = .icon(name: liked ? "heart.fill" : "heart", tint: liked ? Theme.accent : .primary,
+                                background: .none, diameter: 26, fontSize: 13, weight: .medium)
+            case HeroID.nowPlayingShuffle:
+                guard !store.player.isFMMode else { continue }
+                content = .icon(name: "shuffle", tint: store.player.shuffleEnabled ? Theme.accent : .primary,
+                                background: .none, diameter: 26, fontSize: 12, weight: .medium)
+            case HeroID.nowPlayingRepeat:
+                guard !store.player.isFMMode else { continue }
+                content = .icon(name: store.player.repeatMode == .one ? "repeat.1" : "repeat",
+                                tint: store.player.repeatMode != .off ? Theme.accent : .primary,
+                                background: .none, diameter: 26, fontSize: 12, weight: .medium)
+            case HeroID.nowPlayingFMTrash:
+                guard store.player.isFMMode else { continue }
+                content = .icon(name: "trash", tint: .primary, background: .none, diameter: 26, fontSize: 12, weight: .medium)
+            default:
+                continue
+            }
             HeroProbe.shared.begin(pair.source)
             HeroProbe.shared.recordSource(
                 id: pair.source, frame: sourceFrame,
                 scale: isArtwork && !store.player.isPlaying ? 0.95 : 1,
-                cornerRadius: isArtwork ? 18 : 29
+                cornerRadius: isArtwork ? 18 : (pair.source == HeroID.nowPlayingPlayPause ? 29 : 20)
             )
             HeroProbe.shared.recordTarget(
                 id: pair.source, frame: miniFrame, scale: 1, cornerRadius: content.cornerRadius

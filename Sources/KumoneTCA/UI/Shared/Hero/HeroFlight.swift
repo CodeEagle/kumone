@@ -110,14 +110,14 @@ struct HeroFlight: View {
                 .lineLimit(1)
                 .minimumScaleFactor(0.01)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-        case let .icon(name, tint, background, diameter, fontSize):
+        case let .icon(name, tint, background, diameter, fontSize, weight):
             GeometryReader { proxy in
                 ZStack {
                     Circle().fill(background.style)
                     Image(systemName: name)
                         .font(.system(
                             size: fontSize * min(proxy.size.width, proxy.size.height) / diameter,
-                            weight: .bold
+                            weight: weight
                         ))
                         .foregroundStyle(tint)
                 }

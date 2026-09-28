@@ -40,6 +40,12 @@ struct NowPlayingView: View {
     #if os(macOS)
     @State private var showLyricsColumn = true
     @State private var hasStartedPlayPauseFlight = false
+    @State private var hasStartedPreviousFlight = false
+    @State private var hasStartedNextFlight = false
+    @State private var hasStartedLikeFlight = false
+    @State private var hasStartedShuffleFlight = false
+    @State private var hasStartedRepeatFlight = false
+    @State private var hasStartedFMTrashFlight = false
     @State private var hasStartedHeroFlight = false
     @ObservedObject private var heroFlight = HeroFlightDirector.shared
     @State private var isZenMode = false
@@ -167,6 +173,12 @@ struct NowPlayingView: View {
         .onDisappear {
             hasStartedHeroFlight = false
             hasStartedPlayPauseFlight = false
+            hasStartedPreviousFlight = false
+            hasStartedNextFlight = false
+            hasStartedLikeFlight = false
+            hasStartedShuffleFlight = false
+            hasStartedRepeatFlight = false
+            hasStartedFMTrashFlight = false
             zenHoverTask?.cancel()
             zenHoverTask = nil
             lyricsColumnHold = false
@@ -207,6 +219,12 @@ struct NowPlayingView: View {
             if isPresented != true {
                 hasStartedHeroFlight = false
                 hasStartedPlayPauseFlight = false
+                hasStartedPreviousFlight = false
+                hasStartedNextFlight = false
+                hasStartedLikeFlight = false
+                hasStartedShuffleFlight = false
+                hasStartedRepeatFlight = false
+                hasStartedFMTrashFlight = false
             }
         }
         #endif
@@ -1021,6 +1039,18 @@ struct NowPlayingView: View {
                 ) {
                     appStore?.send(.account(.toggleLike(track.id)))
                 }
+                #if os(macOS)
+                .heroAnchor(HeroID.nowPlayingLikeTarget)
+                .nowPlayingHeroTarget(
+                    id: HeroID.nowPlayingLike,
+                    content: .icon(name: liked ? "heart.fill" : "heart",
+                                   tint: liked ? Theme.accent : .white.opacity(0.8), background: .translucentWhite,
+                                   diameter: 40, fontSize: 15, weight: .medium),
+                    isPresented: appStore?.isNowPlayingPresented == true,
+                    hasStarted: $hasStartedLikeFlight
+                )
+                .opacity(heroFlight.active[HeroID.nowPlayingLike] != nil ? 0 : 1)
+                #endif
                 .frame(maxWidth: .infinity)
             }
 
@@ -1028,6 +1058,18 @@ struct NowPlayingView: View {
                 circleButton(icon: "trash", size: 14) {
                     appStore?.send(.player(.fmTrash))
                 }
+                #if os(macOS)
+                .heroAnchor(HeroID.nowPlayingFMTrashTarget)
+                .nowPlayingHeroTarget(
+                    id: HeroID.nowPlayingFMTrash,
+                    content: .icon(name: "trash",
+                                   tint: .white.opacity(0.8), background: .translucentWhite,
+                                   diameter: 40, fontSize: 14, weight: .medium),
+                    isPresented: appStore?.isNowPlayingPresented == true,
+                    hasStarted: $hasStartedFMTrashFlight
+                )
+                .opacity(heroFlight.active[HeroID.nowPlayingFMTrash] != nil ? 0 : 1)
+                #endif
                 .frame(maxWidth: .infinity)
             } else {
                 circleButton(
@@ -1036,10 +1078,34 @@ struct NowPlayingView: View {
                 ) {
                     appStore?.send(.player(.toggleShuffle))
                 }
+                #if os(macOS)
+                .heroAnchor(HeroID.nowPlayingShuffleTarget)
+                .nowPlayingHeroTarget(
+                    id: HeroID.nowPlayingShuffle,
+                    content: .icon(name: "shuffle",
+                                   tint: player.shuffleEnabled ? Theme.accent : .white.opacity(0.8), background: .translucentWhite,
+                                   diameter: 40, fontSize: 14, weight: .medium),
+                    isPresented: appStore?.isNowPlayingPresented == true,
+                    hasStarted: $hasStartedShuffleFlight
+                )
+                .opacity(heroFlight.active[HeroID.nowPlayingShuffle] != nil ? 0 : 1)
+                #endif
                 .frame(maxWidth: .infinity)
                 circleButton(icon: "backward.fill", size: 16) {
                     appStore?.send(.player(.previous))
                 }
+                #if os(macOS)
+                .heroAnchor(HeroID.nowPlayingPreviousTarget)
+                .nowPlayingHeroTarget(
+                    id: HeroID.nowPlayingPrevious,
+                    content: .icon(name: "backward.fill",
+                                   tint: .white.opacity(0.8), background: .translucentWhite,
+                                   diameter: 40, fontSize: 16, weight: .medium),
+                    isPresented: appStore?.isNowPlayingPresented == true,
+                    hasStarted: $hasStartedPreviousFlight
+                )
+                .opacity(heroFlight.active[HeroID.nowPlayingPrevious] != nil ? 0 : 1)
+                #endif
                 .frame(maxWidth: .infinity)
             }
 
@@ -1049,6 +1115,18 @@ struct NowPlayingView: View {
             circleButton(icon: "forward.fill", size: 16) {
                 appStore?.send(.player(.next))
             }
+            #if os(macOS)
+            .heroAnchor(HeroID.nowPlayingNextTarget)
+            .nowPlayingHeroTarget(
+                id: HeroID.nowPlayingNext,
+                content: .icon(name: "forward.fill",
+                               tint: .white.opacity(0.8), background: .translucentWhite,
+                               diameter: 40, fontSize: 16, weight: .medium),
+                isPresented: appStore?.isNowPlayingPresented == true,
+                hasStarted: $hasStartedNextFlight
+            )
+            .opacity(heroFlight.active[HeroID.nowPlayingNext] != nil ? 0 : 1)
+            #endif
             .frame(maxWidth: .infinity)
 
             RoutePickerButton(diameter: 40, glyphSize: 15)
@@ -1068,6 +1146,18 @@ struct NowPlayingView: View {
                 ) {
                     appStore?.send(.player(.cycleRepeatMode))
                 }
+                #if os(macOS)
+                .heroAnchor(HeroID.nowPlayingRepeatTarget)
+                .nowPlayingHeroTarget(
+                    id: HeroID.nowPlayingRepeat,
+                    content: .icon(name: player.repeatMode == .one ? "repeat.1" : "repeat",
+                                   tint: player.repeatMode != .off ? Theme.accent : .white.opacity(0.8), background: .translucentWhite,
+                                   diameter: 40, fontSize: 14, weight: .medium),
+                    isPresented: appStore?.isNowPlayingPresented == true,
+                    hasStarted: $hasStartedRepeatFlight
+                )
+                .opacity(heroFlight.active[HeroID.nowPlayingRepeat] != nil ? 0 : 1)
+                #endif
                 .frame(maxWidth: .infinity)
             }
         }

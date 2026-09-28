@@ -40,11 +40,14 @@ public enum HeroSelfTest {
     @MainActor
     public static func driveRoundTrip(appStore: StoreOf<AppFeature>) async -> Bool {
         let pairs = HeroID.nowPlayingPairs
+        var drivenPairs: [(source: String, target: String)] = []
         var skipped: [String: Int] = [:]
         for pair in pairs {
             guard let frame = await waitForFrame(for: pair.source, timeout: 5) else {
                 KumoneLogger.hero.error("selftest: source anchor never appeared")
-                return false
+                // FM and non-FM button groups are mutually exclusive; hidden
+                // elements never register an anchor in the current mode.
+                continue
             }
             skipped[pair.source] = HeroProbe.shared.records.filter { $0.id == pair.source && $0.verdict != nil }.count
             HeroProbe.shared.begin(pair.source)
@@ -53,16 +56,21 @@ public enum HeroSelfTest {
                 scale: HeroFrameStore.shared.scale(for: pair.source) ?? 1,
                 cornerRadius: pair.source == HeroID.nowPlayingArtwork ? Theme.Radius.small : 15
             )
+            drivenPairs.append(pair)
+        }
+        guard !drivenPairs.isEmpty else {
+            KumoneLogger.hero.error("selftest: no source anchors appeared")
+            return false
         }
         appStore.send(.presentNowPlaying)
         var passed = true
-        for pair in pairs {
+        for pair in drivenPairs {
             let verdict = await waitForVerdict(for: pair.source, timeout: 12, skipping: skipped[pair.source] ?? 0)
             passed = (verdict.map { !$0.isFailure } ?? false) && passed
             skipped[pair.source] = HeroProbe.shared.records.filter { $0.id == pair.source && $0.verdict != nil }.count
         }
         appStore.send(.dismissNowPlaying)
-        for pair in pairs {
+        for pair in drivenPairs {
             let verdict = await waitForVerdict(for: pair.source, timeout: 12, skipping: skipped[pair.source] ?? 0)
             passed = (verdict.map { !$0.isFailure } ?? false) && passed
         }
