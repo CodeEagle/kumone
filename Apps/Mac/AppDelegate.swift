@@ -47,6 +47,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         ShaderDiscovery.shared.reload()
         store.send(.setShader(ShaderDiscovery.shared.availableDescriptors.first?.id))
         showMainWindow()
+
+        #if DEBUG
+        // Zero-human hero verification: with KUMONE_HERO_SELF_TEST=1 the app
+        // runs one now-playing round trip, logs the verdict, and quits, so a
+        // script can assert the transition without a GUI.
+        if HeroSelfTest.isEnabled {
+            Task { await HeroSelfTest.run(appStore: store) }
+        }
+        #endif
         artworkStore.setArtworkNeeded(true)
         artworkStore.update(
             trackID: store.player.currentTrack?.id,

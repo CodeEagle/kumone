@@ -152,6 +152,7 @@ public struct MainWindow: View {
         }
         .animation(AppAnimation.smooth, value: store.isNowPlayingPresented)
         .animation(.spring(duration: 0.3), value: store.toasts.current)
+        .heroFlightOverlay()
     }
 
     private var loginBinding: Binding<Bool> {

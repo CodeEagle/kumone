@@ -2,7 +2,6 @@ import ComposableArchitecture
 import Dependencies
 import Foundation
 import KumoneCore
-import os
 
 /// The lyrics / queue side panel on macOS.
 public enum RightPanel {
@@ -22,9 +21,6 @@ public struct PlayerFeature {
     /// Transport-level events worth a system log line: the seek / end-of-item
     /// races are timing-sensitive and only show up in the field, so the
     /// decisions made here are recorded where `log show` can find them.
-    private static let log = Logger(
-        subsystem: "im.missuo.Kumone", category: "PlayerFeature"
-    )
 
     @ObservableState
     public struct State: Equatable {
@@ -308,7 +304,7 @@ public struct PlayerFeature {
                     let progress = state.progress
                     let duration = state.duration
                     let pending = state.pendingSeekTarget.map { String($0) } ?? "none"
-                    Self.log.info(
+                    KumoneLogger.player.info(
                         "itemEnded ignored: jump or stall, progress=\(progress, format: .fixed(precision: 1)) duration=\(duration, format: .fixed(precision: 1)) pending=\(pending, privacy: .public)"
                     )
                     state.pendingSeekTarget = nil
@@ -347,7 +343,7 @@ public struct PlayerFeature {
                 let advProgress = state.progress
                 let advDuration = state.duration
                 let advIntent = state.playbackIntent
-                Self.log.info(
+                KumoneLogger.player.info(
                     "itemEnded advancing: progress=\(advProgress, format: .fixed(precision: 1)) duration=\(advDuration, format: .fixed(precision: 1)) intent=\(advIntent)"
                 )
                 return .merge(scrobbleFinish, .send(.advanceToNext(userInitiated: false)))
@@ -484,7 +480,7 @@ public struct PlayerFeature {
                 state.pendingSeekTarget = target
                 state.seekGuardUntil = date.now.addingTimeInterval(3)
                 let loggedDuration = state.duration
-                Self.log.info(
+                KumoneLogger.player.info(
                     "seek target=\(target, format: .fixed(precision: 1)) duration=\(loggedDuration, format: .fixed(precision: 1))"
                 )
                 return .run { [playback] _ in

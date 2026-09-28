@@ -57,12 +57,21 @@ struct PlayerBar: View {
     private var artworkButton: some View {
         Button {
             guard player.hasCurrentTrack else { return }
+            let heroID = HeroID.nowPlayingArtwork
+            HeroProbe.shared.begin(heroID)
+            if let sourceFrame = HeroFrameStore.shared.frame(for: heroID) {
+                HeroProbe.shared.recordSource(
+                    frame: sourceFrame,
+                    scale: HeroFrameStore.shared.scale(for: heroID) ?? 1
+                )
+            }
             withAnimation(AppAnimation.smooth) {
                 _ = appStore.send(.presentNowPlaying)
             }
         } label: {
             CachedAsyncImage(url: player.currentTrack?.album.picUrl?.resizedImageURL(128))
                 .frame(width: 38, height: 38)
+                .heroAnchor(HeroID.nowPlayingArtwork)
                 .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.small, style: .continuous))
                 .overlay(
                     RoundedRectangle(cornerRadius: Theme.Radius.small, style: .continuous)

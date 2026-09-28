@@ -39,6 +39,7 @@ struct NowPlayingView: View {
     @State private var lyricsColumnHold = false
     #if os(macOS)
     @State private var showLyricsColumn = true
+    @State private var hasStartedHeroFlight = false
     @State private var isZenMode = false
     @State private var lyricsColumnWasVisible = false
     @State private var isWindowHovered = true
@@ -162,6 +163,8 @@ struct NowPlayingView: View {
             scheduleZenHoverChange()
         }
         .onDisappear {
+            hasStartedHeroFlight = false
+            HeroFlightDirector.shared.end()
             zenHoverTask?.cancel()
             zenHoverTask = nil
             lyricsColumnHold = false
@@ -198,6 +201,12 @@ struct NowPlayingView: View {
             lyricsColumnWasVisible = hasColumn
         }
         .onExitCommand { close() }
+        .onChange(of: appStore?.isNowPlayingPresented) { _, isPresented in
+            if isPresented != true {
+                hasStartedHeroFlight = false
+                HeroFlightDirector.shared.end()
+            }
+        }
         #endif
         .onAppear {
             ShaderDirectory.ensureExists()
@@ -795,6 +804,27 @@ struct NowPlayingView: View {
                 artworkSurface(size: size)
             }
         }
+        #if os(macOS)
+        .heroAnchor(HeroID.nowPlayingArtwork, scale: player.isPlaying ? 1 : 0.95)
+        .onGeometryChange(for: CGRect.self) { proxy in
+            proxy.frame(in: .global)
+        } action: { targetFrame in
+            guard appStore?.isNowPlayingPresented == true,
+                  !hasStartedHeroFlight,
+                  HeroProbe.shared.currentSourceFrame != nil
+            else { return }
+            let targetScale: CGFloat = player.isPlaying ? 1 : 0.95
+            HeroProbe.shared.recordTarget(frame: targetFrame, scale: targetScale)
+            HeroFlightDirector.shared.start(
+                id: HeroID.nowPlayingArtwork,
+                artworkURL: player.currentTrack?.album.picUrl?.resizedImageURL(512),
+                cornerRadius: 18,
+                targetFrame: targetFrame,
+                targetScale: targetScale
+            )
+            hasStartedHeroFlight = true
+        }
+        #endif
     }
 
     private func artworkSurface(size: CGFloat) -> some View {

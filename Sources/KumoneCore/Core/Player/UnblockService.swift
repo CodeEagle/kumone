@@ -1,6 +1,5 @@
 import CryptoKit
 import Foundation
-import os.log
 
 /// Native reimplementation of UnblockNeteaseMusic's core providers.
 /// When NetEase refuses to serve a track (no copyright / delisted / paid),
@@ -12,7 +11,6 @@ import os.log
 /// 3. kugou  — fuzzy search + duration match, tracker URL
 /// 4. kuwo   — fuzzy search + duration match (±5 s), then convert_url
 public enum UnblockService {
-    private static let log = Logger(subsystem: "im.missuo.kumone", category: "unblock")
 
     public struct Resolved {
         public let url: URL

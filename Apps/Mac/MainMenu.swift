@@ -129,6 +129,11 @@ final class PlayerMenuDelegate: NSObject, NSMenuDelegate {
             action: { store.send(.player(.togglePanel(.lyrics))) })
         add(to: menu, title: String(localized: "播放队列"), keyEquivalent: "u",
             action: { store.send(.player(.togglePanel(.queue))) })
+        menu.addItem(.separator())
+        add(to: menu, title: String(localized: "Hero 转场自检"), keyEquivalent: "h",
+            modifiers: [.command, .shift]) {
+            Task { await HeroSelfTest.driveRoundTrip(appStore: store) }
+        }
     }
 }
 

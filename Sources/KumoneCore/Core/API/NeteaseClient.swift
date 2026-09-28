@@ -1,5 +1,4 @@
 import Foundation
-import os.log
 
 public enum NeteaseAPIError: LocalizedError {
     case http(Int)
@@ -22,7 +21,6 @@ public enum NeteaseAPIError: LocalizedError {
 public final class NeteaseClient: @unchecked Sendable {
     public static let shared = NeteaseClient()
 
-    private static let log = Logger(subsystem: "im.missuo.kumone", category: "api")
     private static let userAgent =
         "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36"
 
@@ -191,7 +189,7 @@ public final class NeteaseClient: @unchecked Sendable {
         guard let http = response as? HTTPURLResponse else { throw NeteaseAPIError.http(-1) }
         absorbSetCookies(from: http, url: request.url!)
         guard (200..<300).contains(http.statusCode) else {
-            Self.log.error("HTTP \(http.statusCode) for \(request.url?.path ?? "?")")
+            KumoneLogger.api.error("HTTP \(http.statusCode) for \(request.url?.path ?? "?")")
             throw NeteaseAPIError.http(http.statusCode)
         }
         return data
@@ -208,7 +206,7 @@ public final class NeteaseClient: @unchecked Sendable {
         do {
             return try JSONDecoder().decode(T.self, from: data)
         } catch {
-            Self.log.error("Decoding \(String(describing: T.self)) failed: \(error)")
+            KumoneLogger.api.error("Decoding \(String(describing: T.self)) failed: \(error)")
             throw NeteaseAPIError.decoding(String(describing: error))
         }
     }
