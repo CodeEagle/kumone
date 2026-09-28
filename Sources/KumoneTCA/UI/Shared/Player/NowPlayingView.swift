@@ -814,7 +814,7 @@ struct NowPlayingView: View {
                   HeroProbe.shared.currentSourceFrame != nil
             else { return }
             let targetScale: CGFloat = player.isPlaying ? 1 : 0.95
-            HeroProbe.shared.recordTarget(frame: targetFrame, scale: targetScale)
+            HeroProbe.shared.recordTarget(frame: targetFrame, scale: targetScale, cornerRadius: 18)
             HeroFlightDirector.shared.start(
                 id: HeroID.nowPlayingArtwork,
                 // The 128pt artwork is what the PlayerBar already has cached,

@@ -21,6 +21,8 @@ enum AppAnimation {
     static let standard = Animation.easeInOut(duration: 0.25)
     static let smooth = Animation.easeInOut(duration: 0.35)
     static let spring = Animation.spring(response: 0.35, dampingFraction: 0.7)
+    /// Hero 飞行专用：大尺度形变（38pt 封面放大到 300+pt）需要更低的回弹。
+    static let heroSpring = Animation.spring(response: 0.35, dampingFraction: 0.85)
     static let bouncy = Animation.spring(response: 0.4, dampingFraction: 0.6)
     static let snappy = Animation.spring(response: 0.25, dampingFraction: 0.8)
 

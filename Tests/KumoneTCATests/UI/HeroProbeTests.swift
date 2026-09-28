@@ -9,7 +9,12 @@ struct HeroProbeTests {
         source: CGRect? = CGRect(x: 20, y: 700, width: 38, height: 38),
         target: CGRect? = CGRect(x: 438, y: 300, width: 320, height: 320),
         landed: CGRect? = CGRect(x: 438, y: 300, width: 320, height: 320),
-        viewport: CGRect? = nil,
+        viewport: CGRect? = CGRect(x: 0, y: 0, width: 800, height: 750),
+        proxyInitialFrame: CGRect? = CGRect(x: 20, y: 700, width: 38, height: 38),
+        sourceCornerRadius: CGFloat? = 4,
+        targetCornerRadius: CGFloat? = 12,
+        landedCornerRadius: CGFloat? = 12,
+        samples: [HeroProbe.Sample]? = nil,
         sourceScale: CGFloat = 1,
         targetScale: CGFloat = 0.95,
         landedScale: CGFloat = 0.95,
@@ -21,6 +26,28 @@ struct HeroProbeTests {
             targetFrame: target,
             landedFrame: landed,
             viewportFrame: viewport,
+            proxyInitialFrame: proxyInitialFrame,
+            sourceCornerRadius: sourceCornerRadius,
+            targetCornerRadius: targetCornerRadius,
+            landedCornerRadius: landedCornerRadius,
+            samples: samples ?? [
+                HeroProbe.Sample(
+                    timestamp: Date(timeIntervalSince1970: 0),
+                    phase: .initial,
+                    frame: proxyInitialFrame ?? .zero,
+                    sourceVisible: false,
+                    targetVisible: false,
+                    proxyVisible: true
+                ),
+                HeroProbe.Sample(
+                    timestamp: Date(timeIntervalSince1970: 1),
+                    phase: .landed,
+                    frame: landed ?? .zero,
+                    sourceVisible: false,
+                    targetVisible: true,
+                    proxyVisible: false
+                )
+            ],
             sourceScale: sourceScale,
             targetScale: targetScale,
             landedScale: landedScale,
@@ -32,12 +59,97 @@ struct HeroProbeTests {
         #expect(HeroProbe.judge(record: record()) == .pass)
     }
 
-    @Test func landingWithinOnePointPasses() {
+    @Test func landingWithinHalfPointPasses() {
         let r = record(
-            landed: CGRect(x: 438.6, y: 299.4, width: 320.5, height: 319.7),
+            landed: CGRect(x: 438.4, y: 299.7, width: 320.4, height: 319.7),
             landedScale: 0.953
         )
         #expect(HeroProbe.judge(record: r) == .pass)
+    }
+
+    @Test func landingBeyondHalfPointFails() {
+        let r = record(landed: CGRect(x: 438.6, y: 300, width: 320, height: 320))
+        #expect(HeroProbe.judge(record: r).isFailure)
+    }
+
+    @Test func landingAtHalfPointPasses() {
+        let r = record(landed: CGRect(x: 438.5, y: 299.5, width: 320.5, height: 319.5))
+        #expect(HeroProbe.judge(record: r) == .pass)
+    }
+
+    @Test(arguments: [
+        CGRect(x: 20.6, y: 700, width: 38, height: 38),
+        CGRect(x: 20, y: 700.6, width: 38, height: 38),
+        CGRect(x: 20, y: 700, width: 38.6, height: 38),
+        CGRect(x: 20, y: 700, width: 38, height: 38.6)
+    ])
+    func initialFrameBeyondHalfPointFails(initial: CGRect) {
+        let verdict = HeroProbe.judge(record: record(proxyInitialFrame: initial))
+        #expect(verdict.isFailure)
+        #expect(verdict.failureReason?.contains("initial frame off") ?? false)
+    }
+
+    @Test func initialFrameAtHalfPointPasses() {
+        let r = record(proxyInitialFrame: CGRect(x: 20.5, y: 699.5, width: 38.5, height: 37.5))
+        #expect(HeroProbe.judge(record: r) == .pass)
+    }
+
+    @Test func missingProxyInitialFrameFails() {
+        let verdict = HeroProbe.judge(record: record(proxyInitialFrame: nil))
+        #expect(verdict == .fail("proxy initial frame never recorded"))
+    }
+
+    @Test func cornerRadiusMismatchFails() {
+        let verdict = HeroProbe.judge(record: record(landedCornerRadius: 12.6))
+        #expect(verdict == .fail("cornerRadius off"))
+    }
+
+    @Test func cornerRadiusAtHalfPointPasses() {
+        #expect(HeroProbe.judge(record: record(landedCornerRadius: 12.5)) == .pass)
+    }
+
+    @Test(arguments: [true, false])
+    func missingCornerRadiusFails(missingTarget: Bool) {
+        let r = record(
+            targetCornerRadius: missingTarget ? nil : 12,
+            landedCornerRadius: missingTarget ? 12 : nil
+        )
+        #expect(HeroProbe.judge(record: r) == .fail("cornerRadius not recorded"))
+    }
+
+    @Test func missingSourceCornerRadiusDoesNotFail() {
+        #expect(HeroProbe.judge(record: record(sourceCornerRadius: nil)) == .pass)
+    }
+
+    @Test(arguments: [0, 2])
+    func invalidPresenceCountFails(count: Int) {
+        var r = record()
+        r.samples.append(HeroProbe.Sample(
+            timestamp: Date(timeIntervalSince1970: 2),
+            phase: .animating,
+            frame: CGRect(x: 200, y: 500, width: 150, height: 150),
+            sourceVisible: count == 2,
+            targetVisible: false,
+            proxyVisible: count == 2
+        ))
+        #expect(HeroProbe.judge(record: r) == .fail("presence count \(count) at phase animating"))
+    }
+
+    @Test func missingProxySamplesFails() {
+        #expect(HeroProbe.judge(record: record(samples: [])) == .fail("no proxy samples recorded"))
+    }
+
+    @Test func missingViewportTakesPriorityOverMissingSamples() {
+        let verdict = HeroProbe.judge(record: record(viewport: nil, samples: []))
+        #expect(verdict.failureReason?.contains("viewport not recorded") ?? false)
+    }
+
+    @Test func flippedCoordinateSpaceFails() {
+        let r = record(
+            landed: CGRect(x: 438, y: 550, width: 320, height: 320),
+            viewport: CGRect(x: 0, y: 100, width: 800, height: 750)
+        )
+        #expect(HeroProbe.judge(record: r) == .fail("unflipped coordinate space"))
     }
 
     @Test func horizontalDriftBeyondToleranceFails() {
@@ -112,7 +224,7 @@ struct HeroProbeTests {
     }
 
     @Test func customToleranceIsHonoured() {
-        // A 3pt drift fails under the default 1pt tolerance but passes when the
+        // A 3pt drift fails under the default 0.5pt tolerance but passes when the
         // test widens it, which is how a flaky settle gets triaged.
         var wide = HeroProbe.Tolerance()
         wide.position = 5
@@ -122,7 +234,7 @@ struct HeroProbeTests {
     }
 
     @Test func formatReportsEveryMeasurement() {
-        let line = HeroProbe.format(record(verdict: .pass))
+        let line = HeroProbe.format(record(viewport: nil, verdict: .pass))
         #expect(line.hasPrefix("HERO PASS test src="))
         #expect(line.contains("landed=(438.0,300.0,320.0,320.0)"))
         #expect(line.contains("viewport=—"))
@@ -145,18 +257,45 @@ struct HeroProbeTests {
     }
 
     @MainActor
+    @Test(arguments: [false, true])
+    func proxyVisibilityFollowsPhase(sourceHidden: Bool) {
+        let probe = HeroProbe.shared
+        let id = "unit-test-\(UUID().uuidString)"
+        let source = CGRect(x: 20, y: 700, width: 38, height: 38)
+        let target = CGRect(x: 438, y: 300, width: 320, height: 320)
+        probe.begin(id)
+        probe.recordSource(frame: source, hidden: sourceHidden)
+        probe.recordTarget(frame: target, cornerRadius: 12)
+        probe.recordViewport(CGRect(x: 0, y: 0, width: 800, height: 750))
+        probe.recordProxyState(.unmeasured, frame: source)
+        probe.recordProxyState(.initial, frame: source)
+        probe.recordProxyState(.animating, frame: target)
+        probe.recordProxyState(.landed, frame: target)
+        probe.recordLanding(frame: target, cornerRadius: 12)
+
+        let archived = probe.records.last { $0.id == id }
+        #expect(archived?.samples.map(\.sourceVisible) == [!sourceHidden, false, false, false])
+        #expect(archived?.samples.map(\.targetVisible) == [false, false, false, true])
+        #expect(archived?.samples.map(\.proxyVisible) == [false, true, true, false])
+        #expect(archived?.samples.map(\.presenceCount) == [sourceHidden ? 0 : 1, 1, 1, 1])
+    }
+
+    @MainActor
     @Test func recordLandingJudgesAndArchives() {
         let probe = HeroProbe.shared
         let id = "unit-test-\(UUID().uuidString)"
         probe.begin(id)
         probe.recordSource(frame: CGRect(x: 20, y: 700, width: 38, height: 38), scale: 1)
-        probe.recordTarget(frame: CGRect(x: 438, y: 300, width: 320, height: 320), scale: 0.95)
+        probe.recordTarget(frame: CGRect(x: 438, y: 300, width: 320, height: 320), scale: 0.95, cornerRadius: 12)
+        probe.recordProxyState(.initial, frame: CGRect(x: 20, y: 700, width: 38, height: 38))
+        probe.recordProxyState(.landed, frame: CGRect(x: 438, y: 300, width: 320, height: 320))
         probe.recordViewport(CGRect(x: 0, y: 0, width: 800, height: 750))
-        let verdict = probe.recordLanding(frame: CGRect(x: 438, y: 300, width: 320, height: 320), scale: 0.95)
+        let verdict = probe.recordLanding(frame: CGRect(x: 438, y: 300, width: 320, height: 320), scale: 0.95, cornerRadius: 12)
 
         #expect(verdict == .pass)
         let archived = probe.records.last { $0.id == id }
         #expect(archived?.verdict == .pass)
+        #expect(archived?.samples.map(\.presenceCount) == [1, 1])
         #expect(archived?.sourceFrame == CGRect(x: 20, y: 700, width: 38, height: 38))
         #expect(archived?.viewportFrame == CGRect(x: 0, y: 0, width: 800, height: 750))
     }
@@ -170,8 +309,10 @@ struct HeroProbeTests {
         let id = "unit-test-\(UUID().uuidString)"
         probe.begin(id)
         probe.recordSource(frame: CGRect(x: 20, y: 700, width: 38, height: 38), scale: 1)
-        probe.recordTarget(frame: CGRect(x: 438, y: 300, width: 320, height: 320), scale: 0.95)
-        let verdict = probe.recordLanding(frame: CGRect(x: 438, y: 300, width: 320, height: 320), scale: 0.95)
+        probe.recordTarget(frame: CGRect(x: 438, y: 300, width: 320, height: 320), scale: 0.95, cornerRadius: 12)
+        probe.recordProxyState(.initial, frame: CGRect(x: 20, y: 700, width: 38, height: 38))
+        probe.recordProxyState(.landed, frame: CGRect(x: 438, y: 300, width: 320, height: 320))
+        let verdict = probe.recordLanding(frame: CGRect(x: 438, y: 300, width: 320, height: 320), scale: 0.95, cornerRadius: 12)
 
         #expect(verdict.isFailure)
         #expect(verdict.failureReason?.contains("viewport not recorded") ?? false)

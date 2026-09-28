@@ -7,6 +7,8 @@ struct PlayerBar: View {
 
     private var player: PlayerFeature.State { appStore.player }
 
+    @ObservedObject private var heroFlight = HeroFlightDirector.shared
+
     var body: some View {
         GeometryReader { proxy in
             let compact = proxy.size.width < 860
@@ -62,7 +64,8 @@ struct PlayerBar: View {
             if let sourceFrame = HeroFrameStore.shared.frame(for: heroID) {
                 HeroProbe.shared.recordSource(
                     frame: sourceFrame,
-                    scale: HeroFrameStore.shared.scale(for: heroID) ?? 1
+                    scale: HeroFrameStore.shared.scale(for: heroID) ?? 1,
+                    cornerRadius: Theme.Radius.small
                 )
             }
             withAnimation(AppAnimation.smooth) {
@@ -78,6 +81,7 @@ struct PlayerBar: View {
                         .strokeBorder(.primary.opacity(0.1), lineWidth: 0.5)
                 )
                 .shadow(color: .black.opacity(0.2), radius: 4, y: 2)
+                .opacity(heroFlight.active?.id == HeroID.nowPlayingArtwork ? 0 : 1)
         }
         .buttonStyle(.pressable)
         .noFocusRing()

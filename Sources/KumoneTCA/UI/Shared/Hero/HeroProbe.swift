@@ -15,12 +15,11 @@ final class HeroProbe: ObservableObject {
     static let shared = HeroProbe()
 
     /// A transition passes when the landed geometry matches the target within
-    /// these tolerances. 1pt covers the rounding SwiftUI applies when a view
-    /// lands on a half-pixel; 0.01 scale is the smallest difference the eye
-    /// can register during a settle.
+    /// these tolerances. Position and size allow at most 0.5pt per component;
+    /// scale allows a difference of 0.01 during a settle.
     struct Tolerance: Equatable, Sendable {
-        var position: CGFloat = 1
-        var size: CGFloat = 1
+        var position: CGFloat = 0.5
+        var size: CGFloat = 0.5
         var scale: CGFloat = 0.01
     }
 
@@ -41,12 +40,37 @@ final class HeroProbe: ObservableObject {
         var targetFrame: CGRect?
         var landedFrame: CGRect?
         /// The frame of the surface that hosts the flight, i.e. the on-screen
-        /// area the user can actually see. `nil` skips the visibility check.
+        /// area the user can actually see. `nil` fails the visibility check.
         var viewportFrame: CGRect?
+        /// The proxy's first measured initial frame, independent of the source.
+        var proxyInitialFrame: CGRect?
+        var sourceCornerRadius: CGFloat?
+        var targetCornerRadius: CGFloat?
+        var landedCornerRadius: CGFloat?
+        var sourceHidden: Bool = false
+        var windowScale: CGFloat?
+        var samples: [Sample] = []
         var sourceScale: CGFloat = 1
         var targetScale: CGFloat = 1
         var landedScale: CGFloat = 1
         var verdict: Verdict?
+    }
+
+    enum Phase: String, Sendable {
+        case initial, animating, landed, unmeasured
+    }
+
+    struct Sample: Equatable, Sendable {
+        let timestamp: Date
+        let phase: Phase
+        let frame: CGRect
+        let sourceVisible: Bool
+        let targetVisible: Bool
+        let proxyVisible: Bool
+
+        var presenceCount: Int {
+            (sourceVisible ? 1 : 0) + (targetVisible ? 1 : 0) + (proxyVisible ? 1 : 0)
+        }
     }
 
     enum Verdict: Equatable, Sendable {
@@ -93,14 +117,42 @@ final class HeroProbe: ObservableObject {
         current = Record(id: id)
     }
 
-    func recordSource(frame: CGRect, scale: CGFloat = 1) {
+    func recordSource(frame: CGRect, scale: CGFloat = 1, cornerRadius: CGFloat? = nil, hidden: Bool = false) {
         current.sourceFrame = frame
         current.sourceScale = scale
+        current.sourceCornerRadius = cornerRadius
+        current.sourceHidden = hidden
     }
 
-    func recordTarget(frame: CGRect, scale: CGFloat = 1) {
+    func recordTarget(frame: CGRect, scale: CGFloat = 1, cornerRadius: CGFloat? = nil) {
         current.targetFrame = frame
         current.targetScale = scale
+        current.targetCornerRadius = cornerRadius
+    }
+
+    /// Visibility follows the reported phase and source-hidden state; callers
+    /// must report the phase when the corresponding views actually change.
+    func recordProxyState(_ phase: Phase, frame: CGRect) {
+        if phase == .initial, current.proxyInitialFrame == nil {
+            current.proxyInitialFrame = frame
+        }
+        let proxyVisible = phase == .initial || phase == .animating
+        let targetVisible = phase == .landed
+        current.samples.append(Sample(
+            timestamp: Date(),
+            phase: phase,
+            frame: frame,
+            sourceVisible: !proxyVisible && !targetVisible && !current.sourceHidden,
+            targetVisible: targetVisible,
+            proxyVisible: proxyVisible
+        ))
+        let line = "HERO PROXY \(current.id) \(phase.rawValue) \(Self.frameDescription(frame))"
+        KumoneLogger.hero.notice("\(line, privacy: .public)")
+        Self.writeFile(line)
+    }
+
+    func recordWindowScale(_ scale: CGFloat) {
+        current.windowScale = scale
     }
 
     /// Records the frame of the surface hosting the flight — the area the user
@@ -114,16 +166,11 @@ final class HeroProbe: ObservableObject {
     /// geometry, archives the record, and writes the verdict to the system log
     /// and the probe log file. Returns the verdict for in-app assertions.
     @discardableResult
-    func recordLanding(frame: CGRect, scale: CGFloat = 1) -> Verdict {
+    func recordLanding(frame: CGRect, scale: CGFloat = 1, cornerRadius: CGFloat? = nil) -> Verdict {
         current.landedFrame = frame
         current.landedScale = scale
-        var verdict = Self.judge(record: current, tolerance: Self.tolerance)
-        // Fail closed at runtime: a flight whose viewport was never recorded
-        // skips the visibility check, and a skipped check is the gap that let
-        // an off-screen transition pass. Only a recorded viewport may pass.
-        if current.viewportFrame == nil, !verdict.isFailure {
-            verdict = .fail("viewport not recorded: visibility unverified")
-        }
+        current.landedCornerRadius = cornerRadius
+        let verdict = Self.judge(record: current, tolerance: Self.tolerance)
         current.verdict = verdict
         records.append(current)
         let line = Self.format(current)
@@ -146,18 +193,54 @@ final class HeroProbe: ObservableObject {
         // measured the off-screen slide start, and the stand-in flew below the
         // window — where it still matched its target exactly and passed every
         // other check. Both ends have to be on screen for the transition to count.
-        if let viewport = record.viewportFrame {
-            let visible = viewport.insetBy(dx: -Self.viewportMargin, dy: -Self.viewportMargin)
-            guard visible.contains(target) else {
-                return .fail(
-                    "target off-screen: \(frameDescription(target)) outside viewport \(frameDescription(viewport))"
-                )
-            }
-            if let source = record.sourceFrame, !visible.contains(source) {
-                return .fail(
-                    "source off-screen: \(frameDescription(source)) outside viewport \(frameDescription(viewport))"
-                )
-            }
+        // Fail closed before checking proxy samples: visibility must be verified.
+        guard let viewport = record.viewportFrame else {
+            return .fail("viewport not recorded: visibility unverified")
+        }
+        let visible = viewport.insetBy(dx: -Self.viewportMargin, dy: -Self.viewportMargin)
+        guard visible.contains(target) else {
+            return .fail(
+                "target off-screen: \(frameDescription(target)) outside viewport \(frameDescription(viewport))"
+            )
+        }
+        if let source = record.sourceFrame, !visible.contains(source) {
+            return .fail(
+                "source off-screen: \(frameDescription(source)) outside viewport \(frameDescription(viewport))"
+            )
+        }
+        guard let initial = record.proxyInitialFrame else {
+            return .fail("proxy initial frame never recorded")
+        }
+        guard let source = record.sourceFrame else {
+            return .fail("missing geometry: source never recorded")
+        }
+        let initialDX = abs(initial.origin.x - source.origin.x)
+        let initialDY = abs(initial.origin.y - source.origin.y)
+        let initialDW = abs(initial.width - source.width)
+        let initialDH = abs(initial.height - source.height)
+        guard initialDX <= tolerance.position, initialDY <= tolerance.position,
+              initialDW <= tolerance.size, initialDH <= tolerance.size else {
+            return .fail(
+                "initial frame off vs source: initial=\(frameDescription(initial)) source=\(frameDescription(source))"
+            )
+        }
+        guard let targetCornerRadius = record.targetCornerRadius,
+              let landedCornerRadius = record.landedCornerRadius else {
+            return .fail("cornerRadius not recorded")
+        }
+        guard abs(landedCornerRadius - targetCornerRadius) <= 0.5 else {
+            return .fail("cornerRadius off")
+        }
+        guard !record.samples.isEmpty else {
+            return .fail("no proxy samples recorded")
+        }
+        for sample in record.samples where sample.presenceCount != 1 {
+            return .fail("presence count \(sample.presenceCount) at phase \(sample.phase.rawValue)")
+        }
+        let flippedY = viewport.origin.y + viewport.height - target.origin.y
+        if abs(landed.origin.y - flippedY) <= 0.5,
+           abs(landed.origin.y - target.origin.y) > 0.5 {
+            return .fail("unflipped coordinate space")
         }
         let dx = abs(landed.origin.x - target.origin.x)
         let dy = abs(landed.origin.y - target.origin.y)

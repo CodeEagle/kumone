@@ -1,3 +1,6 @@
+#if os(macOS)
+import AppKit
+#endif
 import KumoneCore
 import SwiftUI
 
@@ -18,6 +21,7 @@ struct HeroFlight: View {
     @State private var frame: CGRect
     @State private var scale: CGFloat = 1
     @State private var measuredFrame: CGRect?
+    @State private var recordedInitialFrame = false
     @State private var finished = false
 
     init(flight: HeroFlightDirector.Flight, containerFrame: CGRect) {
@@ -49,6 +53,16 @@ struct HeroFlight: View {
         } action: { global in
             // The rendered frame, not the animated one, is what gets verified.
             measuredFrame = global
+            // The first geometry pass is the only honest reading of where the
+            // proxy starts: every later pass is already mid-flight, and the
+            // pre-animation `flight.source` value would merely re-assert the
+            // frame we assigned ourselves instead of measuring it.
+            if !recordedInitialFrame {
+                recordedInitialFrame = true
+                HeroProbe.shared.recordProxyState(.initial, frame: global)
+            } else {
+                HeroProbe.shared.recordProxyState(.animating, frame: global)
+            }
         }
         .position(
             x: frame.midX - containerFrame.origin.x,
@@ -56,15 +70,27 @@ struct HeroFlight: View {
         )
         .onAppear {
             HeroProbe.shared.recordViewport(containerFrame)
-            withAnimation(AppAnimation.spring) {
+            #if os(macOS)
+            HeroProbe.shared.recordWindowScale(NSApp.keyWindow?.backingScaleFactor ?? 1)
+            #endif
+            withAnimation(AppAnimation.heroSpring) {
                 frame = flight.target
                 scale = flight.targetScale
             } completion: {
                 guard !finished else { return }
                 finished = true
+                if let measuredFrame {
+                    HeroProbe.shared.recordProxyState(.landed, frame: measuredFrame)
+                } else {
+                    // Fail closed: no geometry ever arrived, so report the
+                    // landing as unmeasured instead of papering over the gap
+                    // with the target frame we asked for.
+                    HeroProbe.shared.recordProxyState(.unmeasured, frame: flight.target)
+                }
                 HeroProbe.shared.recordLanding(
                     frame: measuredFrame ?? flight.target,
-                    scale: flight.targetScale
+                    scale: flight.targetScale,
+                    cornerRadius: flight.cornerRadius
                 )
                 HeroFlightDirector.shared.end()
             }
