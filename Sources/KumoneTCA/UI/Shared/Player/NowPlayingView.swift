@@ -39,6 +39,7 @@ struct NowPlayingView: View {
     @State private var lyricsColumnHold = false
     #if os(macOS)
     @State private var showLyricsColumn = true
+    @State private var hasStartedPlayPauseFlight = false
     @State private var hasStartedHeroFlight = false
     @ObservedObject private var heroFlight = HeroFlightDirector.shared
     @State private var isZenMode = false
@@ -165,6 +166,7 @@ struct NowPlayingView: View {
         }
         .onDisappear {
             hasStartedHeroFlight = false
+            hasStartedPlayPauseFlight = false
             zenHoverTask?.cancel()
             zenHoverTask = nil
             lyricsColumnHold = false
@@ -204,6 +206,7 @@ struct NowPlayingView: View {
         .onChange(of: appStore?.isNowPlayingPresented) { _, isPresented in
             if isPresented != true {
                 hasStartedHeroFlight = false
+                hasStartedPlayPauseFlight = false
             }
         }
         #endif
@@ -805,26 +808,13 @@ struct NowPlayingView: View {
         }
         #if os(macOS)
         .heroAnchor(HeroID.nowPlayingArtworkTarget, scale: player.isPlaying ? 1 : 0.95)
-        .onGeometryChange(for: CGRect.self) { proxy in
-            proxy.frame(in: .global)
-        } action: { targetFrame in
-            guard appStore?.isNowPlayingPresented == true,
-                  !hasStartedHeroFlight,
-                  HeroProbe.shared.sourceFrame(for: HeroID.nowPlayingArtwork) != nil
-            else { return }
-            let targetScale: CGFloat = player.isPlaying ? 1 : 0.95
-            HeroProbe.shared.recordTarget(id: HeroID.nowPlayingArtwork, frame: targetFrame, scale: targetScale, cornerRadius: 18)
-            HeroFlightDirector.shared.start(
-                id: HeroID.nowPlayingArtwork,
-                // The 128pt artwork is what the PlayerBar already has cached,
-                // so the stand-in shows the real cover immediately instead of
-                // a placeholder while the 512pt version loads.
-                content: .artwork(url: player.currentTrack?.album.picUrl?.resizedImageURL(128), cornerRadius: 18),
-                targetFrame: targetFrame,
-                targetScale: targetScale
-            )
-            hasStartedHeroFlight = true
-        }
+        .nowPlayingHeroTarget(
+            id: HeroID.nowPlayingArtwork,
+            content: .artwork(url: player.currentTrack?.album.picUrl?.resizedImageURL(128), cornerRadius: 18),
+            scale: player.isPlaying ? 1 : 0.95,
+            isPresented: appStore?.isNowPlayingPresented == true,
+            hasStarted: $hasStartedHeroFlight
+        )
         #endif
     }
 
@@ -1099,6 +1089,17 @@ struct NowPlayingView: View {
             }
         }
         .buttonStyle(.pressable)
+        #if os(macOS)
+        .heroAnchor(HeroID.nowPlayingPlayPauseTarget)
+        .nowPlayingHeroTarget(
+            id: HeroID.nowPlayingPlayPause,
+            content: .icon(name: player.isPlaying ? "pause.fill" : "play.fill",
+                           tint: .black.opacity(0.85), background: .white, diameter: 58, fontSize: 21),
+            isPresented: appStore?.isNowPlayingPresented == true,
+            hasStarted: $hasStartedPlayPauseFlight
+        )
+        .opacity(heroFlight.active[HeroID.nowPlayingPlayPause] != nil ? 0 : 1)
+        #endif
     }
 
     private func circleButton(icon: String, size: CGFloat,

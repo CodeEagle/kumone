@@ -59,14 +59,14 @@ struct PlayerBar: View {
     private var artworkButton: some View {
         Button {
             guard player.hasCurrentTrack else { return }
-            let heroID = HeroID.nowPlayingArtwork
-            HeroProbe.shared.begin(heroID)
-            if let sourceFrame = HeroFrameStore.shared.frame(for: heroID) {
+            for pair in HeroID.nowPlayingPairs {
+                HeroProbe.shared.begin(pair.source)
+                guard let sourceFrame = HeroFrameStore.shared.frame(for: pair.source) else { continue }
                 HeroProbe.shared.recordSource(
-                    id: heroID,
+                    id: pair.source,
                     frame: sourceFrame,
-                    scale: HeroFrameStore.shared.scale(for: heroID) ?? 1,
-                    cornerRadius: Theme.Radius.small
+                    scale: HeroFrameStore.shared.scale(for: pair.source) ?? 1,
+                    cornerRadius: pair.source == HeroID.nowPlayingArtwork ? Theme.Radius.small : 15
                 )
             }
             withAnimation(AppAnimation.smooth) {
@@ -164,6 +164,10 @@ struct PlayerBar: View {
             }
         }
         .buttonStyle(.pressable)
+        #if os(macOS)
+        .heroAnchor(HeroID.nowPlayingPlayPause)
+        .opacity(heroFlight.active[HeroID.nowPlayingPlayPause] != nil ? 0 : 1)
+        #endif
         .padding(.horizontal, 2)
     }
 

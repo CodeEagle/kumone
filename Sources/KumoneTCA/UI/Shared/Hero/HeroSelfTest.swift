@@ -39,33 +39,34 @@ public enum HeroSelfTest {
     @discardableResult
     @MainActor
     public static func driveRoundTrip(appStore: StoreOf<AppFeature>) async -> Bool {
-        let heroID = HeroID.nowPlayingArtwork
-
-        // The PlayerBar artwork has to have reported its frame before there is
-        // anything to fly from.
-        guard let sourceFrame = await waitForFrame(for: heroID, timeout: 5) else {
-            KumoneLogger.hero.error("selftest: source anchor never appeared")
-            return false
+        let pairs = HeroID.nowPlayingPairs
+        var skipped: [String: Int] = [:]
+        for pair in pairs {
+            guard let frame = await waitForFrame(for: pair.source, timeout: 5) else {
+                KumoneLogger.hero.error("selftest: source anchor never appeared")
+                return false
+            }
+            skipped[pair.source] = HeroProbe.shared.records.filter { $0.id == pair.source && $0.verdict != nil }.count
+            HeroProbe.shared.begin(pair.source)
+            HeroProbe.shared.recordSource(
+                id: pair.source, frame: frame,
+                scale: HeroFrameStore.shared.scale(for: pair.source) ?? 1,
+                cornerRadius: pair.source == HeroID.nowPlayingArtwork ? Theme.Radius.small : 15
+            )
         }
-        let sourceScale = HeroFrameStore.shared.scale(for: heroID) ?? 1
-
-        // Arm the probe from the cached source geometry and open the page.
-        HeroProbe.shared.begin(heroID)
-        HeroProbe.shared.recordSource(id: heroID, frame: sourceFrame, scale: sourceScale)
         appStore.send(.presentNowPlaying)
-
-        // The flight springs on the next layout pass; wait for it to settle and
-        // for the probe to archive its verdict.
-        let presentVerdict = await waitForVerdict(for: heroID, timeout: 12)
-
-        // Leave the page so the round trip closes cleanly — the dismiss flight
-        // flies the cover back to the mini player, and that landing is judged
-        // too, so a transition that only works in one direction fails here.
-        let judgedBefore = HeroProbe.shared.records.filter { $0.verdict != nil }.count
+        var passed = true
+        for pair in pairs {
+            let verdict = await waitForVerdict(for: pair.source, timeout: 12, skipping: skipped[pair.source] ?? 0)
+            passed = (verdict.map { !$0.isFailure } ?? false) && passed
+            skipped[pair.source] = HeroProbe.shared.records.filter { $0.id == pair.source && $0.verdict != nil }.count
+        }
         appStore.send(.dismissNowPlaying)
-        let returnVerdict = await waitForVerdict(for: heroID, timeout: 12, skipping: judgedBefore)
-
-        return [presentVerdict, returnVerdict].allSatisfy { $0.map { !$0.isFailure } ?? false }
+        for pair in pairs {
+            let verdict = await waitForVerdict(for: pair.source, timeout: 12, skipping: skipped[pair.source] ?? 0)
+            passed = (verdict.map { !$0.isFailure } ?? false) && passed
+        }
+        return passed
     }
 
     // MARK: - Polling

@@ -10,6 +10,14 @@ enum HeroID {
     static let nowPlayingArtwork = "now-playing-artwork"
     static let nowPlayingArtworkTarget = "now-playing-artwork-target"
 
+    static let nowPlayingPlayPause = "now-playing-play-pause"
+    static let nowPlayingPlayPauseTarget = "now-playing-play-pause-target"
+
+    static let nowPlayingPairs: [(source: String, target: String)] = [
+        (nowPlayingArtwork, nowPlayingArtworkTarget),
+        (nowPlayingPlayPause, nowPlayingPlayPauseTarget),
+    ]
+
     /// Card cover -> detail-page header. One id per item so the source card and
     /// the destination header pair up; the id is the item's own id.
     static func album(_ id: Int) -> String { "hero-album-\(id)" }

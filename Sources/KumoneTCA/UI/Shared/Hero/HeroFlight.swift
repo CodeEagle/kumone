@@ -103,12 +103,26 @@ struct HeroFlight: View {
                     // Opaque while the artwork loads, as in the original flight.
                     .fill(.secondary)
             }
-        case .text, .icon:
-            // Reserved for later phases; no callers mount these payloads yet.
-            Color.clear
-                .onAppear {
-                    assertionFailure("Text and icon hero rendering is not implemented")
+        case let .text(text, color, fontSize, weight):
+            Text(text)
+                .font(.system(size: fontSize, weight: weight))
+                .foregroundStyle(color)
+                .lineLimit(1)
+                .minimumScaleFactor(0.01)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        case let .icon(name, tint, background, diameter, fontSize):
+            GeometryReader { proxy in
+                ZStack {
+                    Circle().fill(background.style)
+                    Image(systemName: name)
+                        .font(.system(
+                            size: fontSize * min(proxy.size.width, proxy.size.height) / diameter,
+                            weight: .bold
+                        ))
+                        .foregroundStyle(tint)
                 }
+                .frame(width: proxy.size.width, height: proxy.size.height)
+            }
         }
     }
 }

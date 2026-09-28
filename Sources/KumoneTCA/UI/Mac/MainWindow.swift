@@ -181,32 +181,29 @@ public struct MainWindow: View {
     /// in the topmost overlay, so it keeps flying after the page is gone and
     /// lands on the mini artwork, which reappears as the stand-in vanishes.
     private func flyBackToMiniPlayer() {
-        guard let artworkFrame = HeroFrameStore.shared.frame(for: HeroID.nowPlayingArtworkTarget),
-              let miniFrame = HeroFlightDirector.shared.miniHomeFrames[HeroID.nowPlayingArtwork]
-                ?? HeroFrameStore.shared.frame(for: HeroID.nowPlayingArtwork)
-        else { return }
-        let isPlaying = store.player.isPlaying
-        HeroProbe.shared.begin(HeroID.nowPlayingArtwork)
-        HeroProbe.shared.recordSource(
-            id: HeroID.nowPlayingArtwork,
-            frame: artworkFrame,
-            scale: isPlaying ? 1 : 0.95,
-            cornerRadius: 18
-        )
-        HeroProbe.shared.recordTarget(
-            id: HeroID.nowPlayingArtwork,
-            frame: miniFrame,
-            scale: 1,
-            cornerRadius: Theme.Radius.small
-        )
-        HeroFlightDirector.shared.start(
-            id: HeroID.nowPlayingArtwork,
-            // The 128pt artwork is what both ends already have cached, so the
-            // stand-in shows the real cover immediately.
-            content: .artwork(url: store.player.currentTrack?.album.picUrl?.resizedImageURL(128), cornerRadius: Theme.Radius.small),
-            targetFrame: miniFrame,
-            targetScale: 1
-        )
+        for pair in HeroID.nowPlayingPairs {
+            guard let sourceFrame = HeroFrameStore.shared.frame(for: pair.target),
+                  let miniFrame = HeroFlightDirector.shared.miniHomeFrames[pair.source]
+                    ?? HeroFrameStore.shared.frame(for: pair.source)
+            else { continue }
+            let isArtwork = pair.source == HeroID.nowPlayingArtwork
+            let content: HeroContent = isArtwork
+                ? .artwork(url: store.player.currentTrack?.album.picUrl?.resizedImageURL(128), cornerRadius: Theme.Radius.small)
+                : .icon(name: store.player.isPlaying ? "pause.fill" : "play.fill",
+                        tint: .white, background: .accent, diameter: 30, fontSize: 12.5)
+            HeroProbe.shared.begin(pair.source)
+            HeroProbe.shared.recordSource(
+                id: pair.source, frame: sourceFrame,
+                scale: isArtwork && !store.player.isPlaying ? 0.95 : 1,
+                cornerRadius: isArtwork ? 18 : 29
+            )
+            HeroProbe.shared.recordTarget(
+                id: pair.source, frame: miniFrame, scale: 1, cornerRadius: content.cornerRadius
+            )
+            HeroFlightDirector.shared.start(
+                id: pair.source, content: content, targetFrame: miniFrame, targetScale: 1
+            )
+        }
     }
 
     private func openDestination(_ destination: Destination) {

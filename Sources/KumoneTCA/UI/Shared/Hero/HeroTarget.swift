@@ -54,3 +54,34 @@ extension View {
         ))
     }
 }
+
+/// Reusable landing gate for independently armed Now Playing elements.
+private struct NowPlayingHeroTargetModifier: ViewModifier {
+    let id: String
+    let payload: HeroContent
+    let scale: CGFloat
+    let isPresented: Bool
+    @Binding var hasStarted: Bool
+
+    func body(content: Content) -> some View {
+        content.onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { frame in
+            guard isPresented, !hasStarted,
+                  HeroProbe.shared.sourceFrame(for: id) != nil else { return }
+            HeroProbe.shared.recordTarget(id: id, frame: frame, scale: scale, cornerRadius: payload.cornerRadius)
+            HeroFlightDirector.shared.start(id: id, content: payload, targetFrame: frame, targetScale: scale)
+            hasStarted = true
+        }
+    }
+}
+
+extension View {
+    func nowPlayingHeroTarget(
+        id: String, content: HeroContent, scale: CGFloat = 1,
+        isPresented: Bool, hasStarted: Binding<Bool>
+    ) -> some View {
+        modifier(NowPlayingHeroTargetModifier(
+            id: id, payload: content, scale: scale,
+            isPresented: isPresented, hasStarted: hasStarted
+        ))
+    }
+}

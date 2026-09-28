@@ -1,6 +1,7 @@
 import CoreGraphics
 import Foundation
 import Testing
+import SwiftUI
 @testable import KumoneTCA
 
 @Suite("Hero transition measurement")
@@ -402,7 +403,9 @@ struct HeroProbeTests {
             probe.recordLanding(id: second, frame: target)
         }
         director.start(id: first, content: artwork, targetFrame: target, targetScale: 1)
-        director.start(id: second, content: .artwork(url: nil, cornerRadius: 4), targetFrame: target, targetScale: 0.95)
+        let icon = HeroContent.icon(name: "pause.fill", tint: .black.opacity(0.85),
+                                    background: .white, diameter: 58, fontSize: 21)
+        director.start(id: second, content: icon, targetFrame: target, targetScale: 0.95)
         director.start(id: missing, content: artwork, targetFrame: target, targetScale: 1)
         #expect(director.active.count == 2)
         #expect(director.active[missing] == nil)
@@ -413,7 +416,8 @@ struct HeroProbeTests {
         #expect(director.active[first]?.sourceScale == 0.95)
         #expect(director.active[second]?.source == otherSource)
         #expect(director.active[second]?.targetScale == 0.95)
-        #expect(director.active[second]?.cornerRadius == 4)
+        #expect(director.active[second]?.cornerRadius == 29)
+        #expect(director.active[second]?.content == icon)
         #expect(director.miniHomeFrames[first] == source)
         #expect(director.miniHomeFrames[second] == otherSource)
         director.end(id: first)
