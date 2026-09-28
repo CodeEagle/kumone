@@ -19,7 +19,7 @@ struct HeroFlight: View {
     let containerFrame: CGRect
 
     @State private var frame: CGRect
-    @State private var scale: CGFloat = 1
+    @State private var scale: CGFloat
     @State private var measuredFrame: CGRect?
     @State private var recordedInitialFrame = false
     @State private var finished = false
@@ -28,6 +28,7 @@ struct HeroFlight: View {
         self.flight = flight
         self.containerFrame = containerFrame
         _frame = State(initialValue: flight.source)
+        _scale = State(initialValue: flight.sourceScale)
     }
 
     var body: some View {

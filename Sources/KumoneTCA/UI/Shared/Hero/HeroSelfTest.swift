@@ -56,12 +56,16 @@ public enum HeroSelfTest {
 
         // The flight springs on the next layout pass; wait for it to settle and
         // for the probe to archive its verdict.
-        let verdict = await waitForVerdict(for: heroID, timeout: 12)
+        let presentVerdict = await waitForVerdict(for: heroID, timeout: 12)
 
-        // Leave the page so the round trip closes cleanly.
+        // Leave the page so the round trip closes cleanly — the dismiss flight
+        // flies the cover back to the mini player, and that landing is judged
+        // too, so a transition that only works in one direction fails here.
+        let judgedBefore = HeroProbe.shared.records.filter { $0.verdict != nil }.count
         appStore.send(.dismissNowPlaying)
+        let returnVerdict = await waitForVerdict(for: heroID, timeout: 12, skipping: judgedBefore)
 
-        return verdict.map { !$0.isFailure } ?? false
+        return [presentVerdict, returnVerdict].allSatisfy { $0.map { !$0.isFailure } ?? false }
     }
 
     // MARK: - Polling
@@ -82,21 +86,25 @@ public enum HeroSelfTest {
 
     /// Waits up to `timeout` seconds for the newest judged record with this id,
     /// searching `records` from the back so a stale record from an earlier run
-    /// never stands in for this one.
+    /// never stands in for this one. `skipping` ignores the first N judged
+    /// records, so a caller that already saw the present flight's verdict can
+    /// wait for the dismiss flight's separately.
     @MainActor
-    private static func waitForVerdict(for id: String, timeout: TimeInterval) async -> HeroProbe.Verdict? {
+    private static func waitForVerdict(for id: String, timeout: TimeInterval, skipping: Int = 0) async -> HeroProbe.Verdict? {
         let deadline = Date().addingTimeInterval(timeout)
         while true {
-            if let verdict = judgedRecord(for: id)?.verdict { return verdict }
+            if let verdict = judgedRecord(for: id, skipping: skipping)?.verdict { return verdict }
             if Task.isCancelled { return nil }
-            guard Date() < deadline else { return judgedRecord(for: id)?.verdict }
+            guard Date() < deadline else { return judgedRecord(for: id, skipping: skipping)?.verdict }
             try? await Task.sleep(nanoseconds: 50_000_000)
         }
     }
 
     @MainActor
-    private static func judgedRecord(for id: String) -> HeroProbe.Record? {
-        HeroProbe.shared.records.last { $0.id == id && $0.verdict != nil }
+    private static func judgedRecord(for id: String, skipping: Int = 0) -> HeroProbe.Record? {
+        let judged = HeroProbe.shared.records.filter { $0.id == id && $0.verdict != nil }
+        guard judged.count > skipping else { return nil }
+        return judged.last
     }
 
     /// Describes the latest verdict for the now-playing artwork, for the summary

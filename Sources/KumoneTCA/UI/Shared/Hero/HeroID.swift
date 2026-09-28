@@ -4,8 +4,11 @@ import Foundation
 /// anchor and the target anchor of a single transition, which is how the
 /// flight pairs them up.
 enum HeroID {
-    /// PlayerBar artwork -> NowPlaying artwork.
+    /// PlayerBar artwork -> NowPlaying artwork. Two ids: the mini artwork and
+    /// the page artwork each report to the frame store under their own key, so
+    /// a dismiss can read both ends even after the page is gone.
     static let nowPlayingArtwork = "now-playing-artwork"
+    static let nowPlayingArtworkTarget = "now-playing-artwork-target"
 
     /// Card cover -> detail-page header. One id per item so the source card and
     /// the destination header pair up; the id is the item's own id.

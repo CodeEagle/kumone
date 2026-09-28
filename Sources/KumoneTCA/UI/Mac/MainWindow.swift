@@ -114,6 +114,7 @@ public struct MainWindow: View {
             } else {
                 columnVisibility = visibilityBeforeNowPlaying ?? .all
                 visibilityBeforeNowPlaying = nil
+                flyBackToMiniPlayer()
             }
         }
         .onChange(of: store.player.currentTrack) { _, track in
@@ -172,6 +173,39 @@ public struct MainWindow: View {
         } destination: { pathStore in
             Self.destinationView(pathStore, appStore: store)
         }
+    }
+
+    /// Flies the Now Playing artwork back to the mini player on dismiss, so the
+    /// page does not merely fade out. Both frames are read from the frame store
+    /// under their own ids, which survive until the dismiss; the stand-in lives
+    /// in the topmost overlay, so it keeps flying after the page is gone and
+    /// lands on the mini artwork, which reappears as the stand-in vanishes.
+    private func flyBackToMiniPlayer() {
+        guard let artworkFrame = HeroFrameStore.shared.frame(for: HeroID.nowPlayingArtworkTarget),
+              let miniFrame = HeroFlightDirector.shared.miniHomeFrame
+                ?? HeroFrameStore.shared.frame(for: HeroID.nowPlayingArtwork)
+        else { return }
+        let isPlaying = store.player.isPlaying
+        HeroProbe.shared.begin(HeroID.nowPlayingArtwork)
+        HeroProbe.shared.recordSource(
+            frame: artworkFrame,
+            scale: isPlaying ? 1 : 0.95,
+            cornerRadius: 18
+        )
+        HeroProbe.shared.recordTarget(
+            frame: miniFrame,
+            scale: 1,
+            cornerRadius: Theme.Radius.small
+        )
+        HeroFlightDirector.shared.start(
+            id: HeroID.nowPlayingArtwork,
+            // The 128pt artwork is what both ends already have cached, so the
+            // stand-in shows the real cover immediately.
+            artworkURL: store.player.currentTrack?.album.picUrl?.resizedImageURL(128),
+            cornerRadius: Theme.Radius.small,
+            targetFrame: miniFrame,
+            targetScale: 1
+        )
     }
 
     private func openDestination(_ destination: Destination) {

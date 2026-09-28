@@ -18,6 +18,9 @@ final class HeroFlightDirector: ObservableObject {
         /// The resting scale the target view applies, which the flight has to
         /// reproduce so the hand-off is invisible.
         let targetScale: CGFloat
+        /// The resting scale the source view applies, so the stand-in starts at
+        /// the source's visual size and ends at the target's.
+        let sourceScale: CGFloat
         let cornerRadius: CGFloat
 
         static func == (lhs: Flight, rhs: Flight) -> Bool {
@@ -26,11 +29,18 @@ final class HeroFlightDirector: ObservableObject {
                 && lhs.source.approximately(rhs.source)
                 && lhs.target.approximately(rhs.target)
                 && lhs.targetScale == rhs.targetScale
+                && lhs.sourceScale == rhs.sourceScale
                 && lhs.cornerRadius == rhs.cornerRadius
         }
     }
 
     @Published var active: Flight?
+
+    /// The frame the mini artwork occupied when the present flight launched —
+    /// its home. The sidebar hides while the Now Playing page is up and the
+    /// mini artwork drifts left, so the store's live value at dismiss time is
+    /// the wrong target; the return flight flies back to this snapshot.
+    var miniHomeFrame: CGRect?
 
     /// The source geometry recorded by the trigger (`HeroProbe.recordSource`),
     /// read back here rather than from `HeroFrameStore`: source and target
@@ -51,12 +61,14 @@ final class HeroFlightDirector: ObservableObject {
         targetScale: CGFloat
     ) {
         guard let source = recordedSourceFrame else { return }
+        miniHomeFrame = source
         active = Flight(
             id: id,
             artworkURL: artworkURL,
             source: source,
             target: targetFrame,
             targetScale: targetScale,
+            sourceScale: HeroProbe.shared.currentSourceScale,
             cornerRadius: cornerRadius
         )
     }

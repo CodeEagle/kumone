@@ -40,6 +40,7 @@ struct NowPlayingView: View {
     #if os(macOS)
     @State private var showLyricsColumn = true
     @State private var hasStartedHeroFlight = false
+    @ObservedObject private var heroFlight = HeroFlightDirector.shared
     @State private var isZenMode = false
     @State private var lyricsColumnWasVisible = false
     @State private var isWindowHovered = true
@@ -164,7 +165,6 @@ struct NowPlayingView: View {
         }
         .onDisappear {
             hasStartedHeroFlight = false
-            HeroFlightDirector.shared.end()
             zenHoverTask?.cancel()
             zenHoverTask = nil
             lyricsColumnHold = false
@@ -204,7 +204,6 @@ struct NowPlayingView: View {
         .onChange(of: appStore?.isNowPlayingPresented) { _, isPresented in
             if isPresented != true {
                 hasStartedHeroFlight = false
-                HeroFlightDirector.shared.end()
             }
         }
         #endif
@@ -805,7 +804,7 @@ struct NowPlayingView: View {
             }
         }
         #if os(macOS)
-        .heroAnchor(HeroID.nowPlayingArtwork, scale: player.isPlaying ? 1 : 0.95)
+        .heroAnchor(HeroID.nowPlayingArtworkTarget, scale: player.isPlaying ? 1 : 0.95)
         .onGeometryChange(for: CGRect.self) { proxy in
             proxy.frame(in: .global)
         } action: { targetFrame in
@@ -848,6 +847,9 @@ struct NowPlayingView: View {
         }
         .frame(width: size, height: size)
         .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+        // The hero stand-in owns the artwork for the whole flight, in both
+        // directions; the real one reappears the instant the stand-in lands.
+        .opacity(heroFlight.active?.id == HeroID.nowPlayingArtwork ? 0 : 1)
         .shadow(color: .black.opacity(0.45), radius: 36, y: 18)
         .scaleEffect(player.isPlaying ? 1 : 0.95)
         .animation(AppAnimation.bouncy, value: player.isPlaying)
