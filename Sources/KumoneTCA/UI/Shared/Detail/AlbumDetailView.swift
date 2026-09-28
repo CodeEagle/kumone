@@ -7,7 +7,10 @@ struct AlbumDetailView: View {
     let appStore: StoreOf<AppFeature>
 
     @State private var showFullDescription = false
+    @State private var hasStartedHeroFlight = false
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+
+    private var heroID: String { HeroID.album(store.albumID) }
 
     private var account: AccountFeature.State { appStore.account }
 
@@ -57,12 +60,14 @@ struct AlbumDetailView: View {
                                 Spacer().frame(width: (isCompact ? 16 : Theme.Layout.contentInset) - 16)
                                 ForEach(store.otherAlbums) { item in
                                     Button {
+                                        HeroTrigger.arm(HeroID.album(item.id))
                                         appStore.send(.openDestination(.album(item.id)))
                                     } label: {
                                         CoverCardBody(
                                             coverURL: item.picUrl?.resizedImageURL(384),
                                             title: item.name,
-                                            subtitle: Formatters.date(fromMS: item.publishTime)
+                                            subtitle: Formatters.date(fromMS: item.publishTime),
+                                            heroID: HeroID.album(item.id)
                                         )
                                     }
                                     .buttonStyle(.interactiveCard)
@@ -91,6 +96,10 @@ struct AlbumDetailView: View {
         .task(id: store.albumID) {
             store.send(.onAppear)
         }
+        .onDisappear {
+            hasStartedHeroFlight = false
+            HeroFlightDirector.shared.end()
+        }
     }
 
     // MARK: - Compact Header
@@ -102,6 +111,13 @@ struct AlbumDetailView: View {
                     .frame(width: 120, height: 120)
                     .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.standard, style: .continuous))
                     .shadow(color: .black.opacity(0.2), radius: 10, y: 4)
+                    .heroAnchor(heroID)
+                    .heroTarget(
+                        id: heroID,
+                        artworkURL: album.picUrl?.resizedImageURL(512),
+                        cornerRadius: Theme.Radius.standard,
+                        hasStarted: $hasStartedHeroFlight
+                    )
 
                 VStack(alignment: .leading, spacing: 6) {
                     Text(album.name)
@@ -203,6 +219,13 @@ struct AlbumDetailView: View {
                 .frame(width: 200, height: 200)
                 .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.large, style: .continuous))
                 .shadow(color: .black.opacity(0.25), radius: 16, y: 8)
+                .heroAnchor(heroID)
+                .heroTarget(
+                    id: heroID,
+                    artworkURL: album.picUrl?.resizedImageURL(512),
+                    cornerRadius: Theme.Radius.large,
+                    hasStarted: $hasStartedHeroFlight
+                )
 
             VStack(alignment: .leading, spacing: 8) {
                 Text(album.subType?.isEmpty == false ? album.subType! : String(localized: "专辑"))

@@ -11,6 +11,10 @@ struct PlaylistDetailView: View {
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @State private var showFullDescription = false
 
+    @State private var hasStartedHeroFlight = false
+
+    private var heroID: String { HeroID.playlist(store.playlistID) }
+
     private var account: AccountFeature.State { appStore.account }
 
     private var isOwnPlaylist: Bool {
@@ -86,6 +90,10 @@ struct PlaylistDetailView: View {
         .task(id: store.playlistID) {
             store.send(.onAppear)
         }
+        .onDisappear {
+            hasStartedHeroFlight = false
+            HeroFlightDirector.shared.end()
+        }
     }
 
     // MARK: - Compact (Mobile) Header
@@ -97,6 +105,13 @@ struct PlaylistDetailView: View {
                     .frame(width: 120, height: 120)
                     .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.standard, style: .continuous))
                     .shadow(color: .black.opacity(0.2), radius: 10, y: 4)
+                    .heroAnchor(heroID)
+                    .heroTarget(
+                        id: heroID,
+                        artworkURL: detail.coverImgUrl?.resizedImageURL(512),
+                        cornerRadius: Theme.Radius.standard,
+                        hasStarted: $hasStartedHeroFlight
+                    )
 
                 VStack(alignment: .leading, spacing: 6) {
                     Text(isLikedList ? String(localized: "我喜欢的音乐") : detail.name)
@@ -213,6 +228,13 @@ struct PlaylistDetailView: View {
                 .frame(width: 200, height: 200)
                 .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.large, style: .continuous))
                 .shadow(color: .black.opacity(0.25), radius: 16, y: 8)
+                .heroAnchor(heroID)
+                .heroTarget(
+                    id: heroID,
+                    artworkURL: detail.coverImgUrl?.resizedImageURL(512),
+                    cornerRadius: Theme.Radius.large,
+                    hasStarted: $hasStartedHeroFlight
+                )
 
             VStack(alignment: .leading, spacing: 8) {
                 Text(isLikedList ? String(localized: "我喜欢的音乐") : String(localized: "歌单"))

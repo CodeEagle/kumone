@@ -8,6 +8,10 @@ struct ArtistDetailView: View {
 
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 
+    @State private var hasStartedHeroFlight = false
+
+    private var heroID: String { HeroID.artist(store.artistID) }
+
     private var account: AccountFeature.State { appStore.account }
 
     private var isCompact: Bool {
@@ -128,6 +132,10 @@ struct ArtistDetailView: View {
         .task(id: store.artistID) {
             store.send(.onAppear)
         }
+        .onDisappear {
+            hasStartedHeroFlight = false
+            HeroFlightDirector.shared.end()
+        }
     }
 
     // MARK: - Compact Header
@@ -139,6 +147,13 @@ struct ArtistDetailView: View {
                     .frame(width: 100, height: 100)
                     .clipShape(Circle())
                     .shadow(color: .black.opacity(0.2), radius: 10, y: 4)
+                    .heroAnchor(heroID)
+                    .heroTarget(
+                        id: heroID,
+                        artworkURL: artist.picUrl?.resizedImageURL(512),
+                        cornerRadius: 50,
+                        hasStarted: $hasStartedHeroFlight
+                    )
 
                 VStack(alignment: .leading, spacing: 5) {
                     Text(artist.name)
@@ -198,6 +213,13 @@ struct ArtistDetailView: View {
                 .frame(width: 180, height: 180)
                 .clipShape(Circle())
                 .shadow(color: .black.opacity(0.25), radius: 16, y: 8)
+                .heroAnchor(heroID)
+                .heroTarget(
+                    id: heroID,
+                    artworkURL: artist.picUrl?.resizedImageURL(512),
+                    cornerRadius: 90,
+                    hasStarted: $hasStartedHeroFlight
+                )
 
             VStack(alignment: .leading, spacing: 8) {
                 Text("歌手")
@@ -252,12 +274,14 @@ struct ArtistDetailView: View {
 
     private func albumCard(_ album: AlbumSummary) -> some View {
         Button {
+            HeroTrigger.arm(HeroID.album(album.id))
             appStore.send(.openDestination(.album(album.id)))
         } label: {
             CoverCardBody(
                 coverURL: album.picUrl?.resizedImageURL(384),
                 title: album.name,
-                subtitle: album.publishYear
+                subtitle: album.publishYear,
+                heroID: HeroID.album(album.id)
             )
         }
         .buttonStyle(.interactiveCard)

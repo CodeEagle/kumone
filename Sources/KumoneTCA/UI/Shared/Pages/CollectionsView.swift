@@ -41,12 +41,14 @@ struct CollectionsView: View {
                         CardGrid {
                             ForEach(account.likedAlbums) { album in
                                 Button {
+                                    HeroTrigger.arm(HeroID.album(album.id))
                                     appStore.send(.openDestination(.album(album.id)))
                                 } label: {
                                     CoverCardBody(
                                         coverURL: album.picUrl?.resizedImageURL(384),
                                         title: album.name,
-                                        subtitle: album.artistName
+                                        subtitle: album.artistName,
+                                        heroID: HeroID.album(album.id)
                                     )
                                 }
                                 .buttonStyle(.interactiveCard)

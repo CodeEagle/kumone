@@ -65,12 +65,14 @@ struct HomeView: View {
                 Shelf(title: "雷达歌单", rowHeight: Theme.Layout.coverShelfHeight) {
                     ForEach(store.radarPlaylists) { radar in
                         Button {
+                            HeroTrigger.arm(HeroID.playlist(radar.id))
                             appStore.send(.openDestination(.radarPlaylist(radar.id)))
                         } label: {
                             CoverCardBody(
                                 coverURL: radar.coverURL?.resizedImageURL(384),
                                 title: radar.title,
-                                subtitle: radar.subtitle
+                                subtitle: radar.subtitle,
+                                heroID: HeroID.playlist(radar.id)
                             ) {
                                 store.send(.playPlaylist(radar.id))
                             }
@@ -84,6 +86,7 @@ struct HomeView: View {
                 Shelf(title: "排行榜", seeAll: nil, rowHeight: Theme.Layout.coverShelfHeight) {
                     ForEach(store.toplists) { toplist in
                         Button {
+                            HeroTrigger.arm(HeroID.playlist(toplist.id))
                             appStore.send(.openDestination(.playlist(toplist.id)))
                         } label: {
                             toplistCard(toplist)
@@ -172,13 +175,15 @@ struct HomeView: View {
 
     private func playlistCard(_ playlist: PlaylistSummary) -> some View {
         Button {
+            HeroTrigger.arm(HeroID.playlist(playlist.id))
             appStore.send(.openDestination(.playlist(playlist.id)))
         } label: {
             CoverCardBody(
                 coverURL: playlist.coverURL?.resizedImageURL(384),
                 title: playlist.name,
                 subtitle: playlist.copywriter,
-                playCount: playlist.playCount
+                playCount: playlist.playCount,
+                heroID: HeroID.playlist(playlist.id)
             ) {
                 store.send(.playPlaylist(playlist.id))
             }
@@ -188,12 +193,14 @@ struct HomeView: View {
 
     private func albumCard(_ album: AlbumSummary) -> some View {
         Button {
+            HeroTrigger.arm(HeroID.album(album.id))
             appStore.send(.openDestination(.album(album.id)))
         } label: {
             CoverCardBody(
                 coverURL: album.picUrl?.resizedImageURL(384),
                 title: album.name,
-                subtitle: album.artistName
+                subtitle: album.artistName,
+                heroID: HeroID.album(album.id)
             ) {
                 store.send(.playAlbum(album))
             }
@@ -203,12 +210,14 @@ struct HomeView: View {
 
     private func artistCard(_ artist: ArtistSummary) -> some View {
         Button {
+            HeroTrigger.arm(HeroID.artist(artist.id))
             appStore.send(.openDestination(.artist(artist.id)))
         } label: {
             VStack(spacing: 10) {
                 CachedAsyncImage(url: artist.picUrl?.resizedImageURL(256))
                     .frame(width: 128, height: 128)
                     .clipShape(Circle())
+                    .heroAnchor(HeroID.artist(artist.id))
                     .overlay(Circle().strokeBorder(.primary.opacity(0.08), lineWidth: 0.5))
                 Text(artist.name)
                     .font(.system(size: 13, weight: .medium))
@@ -226,6 +235,7 @@ struct HomeView: View {
                 CachedAsyncImage(url: toplist.coverImgUrl?.resizedImageURL(384))
                     .frame(width: Theme.Layout.cardSize, height: Theme.Layout.cardSize)
                     .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.standard, style: .continuous))
+                    .heroAnchor(HeroID.playlist(toplist.id))
                 LinearGradient(colors: [.clear, .black.opacity(0.55)], startPoint: .center, endPoint: .bottom)
                     .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.standard, style: .continuous))
                 Text(toplist.updateFrequency ?? "")
@@ -309,6 +319,7 @@ struct CoverCardBody: View {
     var subtitle: String?
     var playCount: Int = 0
     var size: CGFloat = Theme.Layout.cardSize
+    var heroID: String?
     var onPlay: (() -> Void)?
 
     @State private var isHovering = false
@@ -316,7 +327,7 @@ struct CoverCardBody: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            artwork
+            anchoredArtwork
                 .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.standard, style: .continuous))
                 .overlay(
                     RoundedRectangle(cornerRadius: Theme.Radius.standard, style: .continuous)
@@ -354,6 +365,15 @@ struct CoverCardBody: View {
         #if os(macOS)
         .onHover { isHovering = $0 }
         #endif
+    }
+
+    @ViewBuilder
+    private var anchoredArtwork: some View {
+        if let heroID {
+            artwork.heroAnchor(heroID)
+        } else {
+            artwork
+        }
     }
 
     @ViewBuilder
