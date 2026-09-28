@@ -133,7 +133,11 @@ public struct MainWindow: View {
                     // Resolve the slide at the page boundary, including artwork
                     // inserted asynchronously while the transition is running.
                     .geometryGroup()
-                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                    // The hero flight owns the spatial animation (the artwork
+                    // flying from the PlayerBar to the header); a slide-in
+                    // here would race it and the hero gate would lock onto the
+                    // off-screen slide start as the target.
+                    .transition(.opacity)
                 #else
                 NowPlayingView(
                     onOpenDestination: openDestination

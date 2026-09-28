@@ -8,26 +8,30 @@ import SwiftUI
 struct HeroFlight: View {
     let flight: HeroFlightDirector.Flight
 
-    /// The global origin of the overlay that hosts this view. `.position` takes
-    /// coordinates in that overlay's local space, while the source and target
-    /// frames are measured in `.global`, so the flight translates between them.
-    let containerOrigin: CGPoint
+    /// The frame of the overlay that hosts this view, in `.global`. `.position`
+    /// takes coordinates in that overlay's local space, while the source and
+    /// target frames are measured in `.global`, so the flight translates between
+    /// them. It is also the on-screen area the user can see, so it is handed to
+    /// the probe for the visibility check.
+    let containerFrame: CGRect
 
     @State private var frame: CGRect
     @State private var scale: CGFloat = 1
     @State private var measuredFrame: CGRect?
     @State private var finished = false
 
-    init(flight: HeroFlightDirector.Flight, containerOrigin: CGPoint) {
+    init(flight: HeroFlightDirector.Flight, containerFrame: CGRect) {
         self.flight = flight
-        self.containerOrigin = containerOrigin
+        self.containerFrame = containerFrame
         _frame = State(initialValue: flight.source)
     }
 
     var body: some View {
         CachedAsyncImage(url: flight.artworkURL, animated: false) {
             RoundedRectangle(cornerRadius: flight.cornerRadius, style: .continuous)
-                .fill(.secondary.opacity(0.15))
+                // Opaque: the stand-in has to be visible while the artwork
+                // loads, or the flight is invisible against the page.
+                .fill(.secondary)
         }
         // The frame interpolates size as well as position — a 38pt mini
         // artwork grows into the full Now Playing cover — so the landing
@@ -47,10 +51,11 @@ struct HeroFlight: View {
             measuredFrame = global
         }
         .position(
-            x: frame.midX - containerOrigin.x,
-            y: frame.midY - containerOrigin.y
+            x: frame.midX - containerFrame.origin.x,
+            y: frame.midY - containerFrame.origin.y
         )
         .onAppear {
+            HeroProbe.shared.recordViewport(containerFrame)
             withAnimation(AppAnimation.spring) {
                 frame = flight.target
                 scale = flight.targetScale
@@ -88,7 +93,7 @@ private struct HeroFlightHost: View {
             if let flight = director.active {
                 HeroFlight(
                     flight: flight,
-                    containerOrigin: proxy.frame(in: .global).origin
+                    containerFrame: proxy.frame(in: .global)
                 )
             }
         }

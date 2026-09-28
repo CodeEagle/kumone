@@ -817,7 +817,10 @@ struct NowPlayingView: View {
             HeroProbe.shared.recordTarget(frame: targetFrame, scale: targetScale)
             HeroFlightDirector.shared.start(
                 id: HeroID.nowPlayingArtwork,
-                artworkURL: player.currentTrack?.album.picUrl?.resizedImageURL(512),
+                // The 128pt artwork is what the PlayerBar already has cached,
+                // so the stand-in shows the real cover immediately instead of
+                // a placeholder while the 512pt version loads.
+                artworkURL: player.currentTrack?.album.picUrl?.resizedImageURL(128),
                 cornerRadius: 18,
                 targetFrame: targetFrame,
                 targetScale: targetScale

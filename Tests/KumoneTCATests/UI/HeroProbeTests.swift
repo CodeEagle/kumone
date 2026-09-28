@@ -9,6 +9,7 @@ struct HeroProbeTests {
         source: CGRect? = CGRect(x: 20, y: 700, width: 38, height: 38),
         target: CGRect? = CGRect(x: 438, y: 300, width: 320, height: 320),
         landed: CGRect? = CGRect(x: 438, y: 300, width: 320, height: 320),
+        viewport: CGRect? = nil,
         sourceScale: CGFloat = 1,
         targetScale: CGFloat = 0.95,
         landedScale: CGFloat = 0.95,
@@ -19,6 +20,7 @@ struct HeroProbeTests {
             sourceFrame: source,
             targetFrame: target,
             landedFrame: landed,
+            viewportFrame: viewport,
             sourceScale: sourceScale,
             targetScale: targetScale,
             landedScale: landedScale,
@@ -72,6 +74,43 @@ struct HeroProbeTests {
         #expect(HeroProbe.judge(record: record(landed: nil)).isFailure)
     }
 
+    @Test func targetMeasuredOffScreenFails() {
+        // The Now Playing slide-in regression: the gate locked the target on
+        // the transition's first frame, so the target (and the stand-in that
+        // matched it exactly) sat below the window. Geometry alone scored it a
+        // pass; the viewport check has to catch it.
+        let r = record(
+            target: CGRect(x: 438, y: 900, width: 320, height: 320),
+            landed: CGRect(x: 438, y: 900, width: 320, height: 320),
+            viewport: CGRect(x: 0, y: 0, width: 800, height: 750)
+        )
+        let verdict = HeroProbe.judge(record: r)
+        #expect(verdict.isFailure)
+        #expect(verdict.failureReason?.contains("target off-screen") ?? false)
+    }
+
+    @Test func sourceOffScreenFails() {
+        let r = record(
+            source: CGRect(x: 20, y: 900, width: 38, height: 38),
+            viewport: CGRect(x: 0, y: 0, width: 800, height: 750)
+        )
+        let verdict = HeroProbe.judge(record: r)
+        #expect(verdict.isFailure)
+        #expect(verdict.failureReason?.contains("source off-screen") ?? false)
+    }
+
+    @Test func targetFlushWithViewportEdgePasses() {
+        // A header pinned to the top of the hosting surface is visible, so the
+        // check expands the viewport by its margin instead of failing a
+        // legitimate full-bleed target.
+        let r = record(
+            target: CGRect(x: 0, y: 0, width: 800, height: 320),
+            landed: CGRect(x: 0, y: 0, width: 800, height: 320),
+            viewport: CGRect(x: 0, y: 0, width: 800, height: 750)
+        )
+        #expect(HeroProbe.judge(record: r) == .pass)
+    }
+
     @Test func customToleranceIsHonoured() {
         // A 3pt drift fails under the default 1pt tolerance but passes when the
         // test widens it, which is how a flaky settle gets triaged.
@@ -86,6 +125,7 @@ struct HeroProbeTests {
         let line = HeroProbe.format(record(verdict: .pass))
         #expect(line.hasPrefix("HERO PASS test src="))
         #expect(line.contains("landed=(438.0,300.0,320.0,320.0)"))
+        #expect(line.contains("viewport=—"))
         #expect(line.contains("scale src=1.000 tgt=0.950 landed=0.950"))
     }
 
@@ -111,11 +151,29 @@ struct HeroProbeTests {
         probe.begin(id)
         probe.recordSource(frame: CGRect(x: 20, y: 700, width: 38, height: 38), scale: 1)
         probe.recordTarget(frame: CGRect(x: 438, y: 300, width: 320, height: 320), scale: 0.95)
+        probe.recordViewport(CGRect(x: 0, y: 0, width: 800, height: 750))
         let verdict = probe.recordLanding(frame: CGRect(x: 438, y: 300, width: 320, height: 320), scale: 0.95)
 
         #expect(verdict == .pass)
         let archived = probe.records.last { $0.id == id }
         #expect(archived?.verdict == .pass)
         #expect(archived?.sourceFrame == CGRect(x: 20, y: 700, width: 38, height: 38))
+        #expect(archived?.viewportFrame == CGRect(x: 0, y: 0, width: 800, height: 750))
+    }
+
+    @MainActor
+    @Test func recordLandingWithoutAViewportFails() {
+        // A missing viewport means the visibility check was skipped, which is
+        // how an off-screen flight used to pass. The runtime path must refuse
+        // to pass a transition it could not see.
+        let probe = HeroProbe.shared
+        let id = "unit-test-\(UUID().uuidString)"
+        probe.begin(id)
+        probe.recordSource(frame: CGRect(x: 20, y: 700, width: 38, height: 38), scale: 1)
+        probe.recordTarget(frame: CGRect(x: 438, y: 300, width: 320, height: 320), scale: 0.95)
+        let verdict = probe.recordLanding(frame: CGRect(x: 438, y: 300, width: 320, height: 320), scale: 0.95)
+
+        #expect(verdict.isFailure)
+        #expect(verdict.failureReason?.contains("viewport not recorded") ?? false)
     }
 }

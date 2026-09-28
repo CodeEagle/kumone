@@ -26,6 +26,12 @@ final class HeroProbe: ObservableObject {
 
     static let tolerance = Tolerance()
 
+    /// A frame may sit flush against the edge of the hosting surface (a header
+    /// pinned to the top, a mini player to the bottom) and still be visible, so
+    /// the visibility check expands the viewport by this much before it asks
+    /// whether both ends of the flight are on screen.
+    nonisolated static let viewportMargin: CGFloat = 2
+
     /// One transition's worth of measurements, in the `.global` coordinate
     /// space (window coordinates, shared by the source, the flying stand-in
     /// and the target on every platform this app ships).
@@ -34,6 +40,9 @@ final class HeroProbe: ObservableObject {
         var sourceFrame: CGRect?
         var targetFrame: CGRect?
         var landedFrame: CGRect?
+        /// The frame of the surface that hosts the flight, i.e. the on-screen
+        /// area the user can actually see. `nil` skips the visibility check.
+        var viewportFrame: CGRect?
         var sourceScale: CGFloat = 1
         var targetScale: CGFloat = 1
         var landedScale: CGFloat = 1
@@ -94,6 +103,13 @@ final class HeroProbe: ObservableObject {
         current.targetScale = scale
     }
 
+    /// Records the frame of the surface hosting the flight — the area the user
+    /// can see — so the judgement can reject a transition whose target was
+    /// measured off-screen.
+    func recordViewport(_ frame: CGRect) {
+        current.viewportFrame = frame
+    }
+
     /// Called when the flying stand-in settles. Judges it against the target
     /// geometry, archives the record, and writes the verdict to the system log
     /// and the probe log file. Returns the verdict for in-app assertions.
@@ -101,7 +117,13 @@ final class HeroProbe: ObservableObject {
     func recordLanding(frame: CGRect, scale: CGFloat = 1) -> Verdict {
         current.landedFrame = frame
         current.landedScale = scale
-        let verdict = Self.judge(record: current, tolerance: Self.tolerance)
+        var verdict = Self.judge(record: current, tolerance: Self.tolerance)
+        // Fail closed at runtime: a flight whose viewport was never recorded
+        // skips the visibility check, and a skipped check is the gap that let
+        // an off-screen transition pass. Only a recorded viewport may pass.
+        if current.viewportFrame == nil, !verdict.isFailure {
+            verdict = .fail("viewport not recorded: visibility unverified")
+        }
         current.verdict = verdict
         records.append(current)
         let line = Self.format(current)
@@ -118,6 +140,24 @@ final class HeroProbe: ObservableObject {
                 "missing geometry: target=\(frameDescription(record.targetFrame)) "
                     + "landed=\(frameDescription(record.landedFrame))"
             )
+        }
+        // A flight the user cannot see is not a hero transition. The Now Playing
+        // slide-in regression locked the target on the transition's first frame,
+        // measured the off-screen slide start, and the stand-in flew below the
+        // window — where it still matched its target exactly and passed every
+        // other check. Both ends have to be on screen for the transition to count.
+        if let viewport = record.viewportFrame {
+            let visible = viewport.insetBy(dx: -Self.viewportMargin, dy: -Self.viewportMargin)
+            guard visible.contains(target) else {
+                return .fail(
+                    "target off-screen: \(frameDescription(target)) outside viewport \(frameDescription(viewport))"
+                )
+            }
+            if let source = record.sourceFrame, !visible.contains(source) {
+                return .fail(
+                    "source off-screen: \(frameDescription(source)) outside viewport \(frameDescription(viewport))"
+                )
+            }
         }
         let dx = abs(landed.origin.x - target.origin.x)
         let dy = abs(landed.origin.y - target.origin.y)
@@ -140,7 +180,7 @@ final class HeroProbe: ObservableObject {
 
     // MARK: - Formatting
 
-    /// `HERO PASS nowPlayingArtwork src=(255,718,38,38) tgt=(438,300,320,320) landed=(438,300,320,320) scale=0.95`
+    /// `HERO PASS nowPlayingArtwork src=(255,718,38,38) tgt=(438,300,320,320) landed=(438,300,320,320) viewport=(0,0,1289,703) scale=0.95`
     nonisolated static func format(_ record: Record) -> String {
         let verdictText: String
         switch record.verdict {
@@ -152,6 +192,7 @@ final class HeroProbe: ObservableObject {
             + "src=\(frameDescription(record.sourceFrame)) "
             + "tgt=\(frameDescription(record.targetFrame)) "
             + "landed=\(frameDescription(record.landedFrame)) "
+            + "viewport=\(frameDescription(record.viewportFrame)) "
             + "scale src=\(String(format: "%.3f", record.sourceScale)) "
             + "tgt=\(String(format: "%.3f", record.targetScale)) "
             + "landed=\(String(format: "%.3f", record.landedScale))"
