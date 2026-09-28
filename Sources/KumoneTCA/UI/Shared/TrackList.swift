@@ -95,6 +95,7 @@ struct TrackRow: View {
             if style == .full && !isCompact {
                 if track.album.id > 0, !track.album.name.isEmpty {
                     Button {
+                        HeroTrigger.arm(HeroID.album(track.album.id))
                         openDestination(.album(track.album.id))
                     } label: {
                         Text(track.album.name)
@@ -164,9 +165,11 @@ struct TrackRow: View {
     private var artwork: some View {
         if track.album.id > 0, !track.album.name.isEmpty {
             Button {
+                HeroTrigger.arm(HeroID.album(track.album.id))
                 openDestination(.album(track.album.id))
             } label: {
                 artworkImage
+                    .heroAnchor(HeroID.album(track.album.id))
             }
             .buttonStyle(.plain)
             .accessibilityLabel("打开专辑：\(track.album.name)")
@@ -215,9 +218,11 @@ struct TrackRow: View {
                         Text(" / ")
                     }
                     Button {
+                        HeroTrigger.arm(HeroID.artist(artist.id))
                         openDestination(.artist(artist.id))
                     } label: {
                         Text(artist.name)
+                            .heroAnchor(HeroID.artist(artist.id))
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel("打开歌手：\(artist.name)")
@@ -326,11 +331,13 @@ struct TrackRow: View {
         Divider()
         if track.album.id > 0 {
             Button("查看专辑") {
+                HeroTrigger.arm(HeroID.album(track.album.id))
                 openDestination(.album(track.album.id))
             }
         }
         ForEach(track.artists.filter { $0.id > 0 && !$0.name.isEmpty }.prefix(3)) { artist in
             Button("查看歌手：\(artist.name)") {
+                HeroTrigger.arm(HeroID.artist(artist.id))
                 openDestination(.artist(artist.id))
             }
         }
