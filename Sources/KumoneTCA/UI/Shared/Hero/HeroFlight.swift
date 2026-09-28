@@ -145,7 +145,7 @@ private struct HeroFlightHost: View {
 
     var body: some View {
         GeometryReader { proxy in
-            ForEach(director.active.values.sorted { $0.id < $1.id }) { flight in
+            ForEach(director.active.values.sorted { $0.id < $1.id }, id: \.nonce) { flight in
                 HeroFlight(
                     flight: flight,
                     containerFrame: proxy.frame(in: .global)

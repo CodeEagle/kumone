@@ -21,6 +21,14 @@ final class HeroFlightDirector: ObservableObject {
         /// The resting scale the source view applies, so the stand-in starts at
         /// the source's visual size and ends at the target's.
         let sourceScale: CGFloat
+        /// A fresh value every time `start` builds a flight. `active` is keyed by
+        /// the hero id, so a present flight and the return flight for the same
+        /// id would share one `ForEach` identity and SwiftUI would hand the new
+        /// flight the old `HeroFlight` view — with its "already finished" state
+        /// intact, so `onAppear` never re-fired and the landing was never
+        /// recorded. Keying the view on the nonce instead makes each flight its
+        /// own view, with fresh state.
+        let nonce = UUID()
         var cornerRadius: CGFloat { content.cornerRadius }
 
         static func == (lhs: Flight, rhs: Flight) -> Bool {
@@ -31,6 +39,7 @@ final class HeroFlightDirector: ObservableObject {
                 && lhs.targetScale == rhs.targetScale
                 && lhs.sourceScale == rhs.sourceScale
                 && lhs.cornerRadius == rhs.cornerRadius
+                && lhs.nonce == rhs.nonce
         }
     }
 
@@ -59,7 +68,10 @@ final class HeroFlightDirector: ObservableObject {
         targetFrame: CGRect,
         targetScale: CGFloat
     ) {
-        guard let source = recordedSourceFrame(for: id) else { return }
+        guard let source = recordedSourceFrame(for: id) else {
+            KumoneLogger.hero.notice("HERO DIR start-nil \(id, privacy: .public)")
+            return
+        }
         miniHomeFrames[id] = source
         active[id] = Flight(
             id: id,
@@ -69,10 +81,12 @@ final class HeroFlightDirector: ObservableObject {
             targetScale: targetScale,
             sourceScale: HeroProbe.shared.sourceScale(for: id)
         )
+        KumoneLogger.hero.info("HERO DIR start \(id, privacy: .public) count=\(self.active.count, privacy: .public)")
     }
 
     func end(id: String) {
         active.removeValue(forKey: id)
+        KumoneLogger.hero.info("HERO DIR end \(id, privacy: .public) count=\(self.active.count, privacy: .public)")
     }
 }
 

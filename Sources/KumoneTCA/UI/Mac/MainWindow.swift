@@ -185,7 +185,16 @@ public struct MainWindow: View {
             guard let sourceFrame = HeroFrameStore.shared.frame(for: pair.target),
                   let miniFrame = HeroFlightDirector.shared.miniHomeFrames[pair.source]
                     ?? HeroFrameStore.shared.frame(for: pair.source)
-            else { continue }
+            else {
+                // FM and non-FM button groups are mutually exclusive, so a pair
+                // whose anchor never registered is skipped on purpose; this line
+                // names it so a run missing a return flight is triageable from
+                // the log alone.
+                KumoneLogger.hero.notice(
+                    "HERO flyback skip \(pair.source, privacy: .public) target=\(HeroFrameStore.shared.frame(for: pair.target) != nil, privacy: .public) miniHome=\(HeroFlightDirector.shared.miniHomeFrames[pair.source] != nil, privacy: .public) miniStore=\(HeroFrameStore.shared.frame(for: pair.source) != nil, privacy: .public)"
+                )
+                continue
+            }
             let isArtwork = pair.source == HeroID.nowPlayingArtwork
             let content: HeroContent
             switch pair.source {

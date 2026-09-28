@@ -26,25 +26,39 @@ public enum HeroSelfTest {
         guard isEnabled else { return }
         let didPass = await driveRoundTrip(appStore: appStore)
 
+        let judgedCounts = HeroID.nowPlayingPairs.map { pair in
+            "\(pair.source):\(HeroProbe.shared.records.filter { $0.id == pair.source && $0.verdict != nil }.count)"
+        }.joined(separator: ",")
         HeroProbe.writeFile(
             "HERO SELFTEST END pass=\(didPass ? 1 : 0) fail=\(didPass ? 0 : 1)"
                 + " | \(verdictDescription())"
+                + " | judged \(judgedCounts)"
         )
         await flushAndTerminate()
     }
 
-    /// One now-playing hero round trip: waits for the PlayerBar anchor, arms the
-    /// probe from its cached geometry, presents the page, waits for the flight
-    /// to be judged, and dismisses again. Returns whether the landing passed.
+    /// One now-playing hero round trip: waits for the mini player's anchor
+    /// set to settle, arms the probe from each anchor's cached geometry,
+    /// presents the page, waits for the flight to be judged, and dismisses
+    /// again. Returns whether the landing passed.
     @discardableResult
     @MainActor
     public static func driveRoundTrip(appStore: StoreOf<AppFeature>) async -> Bool {
         let pairs = HeroID.nowPlayingPairs
+
+        // Arm only after the anchor set has stopped growing. The transport
+        // buttons register their anchors in a burst a beat after launch, and a
+        // fixed per-pair wait both skips the early pairs on a cold start and
+        // burns the whole timeout on mutually-exclusive ids (the FM-only trash
+        // button never appears for a non-FM track). Waiting for the set to
+        // settle covers the late arrivals; whatever is still absent is absent
+        // on purpose, so it is skipped rather than waited for.
+        await waitForStableAnchors(for: pairs.map { $0.source }, settleInterval: 1.0, deadline: 5.0)
+
         var drivenPairs: [(source: String, target: String)] = []
         var skipped: [String: Int] = [:]
         for pair in pairs {
-            guard let frame = await waitForFrame(for: pair.source, timeout: 5) else {
-                KumoneLogger.hero.error("selftest: source anchor never appeared")
+            guard let frame = HeroFrameStore.shared.frame(for: pair.source) else {
                 // FM and non-FM button groups are mutually exclusive; hidden
                 // elements never register an anchor in the current mode.
                 continue
@@ -58,6 +72,17 @@ public enum HeroSelfTest {
             )
             drivenPairs.append(pair)
         }
+
+        // One diagnosable line listing what this round armed and what it gave
+        // up on, so a run that flies fewer elements than expected can be
+        // triaged from the probe log alone.
+        let drivenIDs = drivenPairs.map { $0.source }
+        let skippedIDs = pairs.map { $0.source }.filter { !drivenIDs.contains($0) }
+        HeroProbe.writeFile(
+            "HERO SELFTEST ARMED driven=[\(drivenIDs.joined(separator: ","))]"
+                + " skipped=[\(skippedIDs.joined(separator: ","))]"
+        )
+
         guard !drivenPairs.isEmpty else {
             KumoneLogger.hero.error("selftest: no source anchors appeared")
             return false
@@ -79,16 +104,28 @@ public enum HeroSelfTest {
 
     // MARK: - Polling
 
-    /// Waits up to `timeout` seconds for an anchor's cached frame, checking
-    /// roughly every 50ms. Never force-unwraps: a missing frame is reported as
-    /// nil and the caller decides what to do.
+    /// Waits for the anchor set among `ids` to stop growing: once no new id
+    /// has appeared for `settleInterval`, the set counts as stable and the
+    /// caller arms whatever is present. `deadline` caps the whole wait, so a
+    /// mini player that never appears cannot stall the round trip. Checks
+    /// roughly every 50ms; never force-unwraps.
     @MainActor
-    private static func waitForFrame(for id: String, timeout: TimeInterval) async -> CGRect? {
-        let deadline = Date().addingTimeInterval(timeout)
+    private static func waitForStableAnchors(
+        for ids: [String], settleInterval: TimeInterval, deadline: TimeInterval
+    ) async {
+        let start = Date()
+        var lastGrowth = start
+        var seen: Set<String> = []
         while true {
-            if let frame = HeroFrameStore.shared.frame(for: id) { return frame }
-            if Task.isCancelled { return nil }
-            guard Date() < deadline else { return HeroFrameStore.shared.frame(for: id) }
+            let present = Set(ids.filter { HeroFrameStore.shared.frame(for: $0) != nil })
+            if !present.isSubset(of: seen) {
+                seen = present
+                lastGrowth = Date()
+            }
+            let now = Date()
+            if now.timeIntervalSince(lastGrowth) >= settleInterval { return }
+            if now.timeIntervalSince(start) >= deadline { return }
+            if Task.isCancelled { return }
             try? await Task.sleep(nanoseconds: 50_000_000)
         }
     }
