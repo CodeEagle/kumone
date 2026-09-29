@@ -169,7 +169,15 @@ public struct SettingsView: View {
             }
 
             Section("关于") {
-                LabeledContent("Kumone", value: appVersion)
+                LabeledContent(appDisplayName, value: appVersion)
+                LabeledContent("构建") {
+                    // Selectable so a build can be quoted verbatim — the build
+                    // number on its own never changes here, so the commit is
+                    // what actually identifies what is installed.
+                    Text(buildDescription)
+                        .textSelection(.enabled)
+                        .foregroundStyle(.secondary)
+                }
                 #if os(iOS)
                 Button {
                     IOSUpdater.shared.check(interactive: true)
@@ -192,8 +200,41 @@ public struct SettingsView: View {
         .task { updateCacheSize() }
     }
 
+    /// The name the bundle ships under, so a build deployed as Miumiu does not
+    /// report itself as Kumone here.
+    private var appDisplayName: String {
+        let info = Bundle.main.infoDictionary
+        return (info?["CFBundleDisplayName"] as? String)
+            ?? (info?["CFBundleName"] as? String)
+            ?? "Kumone"
+    }
+
+    /// Marketing version with the build number in brackets, e.g. `0.1.0 (1)`.
+    /// The build number is what tells two installs of the same marketing
+    /// version apart.
     private var appVersion: String {
-        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "dev"
+        let info = Bundle.main.infoDictionary
+        let short = info?["CFBundleShortVersionString"] as? String ?? "dev"
+        guard let build = info?["CFBundleVersion"] as? String, !build.isEmpty else {
+            return short
+        }
+        return "\(short) (\(build))"
+    }
+
+    /// The commit and UTC build time stamped into Info.plist by
+    /// `Scripts/build-app.sh`: `40052f3 · 2026-09-29T08:44Z`. Both keys are
+    /// absent when running outside a built bundle (swift run, tests), which is
+    /// why each falls back on its own.
+    private var buildDescription: String {
+        let info = Bundle.main.infoDictionary
+        let commit = info?["KumoneGitCommit"] as? String
+        let date = info?["KumoneBuildDate"] as? String
+        switch (commit, date) {
+        case let (commit?, date?): return "\(commit) · \(date)"
+        case let (commit?, nil): return commit
+        case let (nil, date?): return date
+        default: return "dev"
+        }
     }
 
     private var cacheDirectory: URL {

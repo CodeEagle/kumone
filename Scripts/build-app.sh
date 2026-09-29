@@ -91,6 +91,10 @@ fi
 printf 'APPL????' > "$APP_BUNDLE/Contents/PkgInfo"
 
 GIT_COMMIT="$(git rev-parse --short HEAD 2>/dev/null || echo unknown)"
+# UTC build stamp, shown next to the commit in Settings → 关于. Without it two
+# installs of the same commit cannot be told apart by age, and the commit alone
+# cannot answer "did you deploy what you just built?".
+BUILD_DATE="$(date -u +%Y-%m-%dT%H:%MZ)"
 
 cat > "$APP_BUNDLE/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
@@ -129,6 +133,7 @@ cat > "$APP_BUNDLE/Contents/Info.plist" <<PLIST
         <key>NSAllowsArbitraryLoads</key><true/>
     </dict>
     <key>KumoneGitCommit</key><string>$GIT_COMMIT</string>
+    <key>KumoneBuildDate</key><string>$BUILD_DATE</string>
     <key>SUFeedURL</key><string>$SPARKLE_FEED_URL</string>
     <key>SUPublicEDKey</key><string>$SPARKLE_PUBLIC_ED_KEY</string>
     <key>SUEnableAutomaticChecks</key><true/>
