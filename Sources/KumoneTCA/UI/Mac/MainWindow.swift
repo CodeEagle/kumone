@@ -199,7 +199,7 @@ public struct MainWindow: View {
             let content: HeroContent
             switch pair.source {
             case HeroID.nowPlayingArtwork:
-                content = .artwork(url: store.player.currentTrack?.album.picUrl?.resizedImageURL(128), cornerRadius: Theme.Radius.small)
+                content = .artwork(url: store.player.currentTrack?.album.picUrl?.resizedImageURL(768), cornerRadius: Theme.Radius.small)
             case HeroID.nowPlayingPlayPause:
                 content = .icon(name: store.player.isPlaying ? "pause.fill" : "play.fill",
                                 tint: .white, background: .accent, diameter: 30, fontSize: 12.5)
@@ -226,12 +226,8 @@ public struct MainWindow: View {
                 guard store.player.isFMMode else { continue }
                 content = .icon(name: "trash", tint: .primary, background: .none, diameter: 26, fontSize: 12, weight: .medium)
             case HeroID.nowPlayingTitle:
-                // The return flight's stand-in wears the mini bar's style —
-                // the marquee's 13pt medium label-colour text — so it hands
-                // off to the real title as it lands.
-                content = .text(
-                    store.player.currentTrack?.name ?? String(localized: "未在播放"),
-                    color: .primary, fontSize: 13, weight: .medium
+                content = .playerTitle(
+                    store.player.currentTrack?.name ?? String(localized: "未在播放")
                 )
             case HeroID.nowPlayingVIP:
                 guard store.player.currentTrack?.fee == 1 else { continue }

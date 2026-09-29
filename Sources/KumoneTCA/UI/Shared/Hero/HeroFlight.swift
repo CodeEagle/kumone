@@ -140,6 +140,11 @@ struct HeroFlight: View {
                     // Opaque while the artwork loads, as in the original flight.
                     .fill(.secondary)
             }
+        case let .playerTitle(text):
+            HeroTitleStandIn(
+                text: text,
+                pageProgress: flight.targetAnchorID == nil ? shadowProgress : 1 - shadowProgress
+            )
         case .vipBadge:
             VIPBadge()
         case let .text(text, color, fontSize, weight):
@@ -167,6 +172,40 @@ struct HeroFlight: View {
                 }
                 .frame(width: proxy.size.width, height: proxy.size.height)
             }
+        }
+    }
+}
+
+/// Keep both endpoint renderers in a finite viewport. In particular, the mini
+/// endpoint must use the marquee's CATextLayer metrics and edge fade, without
+/// inheriting its scrolling phase. Crossfade weight/color during the flight;
+/// neither renderer changes identity or switches truncation rules at landing.
+private struct HeroTitleStandIn: View, Animatable {
+    let text: String
+    var pageProgress: CGFloat
+
+    var animatableData: CGFloat {
+        get { pageProgress }
+        set { pageProgress = newValue }
+    }
+
+    var body: some View {
+        let progress = min(max(pageProgress, 0), 1)
+        let size = 13 + 8 * progress
+        GeometryReader { proxy in
+            ZStack {
+                MarqueeText(text: text, fontSize: size, isPaused: true)
+                    .opacity(1 - Double(progress))
+                Text(text)
+                    .font(.system(size: size, weight: .bold))
+                    .foregroundStyle(.white)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .frame(width: proxy.size.width, height: proxy.size.height)
+                    .opacity(Double(progress))
+            }
+            .frame(width: proxy.size.width, height: proxy.size.height)
+            .clipped()
         }
     }
 }

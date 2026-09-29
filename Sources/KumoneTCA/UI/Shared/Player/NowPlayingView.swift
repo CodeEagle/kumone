@@ -837,7 +837,7 @@ struct NowPlayingView: View {
         .heroAnchor(HeroID.nowPlayingArtworkTarget, scale: player.isPlaying ? 1 : 0.95)
         .nowPlayingHeroTarget(
             id: HeroID.nowPlayingArtwork,
-            content: .artwork(url: player.currentTrack?.album.picUrl?.resizedImageURL(128), cornerRadius: 18),
+            content: .artwork(url: player.currentTrack?.album.picUrl?.resizedImageURL(768), cornerRadius: 18),
             scale: player.isPlaying ? 1 : 0.95,
             isPresented: appStore?.isNowPlayingPresented == true,
             hasStarted: $hasStartedHeroFlight
@@ -883,12 +883,12 @@ struct NowPlayingView: View {
                     .heroAnchor(HeroID.nowPlayingTitleTarget)
                     .nowPlayingHeroTarget(
                         id: HeroID.nowPlayingTitle,
-                        content: .text(player.currentTrack?.name ?? "",
-                                       color: .white, fontSize: 21, weight: .bold),
+                        content: .playerTitle(player.currentTrack?.name ?? ""),
                         isPresented: appStore?.isNowPlayingPresented == true,
                         hasStarted: $hasStartedTitleFlight
                     )
                     .opacity(heroFlight.active[HeroID.nowPlayingTitle] != nil ? 0 : 1)
+                    .animation(nil, value: heroFlight.active[HeroID.nowPlayingTitle] != nil)
                     #endif
                 if player.currentTrack?.fee == 1 {
                     VIPBadge()

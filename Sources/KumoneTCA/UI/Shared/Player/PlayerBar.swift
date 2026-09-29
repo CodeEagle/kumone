@@ -38,13 +38,18 @@ struct PlayerBar: View {
             artworkButton
             VStack(alignment: .leading, spacing: 1) {
                 HStack(spacing: 6) {
-                    MarqueeText(text: player.currentTrack?.name ?? String(localized: "未在播放"))
+                    MarqueeText(
+                        text: player.currentTrack?.name ?? String(localized: "未在播放"),
+                        isPaused: appStore.isNowPlayingPresented
+                            || heroFlight.active[HeroID.nowPlayingTitle] != nil
+                    )
                         .frame(height: 17)
                         #if os(macOS)
                         .heroAnchor(HeroID.nowPlayingTitle)
                         // The flying stand-in owns the title for the whole
                         // flight, in both directions.
                         .opacity(heroFlight.active[HeroID.nowPlayingTitle] != nil ? 0 : 1)
+                        .animation(nil, value: heroFlight.active[HeroID.nowPlayingTitle] != nil)
                         #endif
                     if player.currentTrack?.fee == 1 {
                         VIPBadge()
@@ -92,7 +97,9 @@ struct PlayerBar: View {
                 _ = appStore.send(.presentNowPlaying)
             }
         } label: {
-            CachedAsyncImage(url: player.currentTrack?.album.picUrl?.resizedImageURL(128))
+            // Share one cached resolution with the page and stand-in, so a
+            // cold presentation cannot swap a loaded thumbnail for a new URL.
+            CachedAsyncImage(url: player.currentTrack?.album.picUrl?.resizedImageURL(768), animated: false)
                 .frame(width: 38, height: 38)
                 .heroAnchor(HeroID.nowPlayingArtwork)
                 .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.small, style: .continuous))
