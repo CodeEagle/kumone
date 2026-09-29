@@ -40,6 +40,12 @@ struct PlayerBar: View {
                 HStack(spacing: 6) {
                     MarqueeText(text: player.currentTrack?.name ?? String(localized: "未在播放"))
                         .frame(height: 17)
+                        #if os(macOS)
+                        .heroAnchor(HeroID.nowPlayingTitle)
+                        // The flying stand-in owns the title for the whole
+                        // flight, in both directions.
+                        .opacity(heroFlight.active[HeroID.nowPlayingTitle] != nil ? 0 : 1)
+                        #endif
                     if player.currentTrack?.fee == 1 {
                         VIPBadge()
                     }
@@ -48,6 +54,10 @@ struct PlayerBar: View {
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
+                    #if os(macOS)
+                    .heroAnchor(HeroID.nowPlayingArtist)
+                    .opacity(heroFlight.active[HeroID.nowPlayingArtist] != nil ? 0 : 1)
+                    #endif
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             if let track = player.currentTrack {

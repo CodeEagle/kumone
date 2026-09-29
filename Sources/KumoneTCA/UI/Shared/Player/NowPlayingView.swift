@@ -46,6 +46,8 @@ struct NowPlayingView: View {
     @State private var hasStartedShuffleFlight = false
     @State private var hasStartedRepeatFlight = false
     @State private var hasStartedFMTrashFlight = false
+    @State private var hasStartedTitleFlight = false
+    @State private var hasStartedArtistFlight = false
     @State private var hasStartedHeroFlight = false
     @ObservedObject private var heroFlight = HeroFlightDirector.shared
     @State private var isZenMode = false
@@ -179,6 +181,8 @@ struct NowPlayingView: View {
             hasStartedShuffleFlight = false
             hasStartedRepeatFlight = false
             hasStartedFMTrashFlight = false
+            hasStartedTitleFlight = false
+            hasStartedArtistFlight = false
             zenHoverTask?.cancel()
             zenHoverTask = nil
             lyricsColumnHold = false
@@ -225,6 +229,8 @@ struct NowPlayingView: View {
                 hasStartedShuffleFlight = false
                 hasStartedRepeatFlight = false
                 hasStartedFMTrashFlight = false
+                hasStartedTitleFlight = false
+                hasStartedArtistFlight = false
             }
         }
         #endif
@@ -869,6 +875,17 @@ struct NowPlayingView: View {
                     .font(.system(size: 21, weight: .bold))
                     .foregroundStyle(.white)
                     .lineLimit(1)
+                    #if os(macOS)
+                    .heroAnchor(HeroID.nowPlayingTitleTarget)
+                    .nowPlayingHeroTarget(
+                        id: HeroID.nowPlayingTitle,
+                        content: .text(player.currentTrack?.name ?? "",
+                                       color: .white, fontSize: 21, weight: .bold),
+                        isPresented: appStore?.isNowPlayingPresented == true,
+                        hasStarted: $hasStartedTitleFlight
+                    )
+                    .opacity(heroFlight.active[HeroID.nowPlayingTitle] != nil ? 0 : 1)
+                    #endif
                 if player.currentTrack?.fee == 1 {
                     VIPBadge()
                 }
@@ -880,9 +897,37 @@ struct NowPlayingView: View {
                     color: .white.opacity(0.65),
                     onOpenDestination: onOpenDestination
                 )
+                #if os(macOS)
+                .heroAnchor(HeroID.nowPlayingArtistTarget)
+                .nowPlayingHeroTarget(
+                    id: HeroID.nowPlayingArtist,
+                    // The stand-in shows exactly what this row renders —
+                    // filtered artists joined by " / ", then " — " and the
+                    // album — so it lands as the row's perfect double.
+                    content: .text(nowPlayingArtistLinkText(track),
+                                   color: .white.opacity(0.65), fontSize: 13.5),
+                    isPresented: appStore?.isNowPlayingPresented == true,
+                    hasStarted: $hasStartedArtistFlight
+                )
+                .opacity(heroFlight.active[HeroID.nowPlayingArtist] != nil ? 0 : 1)
+                #endif
             }
         }
         .frame(maxWidth: 400)
+    }
+
+    /// The string `NowPlayingTrackDestinationLinks` draws for a track, used by
+    /// the title/artist hero flight so the stand-in's text matches the landing
+    /// row character for character (separator " / " between artists, then
+    /// " — " before the album).
+    private func nowPlayingArtistLinkText(_ track: Track) -> String {
+        let artists = track.artists.filter { $0.id > 0 && !$0.name.isEmpty }
+        let artistPart = artists.isEmpty
+            ? track.artistNames
+            : artists.map(\.name).joined(separator: " / ")
+        guard track.album.id > 0, !track.album.name.isEmpty else { return artistPart }
+        guard !artistPart.isEmpty else { return track.album.name }
+        return artistPart + " — " + track.album.name
     }
 
     private func leftColumn(artworkSize: CGFloat) -> some View {

@@ -31,6 +31,17 @@ enum HeroID {
     static let nowPlayingFMTrash = "now-playing-fm-trash"
     static let nowPlayingFMTrashTarget = "now-playing-fm-trash-target"
 
+    /// Song title and artist: shared pure-text elements between the mini bar
+    /// and the Now Playing page. The stand-in carries the destination end's
+    /// string and styling (see `HeroContent.text`), so a present flight grows
+    /// the small bar text into the page headline and the return flight shrinks
+    /// it back.
+    static let nowPlayingTitle = "now-playing-title"
+    static let nowPlayingTitleTarget = "now-playing-title-target"
+
+    static let nowPlayingArtist = "now-playing-artist"
+    static let nowPlayingArtistTarget = "now-playing-artist-target"
+
     static let nowPlayingPairs: [(source: String, target: String)] = [
         (nowPlayingArtwork, nowPlayingArtworkTarget),
         (nowPlayingPlayPause, nowPlayingPlayPauseTarget),
@@ -40,6 +51,8 @@ enum HeroID {
         (nowPlayingShuffle, nowPlayingShuffleTarget),
         (nowPlayingRepeat, nowPlayingRepeatTarget),
         (nowPlayingFMTrash, nowPlayingFMTrashTarget),
+        (nowPlayingTitle, nowPlayingTitleTarget),
+        (nowPlayingArtist, nowPlayingArtistTarget),
     ]
 
     /// Card cover -> detail-page header. One id per item so the source card and

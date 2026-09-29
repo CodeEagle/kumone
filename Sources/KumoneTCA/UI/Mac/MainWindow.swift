@@ -225,6 +225,19 @@ public struct MainWindow: View {
             case HeroID.nowPlayingFMTrash:
                 guard store.player.isFMMode else { continue }
                 content = .icon(name: "trash", tint: .primary, background: .none, diameter: 26, fontSize: 12, weight: .medium)
+            case HeroID.nowPlayingTitle:
+                // The return flight's stand-in wears the mini bar's style —
+                // the marquee's 13pt medium label-colour text — so it hands
+                // off to the real title as it lands.
+                content = .text(
+                    store.player.currentTrack?.name ?? String(localized: "未在播放"),
+                    color: .primary, fontSize: 13, weight: .medium
+                )
+            case HeroID.nowPlayingArtist:
+                content = .text(
+                    store.player.currentTrack?.artistNames ?? "Kumone",
+                    color: .secondary, fontSize: 11
+                )
             default:
                 continue
             }
