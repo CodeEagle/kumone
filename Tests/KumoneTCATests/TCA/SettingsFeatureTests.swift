@@ -156,6 +156,9 @@ final class SettingsFeatureTests: XCTestCase {
             $0.showLyricsTranslation = false
             $0.verbatimLyrics = false
             $0.enableUnblock = false
+            // The mock returns a non-nil string, so the filter reads the
+            // mocked `boolForKey` (false) instead of the default-on value.
+            $0.recentFilterEnabled = false
             $0.autoCheckUpdates = false
             $0.showMainWindowAmbientBackground = false
         }

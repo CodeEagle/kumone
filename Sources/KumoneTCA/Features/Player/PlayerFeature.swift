@@ -824,6 +824,7 @@ public struct PlayerFeature {
         let sourceID = state.source.sourceID
         return .run { [provider] _ in
             await provider.scrobbleStart(trackID: MusicID(trackID), sourceID: MusicID(sourceID))
+            await RecentlyPlayedStore.shared.record(trackID: trackID)
         }
     }
 

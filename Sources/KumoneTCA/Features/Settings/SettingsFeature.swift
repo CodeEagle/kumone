@@ -21,6 +21,8 @@ public struct SettingsFeature {
         public var verbatimLyrics = true
         /// Resolve gray tracks from third-party sources.
         public var enableUnblock = true
+        public var recentFilterEnabled = true
+        public var recentFilterDays = 30
         public var autoCheckUpdates = true
         public var showDesktopLyrics = false
         public var desktopLyricsCentered = false
@@ -39,6 +41,8 @@ public struct SettingsFeature {
         case setLyricsAnnotation(LyricsAnnotation)
         case setVerbatimLyrics(Bool)
         case setEnableUnblock(Bool)
+        case setRecentFilterEnabled(Bool)
+        case setRecentFilterDays(Int)
         case setAutoCheckUpdates(Bool)
         case setShowDesktopLyrics(Bool)
         case setDesktopLyricsCentered(Bool)
@@ -67,6 +71,11 @@ public struct SettingsFeature {
                     ?? (p.boolForKey(Keys.showRomaji) ? .romaji : .off)
                 state.verbatimLyrics = p.boolForKey(Keys.verbatimLyrics)
                 state.enableUnblock = p.boolForKey(Keys.unblock)
+                // UserDefaults exposes stored Bool values through stringForKey as well.
+                state.recentFilterEnabled = p.stringForKey(Keys.recentFilterEnabled) == nil
+                    ? true : p.boolForKey(Keys.recentFilterEnabled)
+                let recentFilterDays = p.doubleForKey(Keys.recentFilterDays)
+                state.recentFilterDays = [7, 14, 30, 90].first { Double($0) == recentFilterDays } ?? 30
                 state.autoCheckUpdates = p.boolForKey(Keys.autoCheckUpdates)
                 state.showDesktopLyrics = p.boolForKey(Keys.desktopLyrics)
                 state.desktopLyricsCentered = p.boolForKey(Keys.desktopLyricsCentered)
@@ -111,6 +120,16 @@ public struct SettingsFeature {
             case let .setEnableUnblock(value):
                 state.enableUnblock = value
                 persistence.setBool(value, Keys.unblock)
+                return .none
+
+            case let .setRecentFilterEnabled(value):
+                state.recentFilterEnabled = value
+                persistence.setBool(value, Keys.recentFilterEnabled)
+                return .none
+
+            case let .setRecentFilterDays(value):
+                state.recentFilterDays = value
+                persistence.setDouble(Double(value), Keys.recentFilterDays)
                 return .none
 
             case let .setAutoCheckUpdates(value):
@@ -161,6 +180,8 @@ extension SettingsFeature {
         public static let annotation = "settings.lyricsAnnotation"
         public static let verbatimLyrics = "settings.verbatimLyrics"
         public static let unblock = "settings.enableUnblock"
+        public static let recentFilterEnabled = "fm.recentFilterEnabled"
+        public static let recentFilterDays = "fm.recentFilterDays"
         public static let autoCheckUpdates = "settings.autoCheckUpdates"
         public static let desktopLyrics = "settings.showDesktopLyrics"
         public static let desktopLyricsCentered = "settings.desktopLyricsCentered"

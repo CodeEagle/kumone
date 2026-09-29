@@ -40,6 +40,20 @@ public struct SettingsView: View {
                 Text("无版权 / 下架歌曲自动从第三方音源（酷我、酷狗等）匹配播放")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                Toggle("个人FM / 心动模式过滤最近播放", isOn: Binding(
+                    get: { store.recentFilterEnabled },
+                    set: { store.send(.setRecentFilterEnabled($0)) }
+                ))
+                Picker("最近播放保留期", selection: Binding(
+                    get: { store.recentFilterDays },
+                    set: { store.send(.setRecentFilterDays($0)) }
+                )) {
+                    Text("7 天").tag(7)
+                    Text("14 天").tag(14)
+                    Text("30 天").tag(30)
+                    Text("90 天").tag(90)
+                }
+                .disabled(!store.recentFilterEnabled)
             }
 
             Section("外观") {

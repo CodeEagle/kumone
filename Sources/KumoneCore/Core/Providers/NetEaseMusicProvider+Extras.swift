@@ -26,7 +26,8 @@ extension NetEaseMusicProvider: MusicPlayHistory, MusicPersonalFM,
     // MARK: - MusicPersonalFM
 
     public func personalFM() async throws -> [Track] {
-        try await NeteaseAPI.personalFM()
+        let tracks = try await NeteaseAPI.personalFM()
+        return await RecentlyPlayedStore.shared.filter(tracks)
     }
 
     public func fmTrash(_ id: MusicID) async throws {
@@ -55,8 +56,9 @@ extension NetEaseMusicProvider: MusicPlayHistory, MusicPersonalFM,
     // MARK: - MusicIntelligence
 
     public func intelligenceList(songID: MusicID, playlistID: MusicID) async throws -> [Track] {
-        try await NeteaseAPI.intelligenceList(songID: neteaseID(songID),
-                                              playlistID: neteaseID(playlistID))
+        let tracks = try await NeteaseAPI.intelligenceList(
+            songID: neteaseID(songID), playlistID: neteaseID(playlistID))
+        return await RecentlyPlayedStore.shared.filter(tracks)
     }
 }
 
