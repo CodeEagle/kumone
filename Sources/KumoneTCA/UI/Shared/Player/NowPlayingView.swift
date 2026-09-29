@@ -514,7 +514,7 @@ struct NowPlayingView: View {
             VStack(spacing: 12) {
                 NowPlayingScrubber()
                     .padding(.horizontal, 24)
-                controls
+                controls()
             }
             .padding(.bottom, 24)
             #endif
@@ -547,7 +547,7 @@ struct NowPlayingView: View {
             VStack(spacing: 12) {
                 NowPlayingScrubber()
                     .padding(.horizontal, 24)
-                controls
+                controls()
             }
             .padding(.bottom, 24)
         }
@@ -977,7 +977,7 @@ struct NowPlayingView: View {
             VStack(spacing: 14) {
                 NowPlayingScrubber()
                     .frame(maxWidth: 380)
-                controls
+                controls(showsRoamingBadge: false, showsRoutePicker: false)
             }
             .opacity(isZenActive ? 0 : 1)
             .offset(y: isZenActive ? 20 : 0)
@@ -993,7 +993,7 @@ struct NowPlayingView: View {
             VStack(spacing: 14) {
                 NowPlayingScrubber()
                     .frame(maxWidth: 380)
-                controls
+                controls()
             }
             #endif
 
@@ -1005,6 +1005,9 @@ struct NowPlayingView: View {
     #if os(macOS)
     private var actionRow: some View {
         HStack(spacing: 12) {
+            lyricsToggleButton
+            zenButton
+            Spacer(minLength: 0)
             ShaderPickerButton(
                 isPresented: $isShaderPickerOpen,
                 selected: visualizerShader,
@@ -1018,8 +1021,11 @@ struct NowPlayingView: View {
                     shaderDisabled = true
                 }
             }
-            lyricsToggleButton
-            zenButton
+            Spacer(minLength: 0)
+            if player.isFMMode {
+                fmRoamingBadge
+            }
+            RoutePickerButton(diameter: 36, glyphSize: 14)
         }
         .frame(maxWidth: 380)
     }
@@ -1083,9 +1089,19 @@ struct NowPlayingView: View {
         .help(isZenMode ? "关闭 Zen 模式" : "开启 Zen 模式")
         .accessibilityLabel(isZenMode ? "关闭 Zen 模式" : "开启 Zen 模式")
     }
+
+    private var fmRoamingBadge: some View {
+        Image(systemName: "wave.3.right.circle.fill")
+            .font(.system(size: 14, weight: .semibold))
+            .foregroundStyle(Theme.accent)
+            .frame(width: 36, height: 36)
+            .background(.white.opacity(0.12), in: Circle())
+            .accessibilityLabel("私人漫游")
+    }
     #endif
 
-    private var controls: some View {
+    private func controls(showsRoamingBadge: Bool = true,
+                          showsRoutePicker: Bool = true) -> some View {
         // Equal-width slots so the row always fits the screen: fixed-size
         // buttons in a plain HStack summed wider than a phone (≈430pt with the
         // like button), overflowing the layout and shoving the overlays and
@@ -1190,15 +1206,19 @@ struct NowPlayingView: View {
             #endif
             .frame(maxWidth: .infinity)
 
-            RoutePickerButton(diameter: 40, glyphSize: 15)
-                .frame(maxWidth: .infinity)
+            if showsRoutePicker {
+                RoutePickerButton(diameter: 40, glyphSize: 15)
+                    .frame(maxWidth: .infinity)
+            }
 
             if player.isFMMode {
-                Image(systemName: "wave.3.right.circle.fill")
-                    .font(.system(size: 15))
-                    .foregroundStyle(.white.opacity(0.5))
-                    .frame(width: 40, height: 40)
-                    .frame(maxWidth: .infinity)
+                if showsRoamingBadge {
+                    Image(systemName: "wave.3.right.circle.fill")
+                        .font(.system(size: 15))
+                        .foregroundStyle(.white.opacity(0.5))
+                        .frame(width: 40, height: 40)
+                        .frame(maxWidth: .infinity)
+                }
             } else {
                 circleButton(
                     icon: player.repeatMode == .one ? "repeat.1" : "repeat",
