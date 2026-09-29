@@ -6,9 +6,9 @@ set -euo pipefail
 # KUMONE_DEPLOY_HOST for other hosts (e.g. localhost for the local box).
 REMOTE_HOST="${KUMONE_DEPLOY_HOST:-df-38bf-70a7-8777-6307-0.d.heiyu.space}"
 REMOTE_USER="${KUMONE_DEPLOY_USER:-lincoln}"
-REMOTE_APP_PATH="${KUMONE_DEPLOY_APP_PATH:-/Applications/Kumone.app}"
+REMOTE_APP_PATH="${KUMONE_DEPLOY_APP_PATH:-/Applications/MiuMiu.app}"
 REMOTE_STAGING="${KUMONE_DEPLOY_STAGING:-~/Downloads}"
-APP_NAME="${APP_NAME:-Kumone}"
+APP_NAME="${APP_NAME:-MiuMiu}"
 CONF=release
 DRY_RUN=false
 CONF_SET=false
@@ -83,7 +83,7 @@ TEMP_DIR="$(mktemp -d "$APP_PARENT/.Kumone-deploy.XXXXXX")"
 STEP='application shutdown'
 # Only the app being replaced is touched: the path-keyed and name-keyed
 # patterns below target this deploy's own executable and never a different
-# bundle that happens to live next to it (e.g. a Kumone.app kept alongside).
+# bundle that happens to live next to it (e.g. an older Kumone.app kept alongside).
 # Escape regex metacharacters so a configurable path matches literally.
 PROCESS_PATTERN="$(printf '%s' "$REMOTE_APP_PATH/Contents/MacOS/$APP_NAME" | sed 's/[][\.^$*+?(){}|]/\\&/g')"
 pkill -f "$PROCESS_PATTERN" || [ "$?" -eq 1 ]

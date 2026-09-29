@@ -8,7 +8,7 @@ ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 cd "$ROOT"
 
 CONF="${1:-debug}"
-APP_NAME="${APP_NAME:-Kumone}"
+APP_NAME="${APP_NAME:-MiuMiu}"
 BUNDLE_ID="${BUNDLE_ID:-im.missuo.Kumone}"
 SWIFT_PRODUCT="${SWIFT_PRODUCT:-Kumone}"
 # The user-facing name (Launchpad/Dock). Defaults to the product name; a deploy

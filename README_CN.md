@@ -112,7 +112,7 @@ make configure           # 切回默认的无 CarPlay 构建
 
 ```bash
 swift build                    # 编译
-Scripts/build-app.sh           # 打包 .app（输出 .build/app/Kumone.app）
+Scripts/build-app.sh           # 打包 .app（输出 .build/app/MiuMiu.app）
 Scripts/compile_and_run.sh     # 杀进程 → 重新打包 → 启动
 ```
 

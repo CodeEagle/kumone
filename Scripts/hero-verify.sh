@@ -11,7 +11,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 LOG_FILE="/tmp/kumone-hero.log"
-APP_BIN="$ROOT/.build/app/Kumone.app/Contents/MacOS/Kumone"
+APP_BIN="$ROOT/.build/app/MiuMiu.app/Contents/MacOS/MiuMiu"
 
 # The lines this run adds start right after this offset.
 if [ -f "$LOG_FILE" ]; then

@@ -138,7 +138,7 @@ Requires macOS 15+ and Xcode 26+.
 
 ```bash
 swift build                    # compile
-Scripts/build-app.sh           # package the .app (outputs .build/app/Kumone.app)
+Scripts/build-app.sh           # package the .app (outputs .build/app/MiuMiu.app)
 Scripts/compile_and_run.sh     # kill → repackage → relaunch
 ```
 
