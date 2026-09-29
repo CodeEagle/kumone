@@ -63,6 +63,8 @@ struct NowPlayingView: View {
     /// first `body` pass happens before `onAppear` runs the scan, so the
     /// backdrop would resolve `nil` and never be asked again.
     @StateObject private var shaderLibrary = ShaderLibrary.shared
+    /// The shader list's PCM-sync switch governs this backdrop's renderer too.
+    @ObservedObject private var shaderSettings = ShaderSettings.shared
     /// Lyrics column viewport, in global coordinates: the positional blur
     /// needs a center line and a falloff span.
     @State private var viewportFrame: CGRect = .zero
@@ -320,7 +322,8 @@ struct NowPlayingView: View {
                 ShaderContainerView(
                     shader: visualizerShader,
                     isPlaying: player.isPlaying,
-                    palette: ShaderPaletteBuilder.make(from: colors)
+                    palette: ShaderPaletteBuilder.make(from: colors),
+                    pcmSync: shaderSettings.pcmSyncEnabled
                 )
                 // Just enough bottom shading to keep the controls readable.
                 LinearGradient(

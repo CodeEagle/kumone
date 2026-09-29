@@ -39,11 +39,18 @@ fragment float4 kumone_fragment_animated_loop(Varying in [[stage_in]],
     // The ring phase creeps (a full out-and-back takes ~15–20s), so the field
     // evolves continuously instead of visibly cycling.
     float lines = 8.0 + (wander(u.time * 0.04, 0.0) - 0.5) * 2.0 * 1.0;
+    // Bass adds rings on top of the wander, so a loud low end reads as a
+    // denser field rather than a faster one.
+    lines = audio_gain(lines, audio_band(u.bands[0]), 0.25);
     float lineWidth = 0.0033 + (wander(u.time * 0.04, 1.7) - 0.5) * 2.0 * 0.0008;
+    // Air band thickens the strokes; kept tiny because the base width is too.
+    lineWidth = audio_offset(lineWidth, audio_band(u.bands[3]), 0.0012);
     float channelOffset = 0.0225 + (wander(u.time * 0.04, 3.3) - 0.5) * 2.0 * 0.0075;
     // Additive phase flow: amp = base / (0.05 * 8.0) keeps velocity positive; no reversal.
     float rotation = 0.05 * (u.time * 0.7 + wander(u.time * 0.05, 5.9) * 1.75);
     float scale = 1.025 + (wander(u.time * 0.04, 8.1) - 0.5) * 2.0 * 0.025;
+    // A beat punches the field scale briefly, on top of the slow wander.
+    scale = audio_gain(scale, audio_pulse(u.beat), 0.12);
     // How far a ring travels from the origin before it turns back. The field
     // spans roughly ±1, so a span well past 1 lets rings cross it fully.
     float spacing = 1.7;
@@ -96,9 +103,10 @@ fragment float4 kumone_fragment_animated_loop(Varying in [[stage_in]],
     // Squared line weights on three additive channels push the sum far past 1,
     // which clips to white and blows out the UI sitting on top of the backdrop.
     // Reinhard bounds the highlights while keeping the hue, and the intensity
-    // cap keeps the field as an ambience rather than a glare.
+    // cap keeps the field as an ambience rather than a glare. Loudness eases
+    // that cap up, so a fuller mix glows brighter without ever clipping.
     col = col / (1.0 + col);
-    col *= 0.7;
+    col *= audio_glow(0.7, audio_energy(u.loudness), 0.5);
 
     float3 bg = u.paletteBackground.rgb;
     return float4(bg + col, 1.0);

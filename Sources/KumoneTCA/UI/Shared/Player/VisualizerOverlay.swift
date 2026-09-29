@@ -17,6 +17,9 @@ struct VisualizerOverlay: View {
     var onShaderChanged: (ShaderDescriptor?) -> Void = { _ in }
 
     @StateObject private var library = ShaderLibrary.shared
+    /// The PCM-sync switch lives in the shader list, but it governs this
+    /// overlay's own renderer too, so both sides observe the same object.
+    @ObservedObject private var settings = ShaderSettings.shared
     @State private var selected: ShaderDescriptor?
     @State private var hasPicked = false
     @State private var isShaderPickerPresented = false
@@ -38,7 +41,8 @@ struct VisualizerOverlay: View {
             ShaderContainerView(
                 shader: selected,
                 isPlaying: true,
-                palette: palette
+                palette: palette,
+                pcmSync: settings.pcmSyncEnabled
             )
             .ignoresSafeArea()
 
@@ -150,6 +154,9 @@ struct ShaderPickerButton: View {
     @ObservedObject var library: ShaderLibrary
     let palette: ShaderPalette
     var onChanged: ((ShaderDescriptor?) -> Void)? = nil
+    /// Same setting the overlay's renderer obeys, so the preview under a row
+    /// shows what picking that row will actually look like.
+    @ObservedObject private var settings = ShaderSettings.shared
 
     var body: some View {
         Button {
@@ -177,6 +184,43 @@ struct ShaderPickerButton: View {
     }
 
     private var shaderPickerPanel: some View {
+        VStack(spacing: 0) {
+            pcmSyncRow
+            Divider()
+                .overlay(.white.opacity(0.12))
+            shaderRows
+        }
+        .frame(width: 320)
+    }
+
+    /// "Sync PCM" switch, pinned above the list: it changes every shader at
+    /// once rather than picking one, so it belongs to the list's header instead
+    /// of to any single row.
+    private var pcmSyncRow: some View {
+        Toggle(isOn: $settings.pcmSyncEnabled) {
+            HStack(spacing: 8) {
+                Image(systemName: settings.pcmSyncEnabled ? "waveform" : "waveform.slash")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(settings.pcmSyncEnabled ? Theme.accent : .white.opacity(0.45))
+                    .frame(width: 18)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("同步 PCM")
+                        .font(.system(size: 13, weight: .medium))
+                    Text(settings.pcmSyncEnabled ? "画面随音乐律动" : "仅保留自身动效")
+                        .font(.system(size: 10))
+                        .foregroundStyle(.white.opacity(0.45))
+                }
+            }
+        }
+        .toggleStyle(.switch)
+        .controlSize(.mini)
+        .tint(Theme.accent)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .help(settings.pcmSyncEnabled ? "关闭后画面不再跟随音乐" : "让画面跟随音乐律动")
+    }
+
+    private var shaderRows: some View {
         Group {
             if library.available.isEmpty {
                 Text("未找到 shader")
@@ -224,7 +268,8 @@ struct ShaderPickerButton: View {
                                     isPresented = false
                                 } label: {
                                     HStack(spacing: 12) {
-                                        ShaderPickerPreview(shader: shader, palette: palette)
+                                        ShaderPickerPreview(shader: shader, palette: palette,
+                                                             pcmSync: settings.pcmSyncEnabled)
                                         Text(shader.name)
                                             .font(.system(size: 13, weight: .medium))
                                             .lineLimit(2)
@@ -259,20 +304,21 @@ struct ShaderPickerButton: View {
                 .frame(height: min(CGFloat(library.available.count + 1) * 78 + 14, 326))
             }
         }
-        .frame(width: 320)
     }
 
     /// Release offscreen Metal views even when the lazy stack retains row state.
     private struct ShaderPickerPreview: View {
         let shader: ShaderDescriptor
         let palette: ShaderPalette
+        let pcmSync: Bool
         @State private var isVisible = false
 
         var body: some View {
             ZStack {
                 Color.black
                 if isVisible {
-                    ShaderContainerView(shader: shader, isPlaying: true, palette: palette)
+                    ShaderContainerView(shader: shader, isPlaying: true,
+                                        palette: palette, pcmSync: pcmSync)
                 }
             }
             .frame(width: 88, height: 56)

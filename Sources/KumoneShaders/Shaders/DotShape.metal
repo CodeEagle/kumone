@@ -26,8 +26,14 @@ fragment float4 kumone_fragment_dot_shape(Varying in [[stage_in]],
 
     // Independent slow wander keeps the field self-driven.
     float patternScale = 2.25 + (wander(u.time * 0.04, 0.0) - 0.5) * 2.0 * 1.25;
+    // Bass tightens the plasma pattern to give low notes a spatial pulse.
+    patternScale = audio_gain(patternScale, audio_band(u.bands[0]), 0.2);
     float dotSize = 1.4 + (wander(u.time * 0.04, 1.7) - 0.5) * 2.0 * 0.4;
+    // Beats briefly enlarge the dots to make transients visible.
+    dotSize = audio_gain(dotSize, audio_pulse(u.beat), 0.2);
     float brightness = 1.1 + (wander(u.time * 0.04, 3.3) - 0.5) * 2.0 * 0.4;
+    // Loudness lifts dot brightness for a slow swell with the mix.
+    brightness = audio_glow(brightness, audio_energy(u.loudness), 0.6);
     float gridDensity = 0.85 + (wander(u.time * 0.018, 8.1) - 0.5) * 2.0 * 0.3;
     float shapeMix = 0.5 + (wander(u.time * 0.025, 11.2) - 0.5) * 2.0 * 0.5;
     float aspect = 1.0 + (wander(u.time * 0.02, 14.6) - 0.5) * 2.0 * 0.35;

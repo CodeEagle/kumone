@@ -83,8 +83,15 @@ fragment float4 kumone_fragment_color_panels(Varying in [[stage_in]],
 
     // Independent slow wander keeps the field self-driven.
     float scale = 1.3 + (wander(u.time * 0.04, 0.0) - 0.5) * 2.0 * 0.3;
+    // Bass breathes the wheel scale on top of the wander.
+    scale = audio_gain(scale, audio_band(u.bands[0]), 0.2);
     float density = 1.95 + (wander(u.time * 0.04, 1.7) - 0.5) * 2.0 * 0.75;
+    // Low-mid packs the panels tighter, so presence in the mix reads as a
+    // fuller wheel rather than a faster one.
+    density = audio_gain(density, audio_band(u.bands[1]), 0.25);
     float angle1 = 0.2 + (wander(u.time * 0.04, 3.3) - 0.5) * 2.0 * 0.4;
+    // A beat snaps the edge skew, a brief geometry punch on every hit.
+    angle1 = audio_offset(angle1, audio_pulse(u.beat), 0.15);
     float angle2 = -0.2 + (wander(u.time * 0.04, 5.9) - 0.5) * 2.0 * 0.4;
     float fadeIn = 0.6 + (wander(u.time * 0.04, 8.1) - 0.5) * 2.0 * 0.25;
     float fadeOut = 0.7 + (wander(u.time * 0.04, 10.7) - 0.5) * 2.0 * 0.2;
@@ -211,6 +218,8 @@ fragment float4 kumone_fragment_color_panels(Varying in [[stage_in]],
     }
 
     float3 bgRGB = u.paletteBackground.rgb;
+    // Loudness swells the composite; silence leaves the panels at full strength.
+    color *= audio_glow(1.0, audio_energy(u.loudness), 0.5);
     color = color + bgRGB * (1.0 - saturate(opacity));
 
     // Sub-pixel dither against banding.

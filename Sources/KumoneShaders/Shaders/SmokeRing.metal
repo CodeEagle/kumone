@@ -81,10 +81,16 @@ fragment float4 kumone_fragment_smoke_ring(Varying in [[stage_in]],
     // Independent slow wander keeps the field self-driven.
     float scale = 1.0;
     float radius = 0.6 + (wander(u.time * 0.04, 0.0) - 0.5) * 2.0 * 0.25;
+    // Bass expands the ring radius to give low notes a rounded pulse.
+    radius = audio_gain(radius, audio_band(u.bands[0]), 0.2);
     // Gentle thickness breathing follows slow drift, without sustained beat swelling.
     float thickness = 0.19 + (wander(u.time * 0.04, 1.7) - 0.5) * 2.0 * 0.04;
+    // Beats briefly thicken the ring to make each transient a soft punch.
+    thickness = audio_gain(thickness, audio_pulse(u.beat), 0.2);
     float innerShape = 2.0 + (wander(u.time * 0.04, 3.3) - 0.5) * 2.0 * 1.0;
     float noiseScale = 3.25 + (wander(u.time * 0.04, 5.9) - 0.5) * 2.0 * 1.75;
+    // Air raises noise frequency to add fine detail to the smoke.
+    noiseScale = audio_gain(noiseScale, audio_band(u.bands[3]), 0.2);
     int iterations = 6;
     const float cycleDuration = 3.0;
 
@@ -139,7 +145,9 @@ fragment float4 kumone_fragment_smoke_ring(Varying in [[stage_in]],
         gradient = mix(gradient, colors[i], localT);
     }
 
-    float3 color = gradient * ringShape;
+    // Loudness swells ring glow while leaving the uncovered background steady.
+    float brightness = audio_glow(1.0, audio_energy(u.loudness), 0.6);
+    float3 color = gradient * ringShape * brightness;
     float3 bgRGB = u.paletteBackground.rgb;
     color = color + bgRGB * (1.0 - ringShape);
 

@@ -14,6 +14,10 @@ public struct ArtworkColors: Equatable {
     // Keep the ambient UI's subdued colors, but give shaders actual cover colors.
     public var shaderPrimary: SIMD4<Float>? = nil
     public var shaderSecondary: SIMD4<Float>? = nil
+    /// The cover's brightest, most vivid colour. Scored on vividness rather than
+    /// area, so a small accent in the artwork still becomes the shader's glow
+    /// slot. `nil` when the extraction found nothing separate from the other two.
+    public var shaderHighlight: SIMD4<Float>? = nil
 
     public static let fallback = ArtworkColors(
         primary: SIMD4(0.16, 0.16, 0.20, 1),
@@ -146,11 +150,38 @@ public enum ArtworkPalette {
             let delta = $0 - dominant
             return delta.x * delta.x + delta.y * delta.y + delta.z * delta.z > 0.0225
         } ?? dominant
+        // The third slot is chosen for vividness, not area: the dominant colour
+        // is usually the largest flat block (often a dark background), while the
+        // cover's identity usually sits in a small bright accent. Ranking the
+        // remaining buckets by how saturated-and-bright they are surfaces that
+        // accent as the shader's glow colour.
+        let highlight = ranked.dropFirst().filter {
+            squaredDistance($0, dominant) > 0.0025
+        }.max(by: { vividness($0) < vividness($1) })
         return ArtworkColors(
             primary: primary, secondary: secondary,
             shaderPrimary: SIMD4(Float(dominant.x), Float(dominant.y), Float(dominant.z), 1),
-            shaderSecondary: SIMD4(Float(supporting.x), Float(supporting.y), Float(supporting.z), 1)
+            shaderSecondary: SIMD4(Float(supporting.x), Float(supporting.y), Float(supporting.z), 1),
+            shaderHighlight: highlight.map {
+                SIMD4(Float($0.x), Float($0.y), Float($0.z), 1)
+            }
         )
+    }
+
+    private static func squaredDistance(_ a: SIMD3<Double>, _ b: SIMD3<Double>) -> Double {
+        let delta = a - b
+        return delta.x * delta.x + delta.y * delta.y + delta.z * delta.z
+    }
+
+    /// How much a colour reads as an accent rather than as background: vivid,
+    /// and brighter is better. Mirrors the weighting used for the buckets so the
+    /// two agree on what "the cover's colour" means.
+    private static func vividness(_ rgb: SIMD3<Double>) -> Double {
+        let high = max(rgb.x, max(rgb.y, rgb.z))
+        guard high > 0 else { return 0 }
+        let low = min(rgb.x, min(rgb.y, rgb.z))
+        let saturation = (high - low) / high
+        return saturation * (0.3 + 0.7 * high)
     }
 
     /// HSB (each 0...1) → RGBA float4. Same conversion SwiftUI's

@@ -20,6 +20,9 @@ struct ShaderContainerView: PlatformViewRepresentable {
     let shader: ShaderDescriptor?
     let isPlaying: Bool
     let palette: ShaderPalette
+    /// Whether the shader reacts to the live PCM analysis. Off keeps the
+    /// shader's own time-driven motion and feeds the audio uniforms silence.
+    var pcmSync: Bool = true
 
     func makeCoordinator() -> Coordinator { Coordinator() }
 
@@ -74,7 +77,8 @@ struct ShaderContainerView: PlatformViewRepresentable {
         coordinator.renderer?.prepareUniformBuffer()
         view.delegate = coordinator.renderer
 
-        context.coordinator.apply(shader: shader, isPlaying: isPlaying, palette: palette)
+        context.coordinator.apply(shader: shader, isPlaying: isPlaying,
+                                  palette: palette, pcmSync: pcmSync)
         return view
     }
 
@@ -82,7 +86,8 @@ struct ShaderContainerView: PlatformViewRepresentable {
         context.coordinator.apply(
             shader: shader,
             isPlaying: isPlaying,
-            palette: palette
+            palette: palette,
+            pcmSync: pcmSync
         )
     }
 
@@ -94,7 +99,7 @@ struct ShaderContainerView: PlatformViewRepresentable {
         var renderer: ShaderRenderer?
         private var currentShaderID: String?
 
-        func apply(shader: ShaderDescriptor?, isPlaying: Bool, palette: ShaderPalette) {
+        func apply(shader: ShaderDescriptor?, isPlaying: Bool, palette: ShaderPalette, pcmSync: Bool) {
             guard let renderer else { return }
 
             // Reload the pipeline only when the shader actually changes;
@@ -110,6 +115,7 @@ struct ShaderContainerView: PlatformViewRepresentable {
 
             renderer.palette = palette
             renderer.isAudioPlaying = isPlaying
+            renderer.isAudioReactive = pcmSync
         }
 
         func tearDown(_ view: MTKView) {

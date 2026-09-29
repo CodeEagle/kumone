@@ -47,8 +47,14 @@ fragment float4 kumone_fragment_neuro_noise(Varying in [[stage_in]],
 
     // Independent slow wander keeps the field self-driven.
     float scale = 0.75 + (wander(u.time * 0.04, 0.0) - 0.5) * 2.0 * 0.4;
+    // Bass tightens the web scale to give low notes a spatial pulse.
+    scale = audio_gain(scale, audio_band(u.bands[0]), 0.2);
     float contrast = 0.55 + (wander(u.time * 0.04, 1.7) - 0.5) * 2.0 * 0.3;
+    // Beats briefly sharpen filament contrast to make transients visible.
+    contrast = audio_gain(contrast, audio_pulse(u.beat), 0.2);
     float brightness = 1.1 + (wander(u.time * 0.04, 5.9) - 0.5) * 2.0 * 0.6;
+    // Air lifts filament brightness to give high notes a soft shimmer.
+    brightness = audio_glow(brightness, audio_band(u.bands[3]), 0.6);
 
     float minDim = max(min(size.x, size.y), 1.0);
     float2 uv = (position - 0.5 * size) / minDim;

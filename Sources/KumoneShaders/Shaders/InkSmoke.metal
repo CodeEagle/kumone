@@ -52,8 +52,14 @@ fragment float4 kumone_fragment_ink_smoke(Varying in [[stage_in]],
 
     // Independent slow wander keeps the field self-driven.
     float scale = 2.1 + (wander(u.time * 0.04, 0.0) - 0.5) * 2.0 * 0.9;
+    // Beats briefly tighten the smoke field to give each hit a spatial punch.
+    scale = audio_gain(scale, audio_pulse(u.beat), 0.15);
     float warp = 1.2 + (wander(u.time * 0.04, 1.7) - 0.5) * 2.0 * 0.7;
+    // Bass deepens the domain warp so low notes curl the smoke.
+    warp = audio_gain(warp, audio_band(u.bands[0]), 0.2);
     float highlight = 1.2 + (wander(u.time * 0.04, 5.9) - 0.5) * 2.0 * 0.7;
+    // Loudness brightens only the wisps, keeping the palette background steady.
+    highlight = audio_glow(highlight, audio_energy(u.loudness), 0.6);
 
     float2 uv = (position * 2.0 - size) / min(size.x, size.y);
 

@@ -121,7 +121,11 @@ public final class ShaderLayerView: MTKView {
     /// Pushes store-derived state into the renderer. The pipeline is reloaded
     /// only when the shader id changes; `palette` and playback liveness are
     /// cheap to set every time.
-    public func apply(shader: ShaderDescriptor?, isPlaying: Bool, palette: ShaderPalette) {
+    ///
+    /// - Parameter pcmSync: Whether the shader should react to the live PCM
+    ///   analysis. Off means the shader keeps its own time-driven motion and
+    ///   the audio uniforms read as silence.
+    public func apply(shader: ShaderDescriptor?, isPlaying: Bool, palette: ShaderPalette, pcmSync: Bool = true) {
         clampDrawableSize()
         isPaused = !isPlaying
         guard let renderer else { return }
@@ -137,6 +141,7 @@ public final class ShaderLayerView: MTKView {
 
         renderer.palette = palette
         renderer.isAudioPlaying = isPlaying
+        renderer.isAudioReactive = pcmSync
     }
 
     /// Stops rendering and releases GPU resources when the host discards this view.

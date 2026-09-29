@@ -65,6 +65,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         observeArtworkColors()
         applyShader()
         observeShader()
+        observeShaderSettings()
         syncDesktopLyrics()
         observeAppearance()
         observeDesktopLyrics()
@@ -114,7 +115,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let descriptor = store.shaderID.flatMap { id in
             ShaderDiscovery.shared.availableDescriptors.first { $0.id == id }
         }
-        container.shaderLayer.apply(shader: descriptor, isPlaying: store.player.isPlaying, palette: ShaderPaletteBuilder.make(from: artworkStore.colors))
+        container.shaderLayer.apply(
+            shader: descriptor,
+            isPlaying: store.player.isPlaying,
+            palette: ShaderPaletteBuilder.make(from: artworkStore.colors),
+            pcmSync: ShaderSettings.shared.pcmSyncEnabled
+        )
+    }
+
+    /// The window backdrop is a shader too, so it has to follow the same
+    /// PCM-sync switch the shader list exposes.
+    private func observeShaderSettings() {
+        ShaderSettings.shared.$pcmSyncEnabled
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                self?.applyShader()
+            }
+            .store(in: &cancellables)
     }
 
     private func observeArtwork() {

@@ -75,3 +75,62 @@ static inline float fbm(float2 p) {
 static inline float wander(float t, float seed) {
     return fbm(float2(t, seed));
 }
+
+
+// MARK: - Audio reactivity helpers
+//
+// The host derives these four slots from the playing PCM every frame:
+//
+//     u.bands[0..3]  per-band levels, already smoothed on the audio thread
+//     u.level        mean of the four bands
+//     u.beat         beat envelope, snaps up on a transient and decays
+//     u.loudness     slow swell over the whole mix
+//
+// With PCM sync switched off the host feeds silence instead, so every helper
+// below keeps working — the shader just runs on its own `wander` motion again.
+// That is deliberate: a shader must never have to know whether audio is live.
+//
+// Three shapes of modulation, so audio rides on top of the shader's own motion
+// instead of replacing it:
+//
+//     audio_gain(base, amount, k)    multiplicative — counts, scales, densities
+//     audio_offset(base, amount, k)  additive — angles, positions, thicknesses
+//     audio_shaped(...)               amount put through a musical curve first
+//
+// `k` is how far the audio may push that one parameter. Keep it small for
+// structural values (0.1...0.3 reads as breathing) and larger for brightness or
+// glow (0.5...1.5), where the ear forgives the movement.
+
+// One band, lifted into a range where quiet music still moves. The high band
+// sits far below the low one on real material, so an un-shaped read leaves the
+// shimmer-driven parameters dead while the bass-driven ones twitch.
+static inline float audio_band(float band) {
+    return saturate(band * 1.45);
+}
+
+// The beat as a punch rather than a glow: squaring snaps the attack tighter so
+// one hit reads as a single thump instead of a swell that never quite lands.
+static inline float audio_pulse(float beat) {
+    return saturate(beat * beat * 1.6);
+}
+
+// The slow swell, lifted so a modest mix reaches the top of its range.
+static inline float audio_energy(float loudness) {
+    return saturate(loudness * 1.7);
+}
+
+// Multiplicative modulation for counts, scales and densities.
+static inline float audio_gain(float base, float amount, float k) {
+    return base * (1.0 + amount * k);
+}
+
+// Additive modulation for angles, offsets and line widths.
+static inline float audio_offset(float base, float amount, float k) {
+    return base + amount * k;
+}
+
+// Brightness and glow: audio raises the light rather than moving the geometry,
+// which is what a spectrum display does and what the eye reads as "reacting".
+static inline float audio_glow(float base, float amount, float k) {
+    return base + amount * k * 0.5;
+}

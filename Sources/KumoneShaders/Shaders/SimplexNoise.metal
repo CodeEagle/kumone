@@ -75,8 +75,14 @@ fragment float4 kumone_fragment_simplex_noise(Varying in [[stage_in]],
 
     // Independent slow wander keeps the field self-driven.
     float scale = 1.1 + (wander(u.time * 0.04, 0.0) - 0.5) * 2.0 * 0.6;
+    // Bass broadens the noise scale to let low notes breathe across the field.
+    scale = audio_gain(scale, audio_band(u.bands[0]), 0.2);
     float softness = 0.55 + (wander(u.time * 0.04, 1.7) - 0.5) * 2.0 * 0.35;
+    // Presence softens band boundaries to let the mids smooth the transitions.
+    softness = audio_gain(softness, audio_band(u.bands[2]), 0.1);
     float shapeOffset = 0.125 + (wander(u.time * 0.04, 3.3) - 0.5) * 2.0 * 0.125;
+    // Beats briefly shift the shape offset to punch through the bands.
+    shapeOffset = audio_offset(shapeOffset, audio_pulse(u.beat), 0.1);
 
     float minDim = max(min(size.x, size.y), 1.0);
     float2 uv = (position - 0.5 * size) / minDim;
@@ -118,6 +124,10 @@ fragment float4 kumone_fragment_simplex_noise(Varying in [[stage_in]],
         localM = simplexSteppedSmooth(localM, steps, 0.5 * softness);
         gradient = mix(colors[countI - 1], colors[0], localM);
     }
+
+    // Loudness lifts field brightness for a slow swell with the mix.
+    float brightness = audio_glow(1.0, audio_energy(u.loudness), 0.6);
+    gradient *= brightness;
 
     // Sub-pixel dither against gradient banding.
     float dither = fract(sin(dot(0.014 * position,

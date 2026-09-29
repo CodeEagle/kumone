@@ -68,7 +68,11 @@ fragment float4 kumone_fragment_voronoi(Varying in [[stage_in]],
 
     // Independent slow wander keeps the field self-driven.
     float scale = 2.95 + (wander(u.time * 0.04, 0.0) - 0.5) * 2.0 * 0.75;
+    // Bass tightens cell scale to give low notes a denser field.
+    scale = audio_gain(scale, audio_band(u.bands[0]), 0.2);
     float distortion = 0.3 + (wander(u.time * 0.04, 3.3) - 0.5) * 2.0 * 0.15;
+    // Air strengthens cell distortion to add fine motion to the ridges.
+    distortion = audio_gain(distortion, audio_band(u.bands[3]), 0.1);
     uv *= max(scale, 1e-4);
 
     // Additive phase flow: amp = base / (0.05 * 8.0) keeps velocity positive; no reversal.
@@ -111,6 +115,10 @@ fragment float4 kumone_fragment_voronoi(Varying in [[stage_in]],
 
     // Ridge glow with slowly wandering intensity.
     float glow = 0.65 + (wander(u.time * 0.04, 5.9) - 0.5) * 2.0 * 0.3;
+    // Beats briefly lift ridge glow to make each transient a bright punch.
+    glow = audio_gain(glow, audio_pulse(u.beat), 0.5);
+    // Loudness swells ridge glow to follow the sustained energy of the mix.
+    glow = audio_glow(glow, audio_energy(u.loudness), 0.6);
     float glows = length(v.yz * saturate(glow));
     glows = pow(glows, 1.5);
     float3 glowRGB = u.paletteAccent.rgb * 0.6;

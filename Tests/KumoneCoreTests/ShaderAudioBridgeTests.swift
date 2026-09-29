@@ -51,26 +51,38 @@ final class ShaderAudioBridgeTests: XCTestCase {
             previous = f.low
         }
 
-        // The published band never reaches the raw swing, and it never moves
-        // more than a slice of it in one frame — that is the difference between
-        // a shader swaying and a shader twitching.
-        XCTAssertLessThan(maxValue, ShaderAudioBridge.reactivity)
+        // The band tracks the music closely — `reactivity` is 1.0, so a shader
+        // that wants the real level gets it — while still never jumping the
+        // full raw swing in one frame. That difference is what separates a
+        // shader swaying from a shader twitching. (An alternating input settles
+        // well below the raw peak: a one-pole filter with asymmetric
+        // coefficients cannot follow a square wave to its peaks.)
+        XCTAssertLessThanOrEqual(maxValue, 1.0)
         XCTAssertLessThan(maxJump, 0.2)
+
+        // A level that *holds* must be published at full strength, though: that
+        // is what the host used to take away with its 0.3 reactivity.
+        var held = ShaderAudioBridge()
+        var steady = held.frame(sampler: { _ in 1 })
+        for _ in 0..<200 { steady = held.frame(sampler: { _ in 1 }) }
+        XCTAssertGreaterThan(steady.low, 0.98)
+        XCTAssertGreaterThan(steady.level, 0.98)
     }
 
     func testLoudnessRisesAndDecaysSlowly() {
         var bridge = ShaderAudioBridge()
 
-        // Drive it loud for a while.
-        var frame = bridge.frame(sampler: { _ in 1 })
-        for _ in 0..<100 {
-            frame = bridge.frame(sampler: { _ in 1 })
+        // Drive it at a level that leaves loudness clear of its 1.0 clamp, so
+        // the release is observable instead of sitting pinned at the ceiling.
+        var frame = bridge.frame(sampler: { _ in 0.5 })
+        for _ in 0..<200 {
+            frame = bridge.frame(sampler: { _ in 0.5 })
         }
         let loud = frame.loudness
-        // Loudness tracks the attenuated mean, not the raw level: a full-scale
-        // input settles partway up rather than to 1.
-        XCTAssertGreaterThan(loud, 0.3)
-        XCTAssertLessThan(loud, 0.7)
+        // Loudness follows the unattenuated mean: a half-scale input settles
+        // around 0.5 * 1.35 rather than being scaled down again on the way out.
+        XCTAssertGreaterThan(loud, 0.5)
+        XCTAssertLessThan(loud, 0.8)
 
         // Then silent: loudness should fall, but not to zero in one frame —
         // the release is deliberately slower than the attack.
@@ -129,5 +141,25 @@ final class ShaderAudioBridgeTests: XCTestCase {
         // single new sample, so the same input no longer reads as a transient.
         let after = bridge.frame(sampler: { i in i == 0 ? 1.0 : 0 })
         XCTAssertLessThan(after.beat, before.beat)
+    }
+
+    /// The beat history is a fixed ring precisely so this path cannot allocate;
+    /// after a reset it has to behave exactly like a bridge that never ran.
+    func testResetLeavesTheRingBehavingLikeAFreshBridge() {
+        var used = ShaderAudioBridge()
+        for _ in 0..<50 {
+            _ = used.frame(sampler: { _ in 1 })
+        }
+        used.reset()
+
+        var fresh = ShaderAudioBridge()
+        for step in 0..<40 {
+            let input: (Int) -> Float = { i in i == 0 ? Float(step % 7) / 7 : 0.1 }
+            let a = used.frame(sampler: input)
+            let b = fresh.frame(sampler: input)
+            XCTAssertEqual(a.bands.0, b.bands.0, accuracy: 1e-6)
+            XCTAssertEqual(a.beat, b.beat, accuracy: 1e-6)
+            XCTAssertEqual(a.loudness, b.loudness, accuracy: 1e-6)
+        }
     }
 }

@@ -71,6 +71,8 @@ fragment float4 kumone_fragment_swirl(Varying in [[stage_in]],
     float twistRaw = 0.55;
     float center = 0.45;
     float noiseStrength = 0.06 + (wander(u.time * 0.04, 0.0) - 0.5) * 2.0 * 0.04;
+    // Air strengthens fine distortion to let high notes ripple the edges.
+    noiseStrength = audio_gain(noiseStrength, audio_band(u.bands[3]), 0.2);
     const float noiseFrequency = 0.5;
     const float softness = 0.35;
     const float proportion = 0.5;
@@ -82,12 +84,16 @@ fragment float4 kumone_fragment_swirl(Varying in [[stage_in]],
     uv /= max(scale, 0.001);
 
     // Additive phase flow: amp = base / (0.05 * 8.0) keeps velocity positive; no reversal.
-    float t = u.time * 0.6 + wander(u.time * 0.05, 1.7) * 1.5;
+    // Low mids lift the positive rotation rate to give the spiral a gentle push.
+    float rotationRate = audio_gain(0.6, audio_band(u.bands[1]), 0.1);
+    float t = u.time * rotationRate + wander(u.time * 0.05, 1.7) * 1.5;
 
     // An inward phase flow: a slow monotonic term on the band offset makes the
     // arms travel along the gradient instead of only rotating in place, so the
     // field reads as a vortex pulling inward. Monotonic, so it cannot rewind.
-    float flow = u.time * 0.03;
+    // Bass lifts the positive inward flow rate to draw the arms into the beat.
+    float flowRate = audio_gain(0.03, audio_band(u.bands[0]), 0.1);
+    float flow = u.time * flowRate;
 
     float l = max(1e-4, length(uv));
 

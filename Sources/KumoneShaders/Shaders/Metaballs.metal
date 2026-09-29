@@ -63,7 +63,11 @@ fragment float4 kumone_fragment_metaballs(Varying in [[stage_in]],
 
     // Independent slow wander keeps the field self-driven.
     float count = 6.5 + (wander(u.time * 0.04, 1.7) - 0.5) * 2.0 * 1.5;
+    // Bass adds blobs for a denser field, bounded by the existing count clamp.
+    count = audio_gain(count, audio_band(u.bands[0]), 0.2);
     float size  = 0.675 + (wander(u.time * 0.04, 3.3) - 0.5) * 2.0 * 0.275;
+    // Beats briefly grow the blobs to make each transient a rounded punch.
+    size = audio_gain(size, audio_pulse(u.beat), 0.2);
 
     float3 colors[8];
     metaballsPalette(u, colors);
@@ -101,7 +105,9 @@ fragment float4 kumone_fragment_metaballs(Varying in [[stage_in]],
 
     float edgeWidth = fwidth(totalShape);
     float finalShape = smoothstep(0.4, 0.4 + edgeWidth, totalShape);
-    float3 col = totalColor * finalShape +
+    // Loudness swells blob brightness while leaving the uncovered background steady.
+    float brightness = audio_glow(1.0, audio_energy(u.loudness), 0.6);
+    float3 col = totalColor * finalShape * brightness +
                  u.paletteBackground.rgb * (1.0 - finalShape);
     return float4(col, 1.0);
 }

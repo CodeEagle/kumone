@@ -27,7 +27,10 @@ final class ShaderUniformsTests: XCTestCase {
         XCTAssertEqual(palette.background.w, 1, accuracy: 1e-6)
     }
 
-    func testPaletteBuilderDerivesAccentAndBackground() {
+    func testPaletteBuilderDerivesAccentAndBackgroundForAnUnanalyzedTrack() {
+        // No analysed cover: `ArtworkPalette` only fills the `shader*` slots once
+        // it has looked at real pixels, so this is the idle/broken-artwork path
+        // and keeps the subdued ambient colours rather than inventing a scheme.
         let colors = ArtworkColors(
             primary: SIMD4<Float>(0.8, 0.2, 0.3, 1),
             secondary: SIMD4<Float>(0.1, 0.1, 0.15, 1)
@@ -36,8 +39,8 @@ final class ShaderUniformsTests: XCTestCase {
 
         // Accent lifts brightness while preserving channel ratios.
         XCTAssertGreaterThan(palette.accent.x, palette.primary.x)
-        // Background is the secondary deepened toward black.
-        XCTAssertLessThan(palette.background.x, palette.secondary.x)
+        // With no cover there is no hue to tint, so the base stays neutral black.
+        XCTAssertEqual(palette.background.x, 0, accuracy: 1e-6)
         // sRGB inputs are decoded for the sRGB render target.
         XCTAssertEqual(palette.primary.x, Float(0.603827), accuracy: 1e-4)
         XCTAssertEqual(palette.secondary.x, Float(0.010023), accuracy: 1e-4)
@@ -68,23 +71,122 @@ final class ShaderUniformsTests: XCTestCase {
     func testCoverColorsPreserveRedAndBlueInsteadOfInventingPurple() throws {
         let colors = try extractCover(primary: (255, 0, 0, 255), secondary: (0, 0, 255, 255))
         let palette = ShaderPaletteBuilder.make(from: colors)
-        XCTAssertEqual(palette.primary.x, 1, accuracy: 0.01)
+        // The two halves stay red and blue, at the levels the scheme uses:
+        // primary is the subject colour, secondary the dimmer supporting one.
+        XCTAssertEqual(palette.primary.x, 0.5, accuracy: 0.01)
         XCTAssertEqual(palette.primary.z, 0, accuracy: 0.01)
         XCTAssertEqual(palette.secondary.x, 0, accuracy: 0.01)
-        XCTAssertEqual(palette.secondary.z, 1, accuracy: 0.01)
+        XCTAssertEqual(palette.secondary.z, 0.28, accuracy: 0.01)
         // The pre-existing ambient UI still gets its intentionally dimmed color.
         XCTAssertNotEqual(colors.primary, colors.shaderPrimary)
+    }
+
+    @MainActor
+    func testCoverBackgroundCarriesTheCoversHueInsteadOfBlack() throws {
+        let colors = try extractCover(primary: (255, 0, 0, 255), secondary: (0, 0, 255, 255))
+        let palette = ShaderPaletteBuilder.make(from: colors)
+
+        // Most shaders fill everything that is not their subject with this slot,
+        // so a black background is what made the backdrop stop looking like the
+        // song. It has to be the cover's own hue ...
+        XCTAssertGreaterThan(palette.background.x, 0.02)
+        XCTAssertEqual(palette.background.z, 0, accuracy: 0.01)
+        XCTAssertEqual(palette.background.y, 0, accuracy: 0.01)
+        // ... and still dark enough to sit behind controls.
+        XCTAssertLessThan(palette.background.x, 0.06)
+        XCTAssertLessThan(palette.background.x, palette.primary.x)
+    }
+
+    @MainActor
+    func testAccentIsTheBrightestSlotAndHueSeparatedFromTheSubject() throws {
+        let colors = try extractCover(primary: (255, 0, 0, 255), secondary: (0, 0, 255, 255))
+        let palette = ShaderPaletteBuilder.make(from: colors)
+
+        // Shaders draw their glow with the accent, so it has to be the brightest
+        // slot — otherwise the glow reads as noise.
+        let peak = { (c: SIMD4<Float>) in max(c.x, max(c.y, c.z)) }
+        XCTAssertGreaterThan(peak(palette.accent), peak(palette.primary))
+        XCTAssertGreaterThan(peak(palette.primary), peak(palette.secondary))
+        XCTAssertGreaterThan(peak(palette.accent), peak(palette.background))
+        // And it must be a different colour, not just a brighter red: a violet
+        // accent off this red/blue cover keeps the two hues apart.
+        XCTAssertGreaterThan(palette.accent.z, palette.accent.x)
+    }
+
+    @MainActor
+    func testMonochromeCoverStillGetsASeparatedSecondary() throws {
+        // Two shades of one hue: nothing in the artwork separates them, so the
+        // scheme has to separate them itself rather than emitting two reds.
+        let colors = try extractCover(primary: (200, 20, 20, 255), secondary: (120, 10, 10, 255))
+        let palette = ShaderPaletteBuilder.make(from: colors)
+
+        // Primary stays the cover's red; secondary moves off it (here toward the
+        // cover's other side rather than into a second red) so shaders still get
+        // two colours to work with.
+        XCTAssertLessThan(palette.primary.y, 0.02)
+        XCTAssertLessThan(palette.primary.z, 0.02)
+        XCTAssertGreaterThan(palette.secondary.z, 0.15)
+        XCTAssertGreaterThan(palette.accent.x, palette.accent.z)
+    }
+
+    @MainActor
+    func testPaletteIsDeterministic() throws {
+        let first = try extractCover(primary: (34, 120, 210, 255), secondary: (240, 190, 20, 255))
+        let second = try extractCover(primary: (34, 120, 210, 255), secondary: (240, 190, 20, 255))
+        let a = ShaderPaletteBuilder.make(from: first)
+        let b = ShaderPaletteBuilder.make(from: second)
+
+        XCTAssertEqual(a.primary, b.primary)
+        XCTAssertEqual(a.secondary, b.secondary)
+        XCTAssertEqual(a.accent, b.accent)
+        XCTAssertEqual(a.background, b.background)
+    }
+
+    @MainActor
+    func testEverySlotStaysInRangeForEveryCover() throws {
+        let covers = try [
+            extractCover(primary: (204, 204, 204, 255), secondary: (204, 204, 204, 255)),
+            extractCover(primary: (0, 200, 40, 255), secondary: (250, 0, 120, 255)),
+            extractCover(primary: (3, 3, 3, 255), secondary: (1, 1, 1, 255)),
+            .fallback,
+        ]
+        for colors in covers {
+            let palette = ShaderPaletteBuilder.make(from: colors)
+            for component in [palette.primary, palette.secondary, palette.accent, palette.background] {
+                XCTAssertTrue(component.x.isFinite)
+                XCTAssertTrue(component.y.isFinite)
+                XCTAssertTrue(component.z.isFinite)
+                for channel in [component.x, component.y, component.z] {
+                    XCTAssertGreaterThanOrEqual(channel, 0)
+                    XCTAssertLessThanOrEqual(channel, 1)
+                }
+            }
+        }
+    }
+
+    @MainActor
+    func testNearBlackCoverFallsBackRatherThanInventingAColour() throws {
+        let colors = try extractCover(primary: (3, 3, 3, 255), secondary: (1, 1, 1, 255))
+        // Linear-light brightness of almost-black is below the usable floor, so
+        // the scheme falls back instead of stretching noise into a palette.
+        let palette = ShaderPaletteBuilder.make(from: colors)
+        XCTAssertEqual(palette.primary.x, ShaderPalette.fallback.primary.x, accuracy: 1e-6)
+        XCTAssertEqual(palette.background.z, ShaderPalette.fallback.background.z, accuracy: 1e-6)
     }
 
     @MainActor
     func testGrayCoverStaysNeutralAndRetainsBrightness() throws {
         let colors = try extractCover(primary: (204, 204, 204, 255), secondary: (204, 204, 204, 255))
         let palette = ShaderPaletteBuilder.make(from: colors)
-        XCTAssertEqual(palette.primary.x, 0.603827, accuracy: 0.01)
+        // A grey cover has no hue to separate, so nothing is rotated for it: the
+        // slots stay neutral instead of inventing a colour the artwork never had.
         XCTAssertEqual(palette.primary.x, palette.primary.y, accuracy: 1e-5)
         XCTAssertEqual(palette.primary.y, palette.primary.z, accuracy: 1e-5)
+        XCTAssertEqual(palette.secondary.x, palette.secondary.y, accuracy: 1e-5)
         XCTAssertEqual(palette.accent.x, palette.accent.y, accuracy: 1e-5)
-        XCTAssertEqual(palette.primary, palette.secondary)
+        XCTAssertEqual(palette.background.x, palette.background.z, accuracy: 1e-5)
+        // Still a usable scheme: the subject is well clear of the dark base.
+        XCTAssertGreaterThan(palette.primary.x, palette.background.x * 4)
     }
 
     @MainActor

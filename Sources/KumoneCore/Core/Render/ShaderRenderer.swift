@@ -19,6 +19,11 @@ public final class ShaderRenderer: NSObject, MTKViewDelegate {
     /// itself is re-derived every frame in `draw`.
     public var isAudioPlaying = false
 
+    /// Whether the shader reacts to the live PCM analysis. Off feeds the audio
+    /// uniforms silence so the shader falls back to its own time-driven motion.
+    /// Pushed in by whichever host owns the renderer.
+    public var isAudioReactive = true
+
     public var palette: ShaderPalette = .fallback
 
     private let device: any MTLDevice
@@ -29,7 +34,11 @@ public final class ShaderRenderer: NSObject, MTKViewDelegate {
     private let uniformStride: Int
 
     private var bridge = ShaderAudioBridge()
+    private var paletteMixer = ShaderPaletteMixer()
     private var startTime: CFTimeInterval = 0
+    /// Timestamp of the previous drawn frame, for the palette ease and the
+    /// audio bridge's step. Zero until the first frame lands.
+    private var lastFrameTime: CFTimeInterval = 0
 
     /// Set when a shader fails to build, so the host can show why instead of a
     /// black screen with no explanation.
@@ -126,6 +135,15 @@ public final class ShaderRenderer: NSObject, MTKViewDelegate {
         let now = CACurrentMediaTime()
         if startTime == 0 { startTime = now }
         let time = Float(now - startTime)
+        let dt: Float = lastFrameTime == 0 ? 0 : Float(min(max(now - lastFrameTime, 0), 0.25))
+        lastFrameTime = now
+
+        // The palette is re-derived from the cover on every track change, and
+        // assigning it outright makes the whole backdrop snap at the exact
+        // moment the eye is on the new artwork. Ease it instead; the very
+        // first frame has nothing to fade from and snaps by itself.
+        paletteMixer.step(toward: palette, dt: dt)
+        let palette = paletteMixer.current
 
         // Feed the bridge real levels only while the tap is live; otherwise
         // silence so envelopes decay to rest instead of holding a stale frame.
@@ -137,8 +155,16 @@ public final class ShaderRenderer: NSObject, MTKViewDelegate {
         // when its own inputs change. A flag set once would stick at the value
         // that happened to hold on the last update and the shader would run on
         // silence for the whole track.
+        //
+        // `isAudioReactive` is the shader list's PCM switch. It belongs in the
+        // same test rather than in a branch of its own: turning it off has to
+        // feel like the music stopped being read, so the bridge keeps running
+        // and its envelopes unwind to rest over about half a second. Skipping
+        // the call instead would freeze the last loud frame on screen, which
+        // reads as a stuck shader rather than as an intentional switch.
         let spectrum = AudioSpectrum.shared
-        let isAudioLive = isAudioPlaying && spectrum.tapState == .tapped && spectrum.isLive
+        let isAudioLive = isAudioReactive && isAudioPlaying
+            && spectrum.tapState == .tapped && spectrum.isLive
         let frame = isAudioLive
             ? bridge.frame(sampler: bandSampler)
             : bridge.frame(sampler: { _ in 0 })

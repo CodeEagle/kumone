@@ -88,8 +88,14 @@ fragment float4 kumone_fragment_dot_orbit(Varying in [[stage_in]],
 
     // Independent slow wander keeps the field self-driven.
     float scale = 2.75 + (wander(u.time * 0.04, 0.0) - 0.5) * 2.0 * 1.25;
+    // Bass opens the grid, so a heavy low end spreads the cells apart.
+    scale = audio_gain(scale, audio_band(u.bands[0]), 0.2);
     float spreading = 0.8 + (wander(u.time * 0.04, 1.7) - 0.5) * 2.0 * 0.4;
+    // Low-mid widens each orbit; the inner saturate() keeps the radius sane.
+    spreading = audio_gain(spreading, audio_band(u.bands[1]), 0.3);
     float dotScale = 1.3 + (wander(u.time * 0.04, 3.3) - 0.5) * 2.0 * 0.7;
+    // A beat punches the dot size, on top of the slow wander.
+    dotScale = audio_gain(dotScale, audio_pulse(u.beat), 0.2);
 
     float minDim = max(min(size.x, size.y), 1.0);
     float2 uv = (position - 0.5 * size) / minDim;
@@ -131,7 +137,9 @@ fragment float4 kumone_fragment_dot_orbit(Varying in [[stage_in]],
         gradient = mix(colors[countI - 1], colors[0], localT);
     }
 
-    float3 col = gradient * dots;
+    // Loudness swells the dots themselves, not the background, so the field
+    // brightens with the mix while silence leaves it wandering on its own.
+    float3 col = gradient * dots * audio_glow(1.0, audio_energy(u.loudness), 0.6);
     float3 bgRGB = u.paletteBackground.rgb;
     col = col + bgRGB * (1.0 - dots);
 
