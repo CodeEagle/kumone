@@ -11,6 +11,10 @@ CONF="${1:-debug}"
 APP_NAME="${APP_NAME:-Kumone}"
 BUNDLE_ID="${BUNDLE_ID:-im.missuo.Kumone}"
 SWIFT_PRODUCT="${SWIFT_PRODUCT:-Kumone}"
+# The user-facing name (Launchpad/Dock). Defaults to the product name; a deploy
+# script can override it to ship under a different display name without
+# touching the executable, bundle id, or install path.
+DISPLAY_NAME="${DISPLAY_NAME:-$APP_NAME}"
 # Version resolution: environment > version.env > defaults.
 ENV_MARKETING_VERSION="${MARKETING_VERSION:-}"
 ENV_BUILD_NUMBER="${BUILD_NUMBER:-}"
@@ -110,8 +114,8 @@ cat > "$APP_BUNDLE/Contents/Info.plist" <<PLIST
     </dict>
     <key>CFBundleIdentifier</key><string>$BUNDLE_ID</string>
     <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
-    <key>CFBundleName</key><string>$APP_NAME</string>
-    <key>CFBundleDisplayName</key><string>$APP_NAME</string>
+    <key>CFBundleName</key><string>$DISPLAY_NAME</string>
+    <key>CFBundleDisplayName</key><string>$DISPLAY_NAME</string>
     <key>CFBundlePackageType</key><string>APPL</string>
     <key>CFBundleShortVersionString</key><string>$MARKETING_VERSION</string>
     <key>CFBundleVersion</key><string>$BUILD_NUMBER</string>
