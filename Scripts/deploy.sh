@@ -8,7 +8,7 @@ REMOTE_HOST="${KUMONE_DEPLOY_HOST:-df-38bf-70a7-8777-6307-0.d.heiyu.space}"
 REMOTE_USER="${KUMONE_DEPLOY_USER:-lincoln}"
 REMOTE_APP_PATH="${KUMONE_DEPLOY_APP_PATH:-/Applications/Kumone.app}"
 REMOTE_STAGING="${KUMONE_DEPLOY_STAGING:-~/Downloads}"
-APP_NAME=Kumone
+APP_NAME="${APP_NAME:-Kumone}"
 CONF=release
 DRY_RUN=false
 CONF_SET=false
@@ -145,7 +145,11 @@ LOCAL_TMP="$(mktemp -d /tmp/kumone-deploy.XXXXXX)"
 ARCHIVE="$LOCAL_TMP/$APP_NAME.app.tar.gz"
 tar -czf "$ARCHIVE" -C "$ROOT/.build/app" "$APP_NAME.app"
 STEP='archive transfer'
-scp -O -o BatchMode=yes -o ConnectTimeout=10 "$ARCHIVE" "$TARGET:$SCP_PATH" || \
+# rsync replaces `scp -O` on this link: the legacy SCP protocol stalls
+# mid-transfer here while the connection itself stays responsive, whereas
+# rsync compresses on the wire, resumes partial files and survives the trip.
+rsync -az --partial -e "ssh -o BatchMode=yes -o ConnectTimeout=10" \
+  "$ARCHIVE" "$TARGET:$REMOTE_UPLOAD" || \
   fail "Transfer to $TARGET:$REMOTE_STAGING failed; remote installation was not replaced."
 STEP='remote installation'
 remote_script | ssh -o BatchMode=yes -o ConnectTimeout=10 "$TARGET" /bin/bash -s
