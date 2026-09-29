@@ -21,6 +21,8 @@ final class HeroFlightDirector: ObservableObject {
         /// The resting scale the source view applies, so the stand-in starts at
         /// the source's visual size and ends at the target's.
         let sourceScale: CGFloat
+        /// Return flights follow the mini anchor as the sidebar/window settles.
+        var targetAnchorID: String? = nil
         /// A fresh value every time `start` builds a flight. `active` is keyed by
         /// the hero id, so a present flight and the return flight for the same
         /// id would share one `ForEach` identity and SwiftUI would hand the new
@@ -38,6 +40,7 @@ final class HeroFlightDirector: ObservableObject {
                 && lhs.target.approximately(rhs.target)
                 && lhs.targetScale == rhs.targetScale
                 && lhs.sourceScale == rhs.sourceScale
+                && lhs.targetAnchorID == rhs.targetAnchorID
                 && lhs.cornerRadius == rhs.cornerRadius
                 && lhs.nonce == rhs.nonce
         }
@@ -45,10 +48,8 @@ final class HeroFlightDirector: ObservableObject {
 
     @Published var active: [String: Flight] = [:]
 
-    /// The frame the mini artwork occupied when the present flight launched —
-    /// its home. The sidebar hides while the Now Playing page is up and the
-    /// mini artwork drifts left, so the store's live value at dismiss time is
-    /// the wrong target; the return flight flies back to this snapshot.
+    /// Initial return-flight fallback only. A restored sidebar or resized window
+    /// can move the mini player; return flights follow its live anchor until landing.
     var miniHomeFrames: [String: CGRect] = [:]
 
     /// The source geometry recorded by the trigger (`HeroProbe.recordSource`),
@@ -66,20 +67,22 @@ final class HeroFlightDirector: ObservableObject {
         id: String,
         content: HeroContent,
         targetFrame: CGRect,
-        targetScale: CGFloat
+        targetScale: CGFloat,
+        targetAnchorID: String? = nil
     ) {
         guard let source = recordedSourceFrame(for: id) else {
             KumoneLogger.hero.notice("HERO DIR start-nil \(id, privacy: .public)")
             return
         }
-        miniHomeFrames[id] = source
+        if targetAnchorID == nil { miniHomeFrames[id] = source }
         active[id] = Flight(
             id: id,
             content: content,
             source: source,
             target: targetFrame,
             targetScale: targetScale,
-            sourceScale: HeroProbe.shared.sourceScale(for: id)
+            sourceScale: HeroProbe.shared.sourceScale(for: id),
+            targetAnchorID: targetAnchorID
         )
         KumoneLogger.hero.info("HERO DIR start \(id, privacy: .public) count=\(self.active.count, privacy: .public)")
     }

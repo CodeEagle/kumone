@@ -48,6 +48,10 @@ struct PlayerBar: View {
                         #endif
                     if player.currentTrack?.fee == 1 {
                         VIPBadge()
+                            #if os(macOS)
+                            .heroAnchor(HeroID.nowPlayingVIP)
+                            .opacity(heroFlight.active[HeroID.nowPlayingVIP] != nil ? 0 : 1)
+                            #endif
                     }
                 }
                 Text(player.currentTrack?.artistNames ?? "miumiu")
@@ -98,6 +102,7 @@ struct PlayerBar: View {
                 )
                 .shadow(color: .black.opacity(0.2), radius: 4, y: 2)
                 .opacity(heroFlight.active[HeroID.nowPlayingArtwork] != nil ? 0 : 1)
+                .animation(nil, value: heroFlight.active[HeroID.nowPlayingArtwork] != nil)
         }
         .buttonStyle(.pressable)
         .noFocusRing()

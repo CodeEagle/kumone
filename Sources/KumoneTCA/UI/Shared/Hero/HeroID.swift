@@ -39,6 +39,9 @@ enum HeroID {
     static let nowPlayingTitle = "now-playing-title"
     static let nowPlayingTitleTarget = "now-playing-title-target"
 
+    static let nowPlayingVIP = "now-playing-vip"
+    static let nowPlayingVIPTarget = "now-playing-vip-target"
+
     static let nowPlayingArtist = "now-playing-artist"
     static let nowPlayingArtistTarget = "now-playing-artist-target"
 
@@ -52,6 +55,7 @@ enum HeroID {
         (nowPlayingRepeat, nowPlayingRepeatTarget),
         (nowPlayingFMTrash, nowPlayingFMTrashTarget),
         (nowPlayingTitle, nowPlayingTitleTarget),
+        (nowPlayingVIP, nowPlayingVIPTarget),
         (nowPlayingArtist, nowPlayingArtistTarget),
     ]
 

@@ -46,6 +46,7 @@ struct NowPlayingView: View {
     @State private var hasStartedShuffleFlight = false
     @State private var hasStartedRepeatFlight = false
     @State private var hasStartedFMTrashFlight = false
+    @State private var hasStartedVIPFlight = false
     @State private var hasStartedTitleFlight = false
     @State private var hasStartedArtistFlight = false
     @State private var hasStartedHeroFlight = false
@@ -181,6 +182,7 @@ struct NowPlayingView: View {
             hasStartedShuffleFlight = false
             hasStartedRepeatFlight = false
             hasStartedFMTrashFlight = false
+            hasStartedVIPFlight = false
             hasStartedTitleFlight = false
             hasStartedArtistFlight = false
             zenHoverTask?.cancel()
@@ -229,6 +231,7 @@ struct NowPlayingView: View {
                 hasStartedShuffleFlight = false
                 hasStartedRepeatFlight = false
                 hasStartedFMTrashFlight = false
+                hasStartedVIPFlight = false
                 hasStartedTitleFlight = false
                 hasStartedArtistFlight = false
             }
@@ -862,8 +865,9 @@ struct NowPlayingView: View {
         .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
         // The hero stand-in owns the artwork for the whole flight, in both
         // directions; the real one reappears the instant the stand-in lands.
-        .opacity(heroFlight.active[HeroID.nowPlayingArtwork] != nil ? 0 : 1)
         .shadow(color: .black.opacity(0.45), radius: 36, y: 18)
+        .opacity(heroFlight.active[HeroID.nowPlayingArtwork] != nil ? 0 : 1)
+        .animation(nil, value: heroFlight.active[HeroID.nowPlayingArtwork] != nil)
         .scaleEffect(player.isPlaying ? 1 : 0.95)
         .animation(AppAnimation.bouncy, value: player.isPlaying)
     }
@@ -888,6 +892,15 @@ struct NowPlayingView: View {
                     #endif
                 if player.currentTrack?.fee == 1 {
                     VIPBadge()
+                        #if os(macOS)
+                        .heroAnchor(HeroID.nowPlayingVIPTarget)
+                        .nowPlayingHeroTarget(
+                            id: HeroID.nowPlayingVIP, content: .vipBadge,
+                            isPresented: appStore?.isNowPlayingPresented == true,
+                            hasStarted: $hasStartedVIPFlight
+                        )
+                        .opacity(heroFlight.active[HeroID.nowPlayingVIP] != nil ? 0 : 1)
+                        #endif
                 }
             }
             if let track = player.currentTrack {

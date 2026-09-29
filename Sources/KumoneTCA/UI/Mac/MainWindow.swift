@@ -233,6 +233,9 @@ public struct MainWindow: View {
                     store.player.currentTrack?.name ?? String(localized: "未在播放"),
                     color: .primary, fontSize: 13, weight: .medium
                 )
+            case HeroID.nowPlayingVIP:
+                guard store.player.currentTrack?.fee == 1 else { continue }
+                content = .vipBadge
             case HeroID.nowPlayingArtist:
                 content = .text(
                     store.player.currentTrack?.artistNames ?? "miumiu",
@@ -251,7 +254,8 @@ public struct MainWindow: View {
                 id: pair.source, frame: miniFrame, scale: 1, cornerRadius: content.cornerRadius
             )
             HeroFlightDirector.shared.start(
-                id: pair.source, content: content, targetFrame: miniFrame, targetScale: 1
+                id: pair.source, content: content, targetFrame: miniFrame, targetScale: 1,
+                targetAnchorID: pair.source
             )
         }
     }

@@ -18,6 +18,9 @@ struct HeroFlight: View {
     /// the probe for the visibility check.
     let containerFrame: CGRect
 
+    @ObservedObject private var frameStore = HeroFrameStore.shared
+    @State private var animationGeneration = UUID()
+    @State private var shadowProgress: CGFloat = 0
     @State private var frame: CGRect
     @State private var scale: CGFloat
     @State private var measuredFrame: CGRect?
@@ -38,6 +41,13 @@ struct HeroFlight: View {
         // measurement matches the target instead of the source size.
         .frame(width: frame.width, height: frame.height)
         .clipShape(RoundedRectangle(cornerRadius: flight.cornerRadius, style: .continuous))
+        // The hidden endpoint views cannot supply the flying cover's shadow.
+        // Keep it outside the clip and inside the resting-scale transform,
+        // matching both endpoint views without changing their static styling.
+        .shadow(
+            color: .black.opacity(artworkShadow.opacity),
+            radius: artworkShadow.radius, y: artworkShadow.offset
+        )
         .scaleEffect(scale)
         // Measure the artwork as the target anchor measures it: outside its own
         // resting `scaleEffect`, so the reading is the layout frame and matches
@@ -69,28 +79,55 @@ struct HeroFlight: View {
             #if os(macOS)
             HeroProbe.shared.recordWindowScale(NSApp.keyWindow?.backingScaleFactor ?? 1, id: flight.id)
             #endif
-            withAnimation(AppAnimation.heroSpring) {
-                frame = flight.target
-                scale = flight.targetScale
-            } completion: {
-                guard !finished else { return }
-                finished = true
-                if let measuredFrame {
-                    HeroProbe.shared.recordProxyState(.landed, id: flight.id, frame: measuredFrame)
-                } else {
-                    // Fail closed: no geometry ever arrived, so report the
-                    // landing as unmeasured instead of papering over the gap
-                    // with the target frame we asked for.
-                    HeroProbe.shared.recordProxyState(.unmeasured, id: flight.id, frame: flight.target)
-                }
-                HeroProbe.shared.recordLanding(
-                    id: flight.id,
-                    frame: measuredFrame ?? flight.target,
-                    scale: flight.targetScale,
-                    cornerRadius: flight.cornerRadius
-                )
-                HeroFlightDirector.shared.end(id: flight.id)
+            animate(to: liveTarget ?? flight.target)
+        }
+        .onChange(of: liveTarget) { _, target in
+            guard let target, !finished, !frame.approximately(target) else { return }
+            animate(to: target)
+        }
+    }
+
+    private var liveTarget: CGRect? {
+        guard let id = flight.targetAnchorID else { return nil }
+        return frameStore.frame(for: id)
+    }
+
+    private var artworkShadow: (opacity: Double, radius: CGFloat, offset: CGFloat) {
+        guard flight.id == HeroID.nowPlayingArtwork else { return (0, 0, 0) }
+        let amount = flight.targetAnchorID == nil ? shadowProgress : 1 - shadowProgress
+        return (0.2 + 0.25 * Double(amount), 4 + 32 * amount, 2 + 16 * amount)
+    }
+
+    private func animate(to target: CGRect) {
+        let generation = UUID()
+        animationGeneration = generation
+        if flight.targetAnchorID != nil {
+            HeroProbe.shared.recordTarget(
+                id: flight.id, frame: target, scale: flight.targetScale,
+                cornerRadius: flight.cornerRadius
+            )
+        }
+        withAnimation(AppAnimation.heroSpring, completionCriteria: .removed) {
+            frame = target
+            scale = flight.targetScale
+            shadowProgress = 1
+        } completion: {
+            // A resize may retarget the flight while its previous spring is
+            // completing. Only the latest spring can hand back to the mini bar.
+            guard !finished, animationGeneration == generation,
+                  HeroFlightDirector.shared.active[flight.id]?.nonce == flight.nonce
+            else { return }
+            finished = true
+            if let measuredFrame {
+                HeroProbe.shared.recordProxyState(.landed, id: flight.id, frame: measuredFrame)
+            } else {
+                HeroProbe.shared.recordProxyState(.unmeasured, id: flight.id, frame: target)
             }
+            HeroProbe.shared.recordLanding(
+                id: flight.id, frame: measuredFrame ?? target,
+                scale: flight.targetScale, cornerRadius: flight.cornerRadius
+            )
+            HeroFlightDirector.shared.end(id: flight.id)
         }
     }
 
@@ -103,13 +140,20 @@ struct HeroFlight: View {
                     // Opaque while the artwork loads, as in the original flight.
                     .fill(.secondary)
             }
+        case .vipBadge:
+            VIPBadge()
         case let .text(text, color, fontSize, weight):
             Text(text)
                 .font(.system(size: fontSize, weight: weight))
                 .foregroundStyle(color)
                 .lineLimit(1)
-                .minimumScaleFactor(0.01)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                // The mini marquee starts at its leading edge and clips long
+                // titles. Centering/shrinking inside its flexible anchor moves
+                // the visible text even when the anchor itself lands correctly.
+                .fixedSize(horizontal: flight.targetAnchorID == HeroID.nowPlayingTitle, vertical: false)
+                .minimumScaleFactor(flight.targetAnchorID == HeroID.nowPlayingTitle ? 1 : 0.01)
+                .frame(maxWidth: .infinity, maxHeight: .infinity,
+                       alignment: flight.targetAnchorID == HeroID.nowPlayingTitle ? .leading : .center)
         case let .icon(name, tint, background, diameter, fontSize, weight):
             GeometryReader { proxy in
                 ZStack {
