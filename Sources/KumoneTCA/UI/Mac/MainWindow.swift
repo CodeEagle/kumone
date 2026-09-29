@@ -235,7 +235,7 @@ public struct MainWindow: View {
                 )
             case HeroID.nowPlayingArtist:
                 content = .text(
-                    store.player.currentTrack?.artistNames ?? "Kumone",
+                    store.player.currentTrack?.artistNames ?? "miumiu",
                     color: .secondary, fontSize: 11
                 )
             default:
