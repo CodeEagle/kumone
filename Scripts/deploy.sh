@@ -46,14 +46,13 @@ esac
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 TARGET="$REMOTE_USER@$REMOTE_HOST"
-# A unique upload name prevents an interrupted transfer from reusing an old file.
-UPLOAD_NAME="$APP_NAME.app.$(date +%s).$$.tar.gz"
+# The upload name pins on the shipped commit: an interrupted transfer can
+# resume the very same file on the next attempt, while a freshly built
+# commit gets a fresh name and never reuses a stale leftover.
+SHORT_COMMIT="$(git -C "$ROOT" rev-parse --short HEAD)" || \
+  fail "Could not read the git commit at $ROOT; deploy from a clean checkout."
+UPLOAD_NAME="$APP_NAME.app.$SHORT_COMMIT.tar.gz"
 REMOTE_UPLOAD="${REMOTE_STAGING%/}/$UPLOAD_NAME"
-# scp -O uses the remote shell: quote paths while allowing only the initial ~/.
-case "$REMOTE_UPLOAD" in
-  '~/'*) printf -v SCP_PATH '~/%q' "${REMOTE_UPLOAD#\~/}" ;;
-  *) printf -v SCP_PATH '%q' "$REMOTE_UPLOAD" ;;
-esac
 
 remote_script() {
   printf 'APP_NAME=%q\nREMOTE_APP_PATH=%q\nREMOTE_STAGING=%q\nUPLOAD_NAME=%q\n' \
@@ -123,9 +122,10 @@ REMOTE
 if [ "$DRY_RUN" = true ]; then
   printf '# Dry run: no build, transfer, or remote execution. Configuration: %s\n' "$CONF"
   printf 'ssh -o BatchMode=yes -o ConnectTimeout=10 %q true\n' "$TARGET"
-  printf '# After local build and packaging, upload to the existing staging directory:\n'
-  printf 'scp -O -o BatchMode=yes -o ConnectTimeout=10 %q %q\n' \
-    '/tmp/kumone-deploy.XXXXXX/Kumone.app.tar.gz' "$TARGET:$SCP_PATH"
+  printf '# After local build and packaging, upload to the staging directory:\n'
+  printf 'rsync -az --partial --append-verify -e "ssh -o BatchMode=yes -o ConnectTimeout=10" \\\n'
+  printf '  %q %q  # retried up to 5 times with backoff while the tunnel is flaky\n' \
+    "/tmp/kumone-deploy.XXXXXX/$APP_NAME.app.$SHORT_COMMIT.tar.gz" "$TARGET:$REMOTE_UPLOAD"
   printf "ssh -o BatchMode=yes -o ConnectTimeout=10 %q /bin/bash -s <<'KUMONE_REMOTE'\n" "$TARGET"
   remote_script
   printf 'KUMONE_REMOTE\n'
@@ -141,13 +141,41 @@ test -d "$ROOT/.build/app/$APP_NAME.app"
 STEP='local archive creation'
 LOCAL_TMP="$(mktemp -d /tmp/kumone-deploy.XXXXXX)"
 ARCHIVE="$LOCAL_TMP/$APP_NAME.app.tar.gz"
-tar -czf "$ARCHIVE" -C "$ROOT/.build/app" "$APP_NAME.app"
+# gzip -n omits the mtime and name headers, so repackaging the same tree is
+# byte-identical — a prerequisite for resuming a half-uploaded archive over
+# --append-verify instead of writing a mismatched tail onto it.
+tar -cf - -C "$ROOT/.build/app" "$APP_NAME.app" | gzip -n > "$ARCHIVE"
 STEP='archive transfer'
-# rsync replaces `scp -O` on this link: the legacy SCP protocol stalls
-# mid-transfer here while the connection itself stays responsive, whereas
-# rsync compresses on the wire, resumes partial files and survives the trip.
-rsync -az --partial -e "ssh -o BatchMode=yes -o ConnectTimeout=10" \
-  "$ARCHIVE" "$TARGET:$REMOTE_UPLOAD" || \
-  fail "Transfer to $TARGET:$REMOTE_STAGING failed; remote installation was not replaced."
+# The workmini link is an IPv6 tunnel that drops mid-transfer while staying
+# reachable in fits and starts, so the upload is resumable and retried:
+# --partial keeps the half-file on the remote, --append-verify refuses to
+# stitch a mismatching tail onto it, and each retry resumes where it left off.
+TRANSFER_TRIES=5
+TRANSFER_DELAY=5
+TRANSFER_OK=false
+for ((ATTEMPT = 1; ATTEMPT <= TRANSFER_TRIES; ATTEMPT++)); do
+  if rsync -az --partial --append-verify \
+      -e "ssh -o BatchMode=yes -o ConnectTimeout=10" \
+      "$ARCHIVE" "$TARGET:$REMOTE_UPLOAD"; then
+    TRANSFER_OK=true
+    break
+  fi
+  RSYNC_STATUS=$?
+  if [ "$RSYNC_STATUS" -eq 23 ]; then
+    # rsync 23 covers a failed --append-verify: the leftover remote file is
+    # not our archive. Drop it so the next attempt resends from scratch
+    # instead of failing forever on the same corrupt overlap.
+    ssh -o BatchMode=yes -o ConnectTimeout=10 "$TARGET" \
+      "rm -f -- $(printf '%q' "$REMOTE_UPLOAD")" || true
+  fi
+  if [ "$ATTEMPT" -lt "$TRANSFER_TRIES" ]; then
+    printf 'Transfer attempt %s/%s failed (rsync exit %s); retrying in %ss.\n' \
+      "$ATTEMPT" "$TRANSFER_TRIES" "$RSYNC_STATUS" "$TRANSFER_DELAY" >&2
+    sleep "$TRANSFER_DELAY"
+    TRANSFER_DELAY=$((TRANSFER_DELAY + 5))
+  fi
+done
+[ "$TRANSFER_OK" = true ] || \
+  fail "Transfer to $TARGET:$REMOTE_STAGING failed after $TRANSFER_TRIES attempts; remote installation was not replaced."
 STEP='remote installation'
 remote_script | ssh -o BatchMode=yes -o ConnectTimeout=10 "$TARGET" /bin/bash -s
