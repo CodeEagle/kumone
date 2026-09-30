@@ -1,3 +1,4 @@
+import APlay
 import ComposableArchitecture
 import KumoneCore
 import SwiftUI
@@ -18,6 +19,8 @@ public struct SettingsView: View {
     @AppStorage("lx.platform") private var lxPlatform = "wy"
 
     @State private var cacheSize: String = String(localized: "计算中…")
+    @State private var audioCacheUsage: String = String(localized: "计算中…")
+    @State private var imageCacheUsage: String = String(localized: "计算中…")
 
     public var body: some View {
         Form {
@@ -168,8 +171,22 @@ public struct SettingsView: View {
             }
 
             Section("存储") {
-                LabeledContent("图片缓存", value: cacheSize)
-                Button("清除缓存") {
+                // APlay's bounded stream cache (256MB by default, see
+                // PlaybackEngineAdapter's Configuration) lands here; the level
+                // and the clear button mirror the upstream storage controls
+                // (e0ad871) adapted to the engine-owned cache.
+                LabeledContent("歌曲缓存") {
+                    Text(audioCacheUsage)
+                        .foregroundStyle(.secondary)
+                }
+                Button("清除歌曲缓存") {
+                    clearAudioCache()
+                }
+                LabeledContent("图片缓存") {
+                    Text(imageCacheUsage)
+                        .foregroundStyle(.secondary)
+                }
+                Button("清除图片缓存") {
                     clearCache()
                 }
             }
@@ -225,7 +242,10 @@ public struct SettingsView: View {
         #if os(macOS)
         .frame(width: 440, height: 480)
         #endif
-        .task { updateCacheSize() }
+        .task {
+            updateCacheSize()
+            updateAudioCacheUsage()
+        }
     }
 
     /// The name the bundle ships under, so a build deployed as Miumiu does not
@@ -270,6 +290,50 @@ public struct SettingsView: View {
             .appendingPathComponent("im.missuo.Kumone/images", isDirectory: true)
     }
 
+    private var audioCacheDirectory: URL {
+        // The engine's bounded stream cache root (APlay Configuration).
+        URL(fileURLWithPath: APlay.Configuration.defaultCachedDirectory)
+    }
+
+    private func updateAudioCacheUsage() {
+        let dir = audioCacheDirectory
+        DispatchQueue.global(qos: .utility).async {
+            let usage = directoryUsage(at: dir)
+            let formatted = ByteCountFormatter.string(fromByteCount: usage, countStyle: .file)
+            DispatchQueue.main.async {
+                audioCacheUsage = formatted
+            }
+        }
+    }
+
+    /// One level of file sizes plus the directory's own subdirectories — APlay
+    /// stores stream segments beneath the cache root.
+    private func directoryUsage(at dir: URL) -> Int64 {
+        guard let enumerator = FileManager.default.enumerator(
+            at: dir, includingPropertiesForKeys: [.fileSizeKey]
+        ) else { return 0 }
+        var total: Int64 = 0
+        for case let url as URL in enumerator {
+            total += Int64((try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0)
+        }
+        return total
+    }
+
+    private func clearAudioCache() {
+        let dir = audioCacheDirectory
+        DispatchQueue.global(qos: .utility).async {
+            // The engine may hold open handles to files it is currently
+            // streaming; dropping the contents and recreating the root frees
+            // whatever it has released, as the image cache clear does.
+            try? FileManager.default.removeItem(at: dir)
+            try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            DispatchQueue.main.async {
+                audioCacheUsage = ByteCountFormatter.string(fromByteCount: 0, countStyle: .file)
+                appStore.send(.toasts(.presented(String(localized: "缓存已清除"))))
+            }
+        }
+    }
+
     private func updateCacheSize() {
         let dir = cacheDirectory
         DispatchQueue.global(qos: .utility).async {
@@ -282,6 +346,7 @@ public struct SettingsView: View {
             let formatted = ByteCountFormatter.string(fromByteCount: Int64(bytes), countStyle: .file)
             DispatchQueue.main.async {
                 cacheSize = formatted
+                imageCacheUsage = formatted
             }
         }
     }
