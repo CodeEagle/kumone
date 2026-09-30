@@ -45,10 +45,16 @@ struct PlayerChromeModifier: ViewModifier {
                 PlayerBar(appStore: appStore)
                     .frame(width: detailWidth)
                     .opacity(chromeOpacity)
+                    // The chrome stays mounted (the mini player's hero anchors
+                    // keep measuring) but must not soak up taps while the
+                    // immersive page is up: an invisible LyricsPanel over the
+                    // right edge was eating the page's top-trailing buttons.
+                    .allowsHitTesting(chromeOpacity > 0)
             }
             .overlay(alignment: .trailing) {
                 rightPanel
                     .opacity(chromeOpacity)
+                    .allowsHitTesting(chromeOpacity > 0)
             }
             .animation(AppAnimation.quick, value: appStore.isNowPlayingPresented)
             .animation(AppAnimation.standard, value: appStore.player.activePanel)
