@@ -134,3 +134,12 @@ static inline float audio_offset(float base, float amount, float k) {
 static inline float audio_glow(float base, float amount, float k) {
     return base + amount * k * 0.5;
 }
+
+// The kick: a beat punches the whole colour up for a frame or two. Unlike
+// `audio_glow` (which rides the slow loudness sway), this is a sharp flash on
+// top of whatever the shader already composed — the ease of the sway followed
+// by the hit of the beat is what makes the rhythm legible. Additive on the
+// final colour so a vivid palette stays vivid instead of washing grey.
+static inline float3 beat_flash(float3 col, float beat, float k) {
+    return col + col * audio_pulse(beat) * k;
+}

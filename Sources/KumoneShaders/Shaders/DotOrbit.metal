@@ -143,5 +143,6 @@ fragment float4 kumone_fragment_dot_orbit(Varying in [[stage_in]],
     float3 bgRGB = u.paletteBackground.rgb;
     col = col + bgRGB * (1.0 - dots);
 
+    col = beat_flash(col, u.beat, 0.35);
     return float4(col, 1.0);
 }

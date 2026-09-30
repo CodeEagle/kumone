@@ -109,5 +109,6 @@ fragment float4 kumone_fragment_metaballs(Varying in [[stage_in]],
     float brightness = audio_glow(1.0, audio_energy(u.loudness), 0.6);
     float3 col = totalColor * finalShape * brightness +
                  u.paletteBackground.rgb * (1.0 - finalShape);
+    col = beat_flash(col, u.beat, 0.35);
     return float4(col, 1.0);
 }

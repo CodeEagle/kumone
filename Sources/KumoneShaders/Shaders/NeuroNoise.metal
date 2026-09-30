@@ -79,5 +79,6 @@ fragment float4 kumone_fragment_neuro_noise(Varying in [[stage_in]],
     float3 backRGB = u.paletteBackground.rgb;
     col = col + backRGB * (1.0 - saturate(max(noise, 0.0)));
 
+    col = beat_flash(col, u.beat, 0.35);
     return float4(col, 1.0);
 }

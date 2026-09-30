@@ -30,10 +30,16 @@ public enum ShaderPaletteBuilder {
 
     /// Linear-light peak per slot. `accent` leads because it is the glow
     /// colour; `background` trails because it fills the frame.
-    private static let primaryPeak: Float = 0.5
-    private static let secondaryPeak: Float = 0.28
+    ///
+    /// Lifted from (0.5 / 0.28 / 1.0 / 0.035): the palette is composited over a
+    /// frosted window that dims whatever it sits on, and the old levels read
+    /// as grey once they survived that attenuation. `primary` at 0.62 linear
+    /// is sRGB ~0.80 — a colour that still reads as itself after the window
+    /// subdues it; `background` at 0.055 keeps the frame deep but visibly tinted.
+    private static let primaryPeak: Float = 0.62
+    private static let secondaryPeak: Float = 0.40
     private static let accentPeak: Float = 1.0
-    private static let backgroundPeak: Float = 0.035
+    private static let backgroundPeak: Float = 0.055
 
     /// Below this saturation a colour has no hue to separate or preserve.
     private static let neutralSaturation: Float = 0.06
@@ -56,7 +62,7 @@ public enum ShaderPaletteBuilder {
         let highlight = colors.shaderHighlight.map { linearHSB(decode($0)) } ?? supporting
 
         let neutral = dominant.saturation < neutralSaturation
-        let primarySaturation = neutral ? dominant.saturation : saturated(dominant.saturation, floor: 0.30)
+        let primarySaturation = neutral ? dominant.saturation : saturated(dominant.saturation, floor: 0.42)
 
         // Secondary keeps the artwork's own supporting hue when it is already a
         // different colour, and is rotated only when the cover is monochrome
@@ -77,13 +83,13 @@ public enum ShaderPaletteBuilder {
             }
         }
 
-        let secondarySaturation = neutral ? supporting.saturation : saturated(supporting.saturation, floor: 0.35)
-        let accentSaturation = neutral ? highlight.saturation : saturated(highlight.saturation, floor: 0.45)
+        let secondarySaturation = neutral ? supporting.saturation : saturated(supporting.saturation, floor: 0.48)
+        let accentSaturation = neutral ? highlight.saturation : saturated(highlight.saturation, floor: 0.60)
         // The tint behind everything carries the dominant hue at a saturation the
         // cover may never reach on its own — a washed-out cover still gets a
         // recognisable backdrop, while staying far too dark to compete with the
         // subject colours drawn over it.
-        let backgroundSaturation = neutral ? dominant.saturation : max(primarySaturation, 0.35)
+        let backgroundSaturation = neutral ? dominant.saturation : max(primarySaturation, 0.45)
 
         return ShaderPalette(
             primary: slot(hue: dominant.hue, saturation: primarySaturation, brightness: primaryPeak),

@@ -104,8 +104,12 @@ public struct ShaderAudioBridge {
 
         let beatTarget: Float = raw[0] > threshold ? 1.0 : 0.0
         // Snap up hard and release almost as hard: a beat should read as a
-        // crisp accent on top of the slow sway, not another long fade.
-        let beatCoeff: Float = beatTarget > beatEnvelope ? 0.70 : 0.11
+        // crisp accent on top of the slow sway, not another long fade. The
+        // attack was 0.70 — fast, but a kick is supposed to *snap*, so it goes
+        // to 0.85 while the release tightens to 0.075: the contrast between
+        // the ease of the sway and the punch of the hit is what makes the
+        // rhythm legible.
+        let beatCoeff: Float = beatTarget > beatEnvelope ? 0.85 : 0.075
         beatEnvelope += (beatTarget - beatEnvelope) * beatCoeff
 
         return ShaderAudioFrame(

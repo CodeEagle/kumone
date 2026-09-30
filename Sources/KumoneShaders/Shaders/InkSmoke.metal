@@ -88,5 +88,6 @@ fragment float4 kumone_fragment_ink_smoke(Varying in [[stage_in]],
     float wisp = pow(clamp(f * 1.5, 0.0, 1.0), 3.0);
     col       += g * wisp * highlight;
 
+    col = beat_flash(col, u.beat, 0.35);
     return float4(col, 1.0);
 }

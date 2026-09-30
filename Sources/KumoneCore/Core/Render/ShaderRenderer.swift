@@ -39,6 +39,21 @@ public final class ShaderRenderer: NSObject, MTKViewDelegate {
     /// Timestamp of the previous drawn frame, for the palette ease and the
     /// audio bridge's step. Zero until the first frame lands.
     private var lastFrameTime: CFTimeInterval = 0
+    #if DEBUG
+    /// Throttles the diagnostic probe in `draw`.
+    private var lastProbeTime: CFTimeInterval = 0
+    private static let probeLogURL = URL(fileURLWithPath: "/tmp/kumone-shader.log")
+    private static func writeFile(_ line: String) {
+        let payload = (line + "\n").data(using: .utf8) ?? Data()
+        if let handle = try? FileHandle(forWritingTo: probeLogURL) {
+            _ = try? handle.seekToEnd()
+            try? handle.write(contentsOf: payload)
+            try? handle.close()
+        } else {
+            try? payload.write(to: probeLogURL, options: [.atomic])
+        }
+    }
+    #endif
 
     /// Set when a shader fails to build, so the host can show why instead of a
     /// black screen with no explanation.
@@ -217,6 +232,27 @@ public final class ShaderRenderer: NSObject, MTKViewDelegate {
 
         commandBuffer.present(drawable)
         commandBuffer.commit()
+
+        #if DEBUG
+        // Shader diagnostic probe: every 2s log the palette slots and the audio
+        // frame values so a "washed out / doesn't match the cover" report can
+        // be split into "palette wrong" vs "audio driving it dark" without a
+        // GUI. See /tmp/kumone-shader.log.
+        if now - lastProbeTime >= 2.0 {
+            lastProbeTime = now
+            let p = paletteMixer.current
+            let line = String(
+                format: "SHADER PROBE live=%d playing=%d reactive=%d loud=%.3f lvl=%.3f low=%.3f mid=%.3f high=%.3f beat=%.3f palPri=(%.2f,%.2f,%.2f) palSec=(%.2f,%.2f,%.2f) palAcc=(%.2f,%.2f,%.2f) palBg=(%.2f,%.2f,%.2f)",
+                isAudioLive ? 1 : 0, isAudioPlaying ? 1 : 0, isAudioReactive ? 1 : 0,
+                frame.loudness, frame.level, frame.low, frame.mid, frame.high, frame.beat,
+                p.primary.x, p.primary.y, p.primary.z,
+                p.secondary.x, p.secondary.y, p.secondary.z,
+                p.accent.x, p.accent.y, p.accent.z,
+                p.background.x, p.background.y, p.background.z)
+            KumoneLogger.hero.notice("\(line, privacy: .public)")
+            Self.writeFile(line)
+        }
+        #endif
     }
 
     // MARK: - Shared types library

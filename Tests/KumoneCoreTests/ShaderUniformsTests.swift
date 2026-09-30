@@ -73,10 +73,13 @@ final class ShaderUniformsTests: XCTestCase {
         let palette = ShaderPaletteBuilder.make(from: colors)
         // The two halves stay red and blue, at the levels the scheme uses:
         // primary is the subject colour, secondary the dimmer supporting one.
-        XCTAssertEqual(palette.primary.x, 0.5, accuracy: 0.01)
+        // Peaks are lifted (0.62 / 0.40 linear) because the palette composites
+        // over a frosted window that attenuates it; the old 0.5 / 0.28 read as
+        // grey once they survived that dimming.
+        XCTAssertEqual(palette.primary.x, 0.62, accuracy: 0.01)
         XCTAssertEqual(palette.primary.z, 0, accuracy: 0.01)
         XCTAssertEqual(palette.secondary.x, 0, accuracy: 0.01)
-        XCTAssertEqual(palette.secondary.z, 0.28, accuracy: 0.01)
+        XCTAssertEqual(palette.secondary.z, 0.40, accuracy: 0.01)
         // The pre-existing ambient UI still gets its intentionally dimmed color.
         XCTAssertNotEqual(colors.primary, colors.shaderPrimary)
     }

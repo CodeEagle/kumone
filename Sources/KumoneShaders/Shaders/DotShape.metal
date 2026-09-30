@@ -71,5 +71,6 @@ fragment float4 kumone_fragment_dot_shape(Varying in [[stage_in]],
     float3 fg = u.paletteAccent.rgb * brightness;
     fg = mix(fg, u.palettePrimary.rgb, 0.35);
     float3 col = mix(bg, fg, intensity);
+    col = beat_flash(col, u.beat, 0.35);
     return float4(col, 1.0);
 }
