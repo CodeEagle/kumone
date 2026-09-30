@@ -189,6 +189,15 @@ public struct SettingsView: View {
                 Button("清除图片缓存") {
                     clearCache()
                 }
+                // Upstream 07225a5: retry on the Kuwo mirror after the main
+                // source and the unblock both refuse a track.
+                Toggle("音源回退", isOn: Binding(
+                    get: { store.enableAudioSourceFallback },
+                    set: { store.send(.setEnableAudioSourceFallback($0)) }
+                ))
+                Text("主源与解析源都无法播放时，尝试酷我镜像匹配播放")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
 
             Section("账号") {

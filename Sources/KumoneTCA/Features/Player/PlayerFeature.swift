@@ -79,6 +79,9 @@ public struct PlayerFeature {
         // sibling features own the storage, the player only needs the values.
         public var audioQuality: AudioQuality = .exhigh
         public var enableUnblock = true
+        /// Mirrored from SettingsFeature so the URL resolver can gate the
+        /// mirror fallback without reaching across features.
+        public var enableAudioSourceFallback = true
         public var isLoggedIn = false
         public var vipType = 0
 
@@ -198,6 +201,7 @@ public struct PlayerFeature {
     @Dependency(\.musicProvider) public var provider
     @Dependency(\.personalFM) public var fm
     @Dependency(\.unblock) public var unblock
+    @Dependency(\.audioSourceFallback) public var audioSourceFallback
     @Dependency(\.persistence) public var persistence
     @Dependency(\.continuousClock) public var clock
     @Dependency(\.date) public var date
@@ -799,7 +803,7 @@ public struct PlayerFeature {
     /// Resolves a playable URL for `track`, falling back to third-party sources
     /// when NetEase refuses or only offers a trial clip.
     private func resolveURLEffect(track: Track, generation: Int, autostart: Bool, state: State) -> Effect<Action> {
-        .run { [provider, unblock] send in
+        .run { [provider, unblock, audioSourceFallback] send in
             let quality = state.audioQuality
             var data = try? await provider.songURL(ids: [MusicID(track.id)], quality: SongQuality(neteaseLevel: quality.rawValue)!).first
             if data?.url == nil, quality != .standard {
@@ -812,6 +816,18 @@ public struct PlayerFeature {
             var unblockSource: String?
             if (url == nil || data?.freeTrialInfo != nil), state.enableUnblock {
                 if let resolved = await unblock.resolve(track) {
+                    url = resolved.url
+                    unblockSource = resolved.source
+                    data = nil
+                    await send(.unblockApplied(resolved.source))
+                }
+            }
+            // Audio source fallback (upstream 07225a5): the main provider and
+            // the unblock both refused the track, so retry on the Kuwo mirror.
+            // Comes last because the mirror's catalog is a keyword match, not
+            // a catalogue id, so it is strictly less precise than either.
+            if (url == nil || data?.freeTrialInfo != nil), state.enableAudioSourceFallback {
+                if let resolved = await audioSourceFallback.resolve(track) {
                     url = resolved.url
                     unblockSource = resolved.source
                     data = nil

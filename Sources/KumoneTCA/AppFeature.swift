@@ -338,6 +338,7 @@ public struct AppFeature {
             case .settings:
                 state.player.audioQuality = state.settings.audioQuality
                 state.player.enableUnblock = state.settings.enableUnblock
+                state.player.enableAudioSourceFallback = state.settings.enableAudioSourceFallback
                 state.playlistRoot.enableUnblock = state.settings.enableUnblock
             case .account:
                 state.player.isLoggedIn = state.account.isLoggedIn

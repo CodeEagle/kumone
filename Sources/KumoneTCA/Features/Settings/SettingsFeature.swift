@@ -21,6 +21,10 @@ public struct SettingsFeature {
         public var verbatimLyrics = true
         /// Resolve gray tracks from third-party sources.
         public var enableUnblock = true
+        /// When the main source and the unblock both refuse a track, retry
+        /// on the Kuwo/QQ mirror providers (upstream 07225a5 audio source
+        /// fallback).
+        public var enableAudioSourceFallback = true
         public var recentFilterEnabled = true
         public var recentFilterDays = 30
         public var autoCheckUpdates = true
@@ -47,6 +51,7 @@ public struct SettingsFeature {
         case setShowDesktopLyrics(Bool)
         case setDesktopLyricsCentered(Bool)
         case setShowMainWindowAmbientBackground(Bool)
+        case setEnableAudioSourceFallback(Bool)
         case setMainWindowAmbientBackgroundIntensity(Double)
         /// The app menu / Settings "检查更新…" button.
         case checkForUpdates
@@ -71,6 +76,9 @@ public struct SettingsFeature {
                     ?? (p.boolForKey(Keys.showRomaji) ? .romaji : .off)
                 state.verbatimLyrics = p.boolForKey(Keys.verbatimLyrics)
                 state.enableUnblock = p.boolForKey(Keys.unblock)
+                // No stored key means the default-on behaviour, not an
+                // explicit off.
+                state.enableAudioSourceFallback = p.stringForKey(Keys.audioSourceFallback).map { $0 != "0" } ?? true
                 // UserDefaults exposes stored Bool values through stringForKey as well.
                 state.recentFilterEnabled = p.stringForKey(Keys.recentFilterEnabled) == nil
                     ? true : p.boolForKey(Keys.recentFilterEnabled)
@@ -150,6 +158,13 @@ public struct SettingsFeature {
                 persistence.setBool(value, Keys.desktopLyricsCentered)
                 return .none
 
+            case let .setEnableAudioSourceFallback(value):
+                state.enableAudioSourceFallback = value
+                // Stored as a string ("1"/"0" rather than a Bool) so a fresh
+                // install with no key can be told apart from an explicit off.
+                persistence.setString(value ? "1" : "0", Keys.audioSourceFallback)
+                return .none
+
             case let .setShowMainWindowAmbientBackground(value):
                 state.showMainWindowAmbientBackground = value
                 persistence.setBool(value, Keys.mainWindowAmbientBackground)
@@ -180,6 +195,7 @@ extension SettingsFeature {
         public static let annotation = "settings.lyricsAnnotation"
         public static let verbatimLyrics = "settings.verbatimLyrics"
         public static let unblock = "settings.enableUnblock"
+        public static let audioSourceFallback = "settings.enableAudioSourceFallback"
         public static let recentFilterEnabled = "fm.recentFilterEnabled"
         public static let recentFilterDays = "fm.recentFilterDays"
         public static let autoCheckUpdates = "settings.autoCheckUpdates"
