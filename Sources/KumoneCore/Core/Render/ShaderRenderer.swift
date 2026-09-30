@@ -39,7 +39,6 @@ public final class ShaderRenderer: NSObject, MTKViewDelegate {
     /// Timestamp of the previous drawn frame, for the palette ease and the
     /// audio bridge's step. Zero until the first frame lands.
     private var lastFrameTime: CFTimeInterval = 0
-    #if DEBUG
     /// Throttles the diagnostic probe in `draw`.
     private var lastProbeTime: CFTimeInterval = 0
     private static let probeLogURL = URL(fileURLWithPath: "/tmp/kumone-shader.log")
@@ -53,7 +52,6 @@ public final class ShaderRenderer: NSObject, MTKViewDelegate {
             try? payload.write(to: probeLogURL, options: [.atomic])
         }
     }
-    #endif
 
     /// Set when a shader fails to build, so the host can show why instead of a
     /// black screen with no explanation.
@@ -233,11 +231,11 @@ public final class ShaderRenderer: NSObject, MTKViewDelegate {
         commandBuffer.present(drawable)
         commandBuffer.commit()
 
-        #if DEBUG
         // Shader diagnostic probe: every 2s log the palette slots and the audio
         // frame values so a "washed out / doesn't match the cover" report can
         // be split into "palette wrong" vs "audio driving it dark" without a
-        // GUI. See /tmp/kumone-shader.log.
+        // GUI. See /tmp/kumone-shader.log. (TEMPORARY: released unconditionally
+        // while the palette/conformance issue is being triaged on workmini.)
         if now - lastProbeTime >= 2.0 {
             lastProbeTime = now
             let p = paletteMixer.current
@@ -252,7 +250,6 @@ public final class ShaderRenderer: NSObject, MTKViewDelegate {
             KumoneLogger.hero.notice("\(line, privacy: .public)")
             Self.writeFile(line)
         }
-        #endif
     }
 
     // MARK: - Shared types library
