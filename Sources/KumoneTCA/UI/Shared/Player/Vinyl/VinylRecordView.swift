@@ -7,6 +7,10 @@ import SwiftUI
 public struct VinylRecordView: View {
     public let artworkImage: PlatformImage?
     public let size: CGFloat
+    /// Hides the label's artwork while a hero stand-in owns the visual.
+    #if os(macOS)
+    public var hidesLabelArtwork: Bool = false
+    #endif
 
     public init(artworkImage: PlatformImage?, size: CGFloat = 280) {
         self.artworkImage = artworkImage
@@ -192,6 +196,10 @@ public struct VinylRecordView: View {
                 }
                 .frame(width: labelDiameter, height: labelDiameter)
                 .clipShape(Circle())
+                #if os(macOS)
+                .opacity(hidesLabelArtwork ? 0 : 1)
+                .animation(nil, value: hidesLabelArtwork)
+                #endif
                 .overlay {
                     // Paper label edge ring
                     Circle()

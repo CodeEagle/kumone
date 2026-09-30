@@ -7,7 +7,9 @@ struct FMView: View {
     let appStore: StoreOf<AppFeature>
 
     @Environment(\.openLogin) private var openLogin
+    #if os(iOS)
     @Environment(\.colorScheme) private var colorScheme
+    #endif
 
     private var player: PlayerFeature.State { appStore.player }
 
@@ -40,6 +42,16 @@ struct FMView: View {
 
     private var backdrop: some View {
         ZStack {
+            #if os(macOS)
+            // The window-level shader is this page's background now: no solid
+            // fill, no blurred cover. Only a gentle readability frame stays so
+            // the centered cover, titles, controls and the login prompt stay
+            // legible over moving visuals.
+            LinearGradient(
+                colors: [.black.opacity(0.18), .clear, .black.opacity(0.32)],
+                startPoint: .top, endPoint: .bottom
+            )
+            #else
             Platform.windowBackgroundColor
             if let cover = track?.album.picUrl?.resizedImageURL(384) {
                 CachedAsyncImage(url: cover)
@@ -52,6 +64,7 @@ struct FMView: View {
                 colors: [.clear, Platform.windowBackgroundColor.opacity(0.6)],
                 startPoint: .top, endPoint: .bottom
             )
+            #endif
         }
         .ignoresSafeArea()
         .animation(AppAnimation.smooth, value: track?.id)

@@ -45,7 +45,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         ShaderDiscovery.shared.reload()
-        store.send(.setShader(ShaderDiscovery.shared.availableDescriptors.first?.id))
+        store.send(.setShader(resolveInitialShaderID()))
         showMainWindow()
 
         #if DEBUG
@@ -112,15 +112,41 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard let container = mainWindowController?.window?.contentViewController as? MainContainerViewController else {
             return
         }
-        let descriptor = store.shaderID.flatMap { id in
-            ShaderDiscovery.shared.availableDescriptors.first { $0.id == id }
+        // The old "主界面环境色" switch now gates the window-level shader: off
+        // means the frosted backdrop below it is the whole background.
+        let descriptor: ShaderDescriptor?
+        if store.settings.showMainWindowAmbientBackground {
+            descriptor = store.shaderID.flatMap { id in
+                ShaderDiscovery.shared.availableDescriptors.first { $0.id == id }
+            }
+        } else {
+            descriptor = nil
         }
+        // The intensity slider scales how strongly the shader composites over
+        // the frosted backdrop, keeping the old "背景色强度" control meaningful.
+        let intensity = store.settings.mainWindowAmbientBackgroundIntensity
+        container.shaderLayer.layer?.opacity = Float(min(max(intensity, 0), 1))
         container.shaderLayer.apply(
             shader: descriptor,
             isPlaying: store.player.isPlaying,
             palette: ShaderPaletteBuilder.make(from: artworkStore.colors),
             pcmSync: ShaderSettings.shared.pcmSyncEnabled
         )
+    }
+
+    /// Restores the user's last pick instead of always landing on the first
+    /// bundled shader: a "no shader" pick stays off, and a named pick resolves
+    /// to its descriptor. Falls back to the first shader when the stored name
+    /// is gone (deleted import) or nothing was ever picked.
+    private func resolveInitialShaderID() -> String? {
+        let settings = ShaderSettings.shared
+        if settings.shaderPickingDisabled { return nil }
+        let name = settings.pickedShaderName
+        if !name.isEmpty,
+           let match = ShaderDiscovery.shared.availableDescriptors.first(where: { $0.name == name }) {
+            return match.id
+        }
+        return ShaderDiscovery.shared.availableDescriptors.first?.id
     }
 
     /// The window backdrop is a shader too, so it has to follow the same
@@ -164,6 +190,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         withObservationTracking { [weak self] in
             _ = self?.store.shaderID
             _ = self?.store.player.isPlaying
+            _ = self?.store.settings.showMainWindowAmbientBackground
+            _ = self?.store.settings.mainWindowAmbientBackgroundIntensity
         } onChange: { [weak self] in
             // Observation fires before mutation; defer reads and rearm its one-shot tracking.
             DispatchQueue.main.async {

@@ -69,8 +69,18 @@ struct SidebarView: View {
                 }
             }
         }
+        #if os(macOS)
+        // The window-level shader paints the whole window; a `.sidebar` list
+        // would draw its own system material over it and hide it. The plain
+        // style with transparent rows lets the shader through, while the
+        // selection highlight is still drawn by the rows themselves.
+        .listStyle(.plain)
+        .scrollContentBackground(.hidden)
+        .listRowSeparator(.hidden)
+        #else
         .listStyle(.sidebar)
         .scrollContentBackground(.hidden)
+        #endif
         .safeAreaInset(edge: .bottom, spacing: 0) {
             accountFooter
         }
@@ -190,7 +200,14 @@ struct SidebarView: View {
 #endif
             }
         }
+        #if os(macOS)
+        // A frosted footer would sit on top of the window shader as its own
+        // opaque-ish block; a translucent dark veil keeps the account chip
+        // readable while the shader still shows through.
+        .background(Color.black.opacity(0.18))
+        #else
         .background(.ultraThinMaterial)
+        #endif
 #if os(iOS)
         .sheet(isPresented: $showSettings) {
             NavigationStack {

@@ -133,9 +133,14 @@ public final class ShaderLayerView: MTKView {
         if shader?.id != currentShaderID {
             currentShaderID = shader?.id
             if let shader {
-                renderer.load(shader)
+                // A shader that fails to build must not leave the previous
+                // shader's last frame on the layer either.
+                if !renderer.load(shader) {
+                    renderer.clearOnce(in: self)
+                }
             } else {
                 renderer.unload()
+                renderer.clearOnce(in: self)
             }
         }
 

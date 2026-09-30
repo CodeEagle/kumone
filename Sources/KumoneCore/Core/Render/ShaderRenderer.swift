@@ -119,6 +119,23 @@ public final class ShaderRenderer: NSObject, MTKViewDelegate {
         lastError = nil
     }
 
+    /// Submits a single frame cleared to the view's clear color.
+    ///
+    /// `draw` early-returns while `pipelineState` is nil, so an unloaded shader
+    /// would otherwise leave its last rendered frame on the layer forever. The
+    /// host calls this right after `unload` (or a failed `load`) so the layer
+    /// actually goes transparent and whatever sits beneath it shows through.
+    public func clearOnce(in view: MTKView) {
+        guard let drawable = view.currentDrawable,
+              let descriptor = view.currentRenderPassDescriptor,
+              let commandBuffer = commandQueue.makeCommandBuffer(),
+              let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: descriptor)
+        else { return }
+        encoder.endEncoding()
+        commandBuffer.present(drawable)
+        commandBuffer.commit()
+    }
+
     // MARK: - MTKViewDelegate
 
     public func mtkView(_ view: MTKView, drawableSizeWillChange size: CGSize) {

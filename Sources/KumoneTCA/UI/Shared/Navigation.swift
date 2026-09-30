@@ -36,14 +36,21 @@ struct PlayerChromeModifier: ViewModifier {
     let detailWidth: CGFloat
 
     func body(content: Content) -> some View {
+        // Hidden but mounted while the immersive page is up: keeping layout
+        // means the mini player's hero anchors keep measuring their frames,
+        // and the window-level shader shows through the page's thin veil.
+        let chromeOpacity = appStore.isNowPlayingPresented ? 0.0 : 1.0
         content
             .overlay(alignment: .bottomTrailing) {
                 PlayerBar(appStore: appStore)
                     .frame(width: detailWidth)
+                    .opacity(chromeOpacity)
             }
             .overlay(alignment: .trailing) {
                 rightPanel
+                    .opacity(chromeOpacity)
             }
+            .animation(AppAnimation.quick, value: appStore.isNowPlayingPresented)
             .animation(AppAnimation.standard, value: appStore.player.activePanel)
     }
 

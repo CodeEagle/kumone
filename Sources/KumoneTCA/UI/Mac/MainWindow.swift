@@ -8,7 +8,6 @@ public struct MainWindow: View {
     }
 
     @SwiftUI.Bindable var store: StoreOf<AppFeature>
-    @Environment(\.colorScheme) private var colorScheme
 
     #if os(macOS)
     @StateObject private var artworkStore = NowPlayingArtworkStore()
@@ -32,15 +31,14 @@ public struct MainWindow: View {
                 }
         }
         .navigationSplitViewStyle(.balanced)
-        .overlay(alignment: .trailing) {
-            if store.settings.showMainWindowAmbientBackground, detailWidth > 0 {
-                MainWindowAmbientBackground(
-                    colors: artworkStore.colors,
-                    intensity: store.settings.mainWindowAmbientBackgroundIntensity
-                )
-                    .frame(width: detailWidth)
-            }
-        }
+        // The immersive page is the only visible surface while it is up: the
+        // underlying navigation content fades out (layout and frames survive,
+        // so the hero anchors on the mini player keep measuring) and the
+        // window-level shader shows through the page's thin readability veil.
+        // The fade is quicker than the page's spring: clearing the stage fast
+        // lets the hero flight's bounce read as the entrance.
+        .opacity(store.isNowPlayingPresented ? 0 : 1)
+        .animation(AppAnimation.quick, value: store.isNowPlayingPresented)
         .toolbar {
             if #available(macOS 26.0, iOS 26.0, *) {
                 ToolbarItem(placement: .primaryAction) {
@@ -67,16 +65,7 @@ public struct MainWindow: View {
         // Keep the single main window alive on Cmd+W / red button so the Dock
         // icon can always bring it back (#60/#63/#66/#70).
         .background(
-            MainWindowConfigurator(
-                ambientConfiguration: MainWindowAmbientConfiguration(
-                    showsAmbientBackground: store.settings.showMainWindowAmbientBackground,
-                    showsTitlebarAmbientBackground: !store.isNowPlayingPresented,
-                    colors: artworkStore.colors,
-                    mainColumnWidth: detailWidth,
-                    intensity: store.settings.mainWindowAmbientBackgroundIntensity,
-                    isDark: isDarkAppearance
-                )
-            )
+            MainWindowConfigurator()
         )
         #endif
         .playerChrome(appStore: store, detailWidth: detailWidth)
@@ -137,8 +126,10 @@ public struct MainWindow: View {
                     // The hero flight owns the spatial animation (the artwork
                     // flying from the PlayerBar to the header); a slide-in
                     // here would race it and the hero gate would lock onto the
-                    // off-screen slide start as the target.
-                    .transition(.opacity)
+                    // off-screen slide start as the target. A scale is safe
+                    // instead: the hero targets keep measuring live and the
+                    // flight's retargeting follows them to their settled size.
+                    .transition(.opacity.combined(with: .scale(scale: 0.96)))
                 #else
                 NowPlayingView(
                     onOpenDestination: openDestination
@@ -148,6 +139,10 @@ public struct MainWindow: View {
                 #endif
             }
         }
+        // The page springs in (opacity plus a gentle scale): the underlying
+        // content is already gone by the time this settles, so this spring is
+        // the bounce of the entrance.
+        .animation(AppAnimation.spring, value: store.isNowPlayingPresented)
         .overlay(alignment: .top) {
             if let toast = store.toasts.current {
                 ToastView(toast: toast)
@@ -361,10 +356,6 @@ public struct MainWindow: View {
     private var needsCurrentArtwork: Bool {
         store.settings.showMainWindowAmbientBackground || store.isNowPlayingPresented
     }
-
-    private var isDarkAppearance: Bool {
-        (store.settings.appearance.brightnessIntent.colorScheme ?? colorScheme) == .dark
-    }
     #endif
 }
 
@@ -377,27 +368,19 @@ public struct MainWindow: View {
 /// and restores the window on a Dock click. Every other window-delegate
 /// callback is forwarded untouched to the existing delegate.
 struct MainWindowConfigurator: NSViewRepresentable {
-    let ambientConfiguration: MainWindowAmbientConfiguration
-
     func makeCoordinator() -> Coordinator { Coordinator() }
 
     func makeNSView(context: Context) -> NSView {
         let view = NSView(frame: .zero)
         DispatchQueue.main.async {
-            context.coordinator.requestAmbientBackgroundConfiguration(
-                from: view,
-                ambientConfiguration: ambientConfiguration
-            )
+            context.coordinator.attach(from: view)
         }
         return view
     }
 
     func updateNSView(_ nsview: NSView, context: Context) {
         DispatchQueue.main.async {
-            context.coordinator.requestAmbientBackgroundConfiguration(
-                from: nsview,
-                ambientConfiguration: ambientConfiguration
-            )
+            context.coordinator.attach(from: nsview)
         }
     }
 
@@ -405,10 +388,8 @@ struct MainWindowConfigurator: NSViewRepresentable {
     final class Coordinator: NSObject, NSWindowDelegate {
         private(set) weak var window: NSWindow?
         private weak var forwardee: NSWindowDelegate?
-        private let ambientAppearance = MainWindowAmbientAppearanceController()
-        private weak var configurationHost: NSView?
-        private var pendingAmbientConfiguration: MainWindowAmbientConfiguration?
-        private var hasScheduledAmbientConfiguration = false
+        private weak var attachHost: NSView?
+        private var hasScheduledAttach = false
 
         func attach(to window: NSWindow?) {
             guard let window, self.window == nil else { return }
@@ -422,31 +403,16 @@ struct MainWindowConfigurator: NSViewRepresentable {
             }
         }
 
-        func requestAmbientBackgroundConfiguration(
-            from host: NSView,
-            ambientConfiguration: MainWindowAmbientConfiguration
-        ) {
-            configurationHost = host
-            pendingAmbientConfiguration = ambientConfiguration
-            guard !hasScheduledAmbientConfiguration else { return }
-            hasScheduledAmbientConfiguration = true
-
+        func attach(from host: NSView) {
+            attachHost = host
+            guard !hasScheduledAttach else { return }
+            hasScheduledAttach = true
             DispatchQueue.main.async { [weak self] in
                 guard let self else { return }
-                self.hasScheduledAmbientConfiguration = false
-                guard let configuration = self.pendingAmbientConfiguration else { return }
-                self.pendingAmbientConfiguration = nil
-                self.attach(to: self.configurationHost?.window)
-                guard let window = self.window else { return }
-                self.ambientAppearance.configure(configuration, in: window)
+                self.hasScheduledAttach = false
+                guard let host = self.attachHost else { return }
+                self.attach(to: host.window)
             }
-        }
-
-        func windowDidUpdate(_ notification: Notification) {
-            if let window {
-                ambientAppearance.updateLayout(in: window)
-            }
-            forwardee?.windowDidUpdate?(notification)
         }
 
         // Hide instead of close; keep the scene alive.

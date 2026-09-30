@@ -23,6 +23,22 @@ public final class ShaderSettings: ObservableObject {
         didSet { defaults.set(pcmSyncEnabled, forKey: Keys.pcmSyncEnabled) }
     }
 
+    /// The name of the shader the user last picked in any picker, persisted
+    /// across launches.
+    ///
+    /// Selection lives here rather than the TCA store because the store is not
+    /// persisted: the now-playing picker writes it, and the AppKit shell's
+    /// startup seeding reads it to restore the user's choice instead of
+    /// silently falling back to the first shader.
+    @Published public var pickedShaderName: String {
+        didSet { defaults.set(pickedShaderName, forKey: Keys.shaderName) }
+    }
+
+    /// True when the user picked the "no shader" entry in a picker.
+    @Published public var shaderPickingDisabled: Bool {
+        didSet { defaults.set(shaderPickingDisabled, forKey: Keys.shaderDisabled) }
+    }
+
     private let defaults: UserDefaults
 
     public init(defaults: UserDefaults = .standard) {
@@ -30,9 +46,13 @@ public final class ShaderSettings: ObservableObject {
         // On by default: the audio path is part of what a shader does now, and
         // a first-run user should see the music drive the visuals.
         self.pcmSyncEnabled = defaults.object(forKey: Keys.pcmSyncEnabled) as? Bool ?? true
+        self.pickedShaderName = defaults.string(forKey: Keys.shaderName) ?? ""
+        self.shaderPickingDisabled = defaults.bool(forKey: Keys.shaderDisabled)
     }
 
     private enum Keys {
         static let pcmSyncEnabled = "visualizer.pcmSyncEnabled"
+        static let shaderName = "visualizer.shaderName"
+        static let shaderDisabled = "visualizer.shaderDisabled"
     }
 }

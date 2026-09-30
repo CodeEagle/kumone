@@ -14,7 +14,11 @@ final class HeroFlightDirector: ObservableObject {
         let id: String
         let content: HeroContent
         let source: CGRect
-        let target: CGRect
+        /// The frame the flight was launched at. A present flight may later
+        /// follow its live anchor (`liveAnchorID`) if the landing view moves
+        /// before the stand-in settles; a return flight follows
+        /// `targetAnchorID`.
+        var target: CGRect
         /// The resting scale the target view applies, which the flight has to
         /// reproduce so the hand-off is invisible.
         let targetScale: CGFloat
@@ -23,6 +27,11 @@ final class HeroFlightDirector: ObservableObject {
         let sourceScale: CGFloat
         /// Return flights follow the mini anchor as the sidebar/window settles.
         var targetAnchorID: String? = nil
+        /// Present flights follow the landing view's anchor as the page's layout
+        /// settles (e.g. the lyrics column collapsing re-centres the artwork
+        /// while the stand-in is still flying). `nil` means the recorded target
+        /// is final.
+        var liveAnchorID: String? = nil
         /// A fresh value every time `start` builds a flight. `active` is keyed by
         /// the hero id, so a present flight and the return flight for the same
         /// id would share one `ForEach` identity and SwiftUI would hand the new
@@ -41,12 +50,22 @@ final class HeroFlightDirector: ObservableObject {
                 && lhs.targetScale == rhs.targetScale
                 && lhs.sourceScale == rhs.sourceScale
                 && lhs.targetAnchorID == rhs.targetAnchorID
+                && lhs.liveAnchorID == rhs.liveAnchorID
                 && lhs.cornerRadius == rhs.cornerRadius
                 && lhs.nonce == rhs.nonce
         }
     }
 
     @Published var active: [String: Flight] = [:]
+
+    /// Retargets in-flight present flights to their live anchor frames. Keyed
+    /// by the anchor ids the landing views report; only flights carrying that
+    /// anchor move.
+    func retargetLiveAnchor(_ frame: CGRect, for anchorID: String) {
+        for (id, flight) in active where flight.liveAnchorID == anchorID {
+            retarget(id: id, frame: frame)
+        }
+    }
 
     /// Initial return-flight fallback only. A restored sidebar or resized window
     /// can move the mini player; return flights follow its live anchor until landing.
@@ -68,7 +87,8 @@ final class HeroFlightDirector: ObservableObject {
         content: HeroContent,
         targetFrame: CGRect,
         targetScale: CGFloat,
-        targetAnchorID: String? = nil
+        targetAnchorID: String? = nil,
+        liveAnchorID: String? = nil
     ) {
         guard let source = recordedSourceFrame(for: id) else {
             KumoneLogger.hero.notice("HERO DIR start-nil \(id, privacy: .public)")
@@ -82,9 +102,25 @@ final class HeroFlightDirector: ObservableObject {
             target: targetFrame,
             targetScale: targetScale,
             sourceScale: HeroProbe.shared.sourceScale(for: id),
-            targetAnchorID: targetAnchorID
+            targetAnchorID: targetAnchorID,
+            liveAnchorID: liveAnchorID
         )
         KumoneLogger.hero.info("HERO DIR start \(id, privacy: .public) count=\(self.active.count, privacy: .public)")
+    }
+
+    /// Retargets an in-flight present flight to a new landing frame. The
+    /// stand-in animates to the new frame; the probe's recorded target moves
+    /// with it, so the landing verdict compares against the frame the landing
+    /// view occupies at settle time rather than the one it happened to hold at
+    /// launch. No-op when the flight is not following a live anchor.
+    func retarget(id: String, frame: CGRect) {
+        guard var flight = active[id], flight.liveAnchorID != nil else { return }
+        guard !flight.target.approximately(frame) else { return }
+        flight.target = frame
+        active[id] = flight
+        KumoneLogger.hero.info(
+            "HERO DIR retarget \(id, privacy: .public) frame=\(frame.origin.x, privacy: .public),\(frame.origin.y, privacy: .public) \(frame.width, privacy: .public)x\(frame.height, privacy: .public)"
+        )
     }
 
     func end(id: String) {

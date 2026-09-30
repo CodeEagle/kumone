@@ -105,6 +105,7 @@ final class HeroProbe: ObservableObject {
         sourceFrame(for: id) != nil ? id : nil
     }
 
+
     func sourceScale(for id: String) -> CGFloat {
         active[id]?.sourceScale ?? 1
     }

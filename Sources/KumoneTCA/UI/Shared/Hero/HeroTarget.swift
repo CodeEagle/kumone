@@ -60,6 +60,11 @@ private struct NowPlayingHeroTargetModifier: ViewModifier {
     let id: String
     let payload: HeroContent
     let scale: CGFloat
+    /// The anchor id the landing view reports its live frame under. A flight
+    /// follows this anchor after launch, so a layout change mid-flight (the
+    /// lyrics column collapsing and re-centring the artwork) retargets the
+    /// stand-in instead of landing it at a frame that no longer exists.
+    let anchorID: String
     let isPresented: Bool
     @Binding var hasStarted: Bool
 
@@ -68,7 +73,10 @@ private struct NowPlayingHeroTargetModifier: ViewModifier {
             guard isPresented, !hasStarted,
                   HeroProbe.shared.sourceFrame(for: id) != nil else { return }
             HeroProbe.shared.recordTarget(id: id, frame: frame, scale: scale, cornerRadius: payload.cornerRadius)
-            HeroFlightDirector.shared.start(id: id, content: payload, targetFrame: frame, targetScale: scale)
+            HeroFlightDirector.shared.start(
+                id: id, content: payload, targetFrame: frame, targetScale: scale,
+                liveAnchorID: anchorID
+            )
             hasStarted = true
         }
     }
@@ -77,10 +85,12 @@ private struct NowPlayingHeroTargetModifier: ViewModifier {
 extension View {
     func nowPlayingHeroTarget(
         id: String, content: HeroContent, scale: CGFloat = 1,
+        anchorID: String,
         isPresented: Bool, hasStarted: Binding<Bool>
     ) -> some View {
         modifier(NowPlayingHeroTargetModifier(
             id: id, payload: content, scale: scale,
+            anchorID: anchorID,
             isPresented: isPresented, hasStarted: hasStarted
         ))
     }

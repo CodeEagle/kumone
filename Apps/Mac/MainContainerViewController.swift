@@ -41,6 +41,12 @@ final class MainContainerViewController: NSViewController {
         }
 
         let hosting = NSHostingController(rootView: MainWindow(store: store))
+        // The hosting controller is nested inside this container instead of
+        // being the window's own content view, so SwiftUI does *not*
+        // automatically bridge `.toolbar` items into the window's NSToolbar —
+        // the window was left with an empty titlebar strip and no search field.
+        // Bridging explicitly installs the toolbar (and titles) again.
+        hosting.sceneBridgingOptions = [.title, .toolbars]
         addChild(hosting)
         hosting.view.translatesAutoresizingMaskIntoConstraints = false
         root.addSubview(hosting.view)

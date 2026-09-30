@@ -51,6 +51,11 @@ private struct HeroAnchorModifier: ViewModifier {
             proxy.frame(in: .global)
         } action: { frame in
             HeroFrameStore.shared.set(id, frame: frame, scale: scale)
+            // A landing view that moves while its present flight is still
+            // flying retargets it, so the stand-in lands where the view is
+            // now rather than where it was at launch. Return flights read
+            // their own anchor and are untouched here.
+            HeroFlightDirector.shared.retargetLiveAnchor(frame, for: id)
         }
     }
 }

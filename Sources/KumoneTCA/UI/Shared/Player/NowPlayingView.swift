@@ -64,6 +64,8 @@ struct NowPlayingView: View {
     /// backdrop would resolve `nil` and never be asked again.
     @StateObject private var shaderLibrary = ShaderLibrary.shared
     /// The shader list's PCM-sync switch governs this backdrop's renderer too.
+    /// The picker's selection lives on `ShaderSettings` so the AppKit shell's
+    /// window layer and this page read and write the same choice.
     @ObservedObject private var shaderSettings = ShaderSettings.shared
     /// Lyrics column viewport, in global coordinates: the positional blur
     /// needs a center line and a falloff span.
@@ -72,18 +74,26 @@ struct NowPlayingView: View {
     /// Runs the current shader behind the now-playing content instead of the
     /// flat gradient. Off by default: a backdrop should not move until the user
     /// asks it to.
+    #if os(iOS)
     @AppStorage("visualizer.backdropEnabled") private var shaderBackdropEnabled = true
-    @AppStorage("visualizer.shaderName") private var storedShaderName: String = ""
-    @AppStorage("visualizer.shaderDisabled") private var shaderDisabled = false
+    #endif
 
-    /// The shader the backdrop and the full-screen overlay both use, resolved
-    /// once from the stored name and then kept in sync with the picker.
+    /// The shader this page renders and the picker highlights.
+    ///
+    /// On macOS the window-level layer is the authority — the app delegate
+    /// drives it from `AppFeature.shaderID` — so the selection follows the
+    /// store and stays in step with what is actually behind the window. iOS
+    /// has no such layer and resolves from the persisted name instead.
     private var visualizerShader: ShaderDescriptor? {
-        if shaderDisabled { return nil }
-        if storedShaderName.isEmpty {
+        if shaderSettings.shaderPickingDisabled { return nil }
+        if let id = appStore?.shaderID,
+           let match = shaderLibrary.available.first(where: { $0.id == id }) {
+            return match
+        }
+        if shaderSettings.pickedShaderName.isEmpty {
             return shaderLibrary.available.first
         }
-        return shaderLibrary.available.first { $0.name == storedShaderName }
+        return shaderLibrary.available.first { $0.name == shaderSettings.pickedShaderName }
     }
 
     var body: some View {
@@ -310,6 +320,16 @@ struct NowPlayingView: View {
 
     private var backdrop: some View {
         ZStack {
+            #if os(macOS)
+            // The window-level shader is this page's background now, so the
+            // backdrop keeps only the bottom scrim the controls need to stay
+            // readable. The flat album-color gradient and the page's own
+            // shader container are iOS-only from here on.
+            LinearGradient(
+                colors: [.clear, .black.opacity(0.28)],
+                startPoint: .top, endPoint: .bottom
+            )
+            #else
             if shaderBackdropEnabled {
                 // The shader is the backdrop: it draws opaque, so it goes on
                 // top of the flat gradient and replaces it. The old order put
@@ -344,6 +364,7 @@ struct NowPlayingView: View {
                     startPoint: .top, endPoint: .bottom
                 )
             }
+            #endif
         }
         .ignoresSafeArea()
         .animation(.easeInOut(duration: 0.8), value: colors)
@@ -842,6 +863,7 @@ struct NowPlayingView: View {
             id: HeroID.nowPlayingArtwork,
             content: .artwork(url: player.currentTrack?.album.picUrl?.resizedImageURL(768), cornerRadius: 18),
             scale: player.isPlaying ? 1 : 0.95,
+            anchorID: HeroID.nowPlayingArtworkTarget,
             isPresented: appStore?.isNowPlayingPresented == true,
             hasStarted: $hasStartedHeroFlight
         )
@@ -887,6 +909,7 @@ struct NowPlayingView: View {
                     .nowPlayingHeroTarget(
                         id: HeroID.nowPlayingTitle,
                         content: .playerTitle(player.currentTrack?.name ?? ""),
+                        anchorID: HeroID.nowPlayingTitleTarget,
                         isPresented: appStore?.isNowPlayingPresented == true,
                         hasStarted: $hasStartedTitleFlight
                     )
@@ -899,6 +922,7 @@ struct NowPlayingView: View {
                         .heroAnchor(HeroID.nowPlayingVIPTarget)
                         .nowPlayingHeroTarget(
                             id: HeroID.nowPlayingVIP, content: .vipBadge,
+                            anchorID: HeroID.nowPlayingVIPTarget,
                             isPresented: appStore?.isNowPlayingPresented == true,
                             hasStarted: $hasStartedVIPFlight
                         )
@@ -922,6 +946,7 @@ struct NowPlayingView: View {
                     // album — so it lands as the row's perfect double.
                     content: .text(nowPlayingArtistLinkText(track),
                                    color: .white.opacity(0.65), fontSize: 13.5),
+                    anchorID: HeroID.nowPlayingArtistTarget,
                     isPresented: appStore?.isNowPlayingPresented == true,
                     hasStarted: $hasStartedArtistFlight
                 )
@@ -964,7 +989,18 @@ struct NowPlayingView: View {
                     },
                     onPreviousTrack: {
                         appStore?.send(.player(.previous))
-                    }
+                    },
+                    heroTarget: VinylHeroTarget(
+                        id: HeroID.nowPlayingArtwork,
+                        anchorID: HeroID.nowPlayingArtworkTarget,
+                        artworkURL: player.currentTrack?.album.picUrl?.resizedImageURL(768),
+                        // The landing shape is the record's circular label, so
+                        // the stand-in must be a circle, not the square
+                        // cover's rounded rectangle.
+                        cornerRadius: artworkSize * 0.64 / 2,
+                        isPresented: appStore?.isNowPlayingPresented == true,
+                        hasStarted: $hasStartedHeroFlight
+                    )
                 )
             } else {
                 artworkView(size: artworkSize)
@@ -1015,10 +1051,15 @@ struct NowPlayingView: View {
                 palette: ShaderPaletteBuilder.make(from: colors)
             ) { shader in
                 if let shader {
-                    shaderDisabled = false
-                    storedShaderName = shader.name
+                    shaderSettings.pickedShaderName = shader.name
+                    shaderSettings.shaderPickingDisabled = false
+                    // The window-level layer observes the store; writing only
+                    // storage left it on a different shader than the one the
+                    // page picks.
+                    appStore?.send(.setShader(shader.id))
                 } else {
-                    shaderDisabled = true
+                    shaderSettings.shaderPickingDisabled = true
+                    appStore?.send(.setShader(nil))
                 }
             }
             Spacer(minLength: 0)
@@ -1123,6 +1164,7 @@ struct NowPlayingView: View {
                     content: .icon(name: liked ? "heart.fill" : "heart",
                                    tint: liked ? Theme.accent : .white.opacity(0.8), background: .translucentWhite,
                                    diameter: 40, fontSize: 15, weight: .medium),
+                    anchorID: HeroID.nowPlayingLikeTarget,
                     isPresented: appStore?.isNowPlayingPresented == true,
                     hasStarted: $hasStartedLikeFlight
                 )
@@ -1142,6 +1184,7 @@ struct NowPlayingView: View {
                     content: .icon(name: "trash",
                                    tint: .white.opacity(0.8), background: .translucentWhite,
                                    diameter: 40, fontSize: 14, weight: .medium),
+                    anchorID: HeroID.nowPlayingFMTrashTarget,
                     isPresented: appStore?.isNowPlayingPresented == true,
                     hasStarted: $hasStartedFMTrashFlight
                 )
@@ -1162,6 +1205,7 @@ struct NowPlayingView: View {
                     content: .icon(name: "shuffle",
                                    tint: player.shuffleEnabled ? Theme.accent : .white.opacity(0.8), background: .translucentWhite,
                                    diameter: 40, fontSize: 14, weight: .medium),
+                    anchorID: HeroID.nowPlayingShuffleTarget,
                     isPresented: appStore?.isNowPlayingPresented == true,
                     hasStarted: $hasStartedShuffleFlight
                 )
@@ -1178,6 +1222,7 @@ struct NowPlayingView: View {
                     content: .icon(name: "backward.fill",
                                    tint: .white.opacity(0.8), background: .translucentWhite,
                                    diameter: 40, fontSize: 16, weight: .medium),
+                    anchorID: HeroID.nowPlayingPreviousTarget,
                     isPresented: appStore?.isNowPlayingPresented == true,
                     hasStarted: $hasStartedPreviousFlight
                 )
@@ -1199,6 +1244,7 @@ struct NowPlayingView: View {
                 content: .icon(name: "forward.fill",
                                tint: .white.opacity(0.8), background: .translucentWhite,
                                diameter: 40, fontSize: 16, weight: .medium),
+                anchorID: HeroID.nowPlayingNextTarget,
                 isPresented: appStore?.isNowPlayingPresented == true,
                 hasStarted: $hasStartedNextFlight
             )
@@ -1234,6 +1280,7 @@ struct NowPlayingView: View {
                     content: .icon(name: player.repeatMode == .one ? "repeat.1" : "repeat",
                                    tint: player.repeatMode != .off ? Theme.accent : .white.opacity(0.8), background: .translucentWhite,
                                    diameter: 40, fontSize: 14, weight: .medium),
+                    anchorID: HeroID.nowPlayingRepeatTarget,
                     isPresented: appStore?.isNowPlayingPresented == true,
                     hasStarted: $hasStartedRepeatFlight
                 )
@@ -1266,6 +1313,7 @@ struct NowPlayingView: View {
             id: HeroID.nowPlayingPlayPause,
             content: .icon(name: player.isPlaying ? "pause.fill" : "play.fill",
                            tint: .black.opacity(0.85), background: .white, diameter: 58, fontSize: 21),
+            anchorID: HeroID.nowPlayingPlayPauseTarget,
             isPresented: appStore?.isNowPlayingPresented == true,
             hasStarted: $hasStartedPlayPauseFlight
         )

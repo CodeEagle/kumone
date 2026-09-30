@@ -83,7 +83,7 @@ TEMP_DIR="$(mktemp -d "$APP_PARENT/.Kumone-deploy.XXXXXX")"
 STEP='application shutdown'
 # Only the app being replaced is touched: the path-keyed and name-keyed
 # patterns below target this deploy's own executable and never a different
-# bundle that happens to live next to it (e.g. an older Kumone.app kept alongside).
+# bundle that happens to live next to it (e.g. an older MiuMiu.app kept alongside).
 # Escape regex metacharacters so a configurable path matches literally.
 PROCESS_PATTERN="$(printf '%s' "$REMOTE_APP_PATH/Contents/MacOS/$APP_NAME" | sed 's/[][\.^$*+?(){}|]/\\&/g')"
 pkill -f "$PROCESS_PATTERN" || [ "$?" -eq 1 ]

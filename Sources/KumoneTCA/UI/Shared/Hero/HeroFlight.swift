@@ -85,6 +85,10 @@ struct HeroFlight: View {
             guard let target, !finished, !frame.approximately(target) else { return }
             animate(to: target)
         }
+        .onChange(of: flight.target) { _, target in
+            guard !finished, !frame.approximately(target) else { return }
+            animate(to: target)
+        }
     }
 
     private var liveTarget: CGRect? {
@@ -101,7 +105,7 @@ struct HeroFlight: View {
     private func animate(to target: CGRect) {
         let generation = UUID()
         animationGeneration = generation
-        if flight.targetAnchorID != nil {
+        if flight.targetAnchorID != nil || flight.liveAnchorID != nil {
             HeroProbe.shared.recordTarget(
                 id: flight.id, frame: target, scale: flight.targetScale,
                 cornerRadius: flight.cornerRadius
