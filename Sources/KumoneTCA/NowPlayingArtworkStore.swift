@@ -36,7 +36,12 @@ public final class NowPlayingArtworkStore: ObservableObject {
         self.trackID = trackID
         self.artworkURL = artworkURL
         artwork = nil
-        colors = .fallback
+        // Keep the previous track's palette while the new cover loads: the
+        // shader reads `colors` and its palette mixer eases toward whatever it
+        // holds, so resetting to `.fallback` here made every track change flash
+        // the grey-blue placeholder before the new colour arrived. When there
+        // is nothing to load for this track the loader below leaves the old
+        // colours standing, which still reads closer to the artwork than grey.
 
         loadArtworkForCurrentTrack()
     }
