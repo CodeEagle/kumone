@@ -30,7 +30,11 @@ let package = Package(
         // preload takeover (render-time disposal race + leak), and play/prepare
         // can take Now Playing metadata so the card does not flash the previous
         // track while the host pushes its own copy.
-        .package(url: "https://github.com/CodeEagle/APlay.git", from: "2.1.8"),
+        // 2.1.9: bound the two ring-buffer writer waits (50 ms with a closed
+        // flag). Unbounded waits let a writer miss the single teardown signal,
+        // park its thread forever, and pin the whole Composer set on its live
+        // stack frame — the rapid-track-switching leak.
+        .package(url: "https://github.com/CodeEagle/APlay.git", from: "2.1.9"),
     ],
     targets: [
         // Compiles the .metal sources in Sources/KumoneShaders/Shaders into a
