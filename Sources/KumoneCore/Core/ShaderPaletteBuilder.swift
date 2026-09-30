@@ -33,11 +33,12 @@ public enum ShaderPaletteBuilder {
     ///
     /// Lifted from (0.5 / 0.28 / 1.0 / 0.035): the palette is composited over a
     /// frosted window that dims whatever it sits on, and the old levels read
-    /// as grey once they survived that attenuation. `primary` at 0.62 linear
-    /// is sRGB ~0.80 — a colour that still reads as itself after the window
-    /// subdues it; `background` at 0.055 keeps the frame deep but visibly tinted.
-    private static let primaryPeak: Float = 0.62
-    private static let secondaryPeak: Float = 0.40
+    /// as grey once they survived that attenuation. `primary` at 0.68 linear
+    /// is sRGB ~0.83 — macaron territory, light but still a colour after the
+    /// window subdues it; `background` at 0.055 keeps the frame deep but
+    /// visibly tinted.
+    private static let primaryPeak: Float = 0.68
+    private static let secondaryPeak: Float = 0.50
     private static let accentPeak: Float = 1.0
     private static let backgroundPeak: Float = 0.055
 

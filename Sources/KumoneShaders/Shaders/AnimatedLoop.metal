@@ -46,6 +46,11 @@ fragment float4 kumone_fragment_animated_loop(Varying in [[stage_in]],
     // Air band thickens the strokes; kept tiny because the base width is too.
     lineWidth = audio_offset(lineWidth, audio_band(u.bands[3]), 0.0012);
     float channelOffset = 0.0225 + (wander(u.time * 0.04, 3.3) - 0.5) * 2.0 * 0.0075;
+    // The three channels start almost on top of each other at the shipped
+    // 0.0225 offset, so their colours add up to white-ish grey instead of
+    // staying separate. Widening the split keeps the palette's colours —
+    // macaron rings — legible against each other instead of merging.
+    channelOffset = 0.09 + channelOffset * 0.25;
     // Additive phase flow: amp = base / (0.05 * 8.0) keeps velocity positive; no reversal.
     float rotation = 0.05 * (u.time * 0.7 + wander(u.time * 0.05, 5.9) * 1.75);
     float scale = 1.025 + (wander(u.time * 0.04, 8.1) - 0.5) * 2.0 * 0.025;
@@ -106,23 +111,15 @@ fragment float4 kumone_fragment_animated_loop(Varying in [[stage_in]],
     // cap keeps the field as an ambience rather than a glare. Loudness eases
     // that cap up, so a fuller mix glows brighter without ever clipping.
     //
-    // Reinhard also desaturates as it compresses (the highlights pull toward
-    // grey), so the result gets its saturation back below and a value floor —
-    // macaron colours are soft but still unmistakably there, not washed out.
+    // Desaturation here is not repaired with a saturation boost: rgb2hsv's hue
+    // is unstable on a near-grey result, so forcing saturation back in invents
+    // a random hue (which read as “weird colour”). The macaron character has
+    // to live in the palette itself, not in a post pass.
     col = col / (1.0 + col);
     col *= audio_glow(0.85, audio_energy(u.loudness), 0.5);
 
     float3 bg = u.paletteBackground.rgb;
     col = audio_bands_color(col, u.low, u.mid, u.high);
     col = audio_fire(col, u.beat, 0.5);
-    col = bg + col;
-
-    // The macaron pass: Reinhard + additive over a dark background leaves the
-    // field reading grey, so saturation is lifted and a lightness floor set —
-    // pastels are light, not desaturated.
-    float3 hsv = rgb2hsv(col);
-    hsv.y = min(1.0, hsv.y * 1.6 + 0.22);
-    hsv.z = max(hsv.z, 0.55);
-    col = hsv2rgb(hsv);
-    return float4(col, 1.0);
+    return float4(bg + col, 1.0);
 }
