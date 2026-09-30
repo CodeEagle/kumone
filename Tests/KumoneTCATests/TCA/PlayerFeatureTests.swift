@@ -42,7 +42,7 @@ final class PlayerFeatureTests: XCTestCase {
         // (@DependencyClient's default init traps on any call, so every closure
         // is spelled out.)
         deps.playback = PlaybackEngineClient(
-            load: { _, _ in },
+            load: { _, _, _ in },
             play: {},
             pause: {},
             seek: { _ in },
@@ -310,7 +310,7 @@ final class PlayerFeatureTests: XCTestCase {
         nonisolated(unsafe) var loads: [(url: URL, autostart: Bool)] = []
         let store = TestStore(initialState: state) { PlayerFeature() } withDependencies: {
             configureResolve(&$0)
-            $0.playback.load = { url, autostart in loads.append((url, autostart)) }
+            $0.playback.load = { url, autostart, _ in loads.append((url, autostart)) }
         }
         // The engine's end-of-item pause arrives first.
         await store.send(.isPlayingChanged(false)) {
@@ -1481,7 +1481,7 @@ final class PlayerFeatureTests: XCTestCase {
         let loads = LockIsolated<[Bool]>([])
         let store = TestStore(initialState: PlayerFeature.State()) { PlayerFeature() } withDependencies: {
             configureResolve(&$0)
-            $0.playback.load = { actual, autostart in
+            $0.playback.load = { actual, autostart, _ in
                 XCTAssertEqual(actual, url)
                 loads.withValue { $0.append(autostart) }
             }
@@ -1598,7 +1598,7 @@ final class PlayerFeatureTests: XCTestCase {
                 return [SongURLData(id: 1, url: "http://example.com/fallback", br: 0, size: 0,
                     type: nil, level: level.neteaseLevel, fee: 0, freeTrialInfo: nil, time: 200)]
             }
-            $0.playback.load = { url, autostart in
+            $0.playback.load = { url, autostart, _ in
                 XCTAssertFalse(autostart)
                 urls.withValue { $0.append(url) }
             }

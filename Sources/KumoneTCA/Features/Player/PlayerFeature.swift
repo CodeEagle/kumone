@@ -1,3 +1,4 @@
+import APlay
 import ComposableArchitecture
 import Dependencies
 import Foundation
@@ -632,7 +633,20 @@ public struct PlayerFeature {
                 // land between `startPlaying` and this action and silently turn
                 // the load into a prepare-only one.
                 return .merge(
-                    .run { [playback] _ in playback.load(url, autostart) },
+                    .run { [playback, currentTrack = state.currentTrack] _ in
+                        // Publish the new track with the load itself so the system
+                        // card never describes the previous track in the gap
+                        // before updateMetadata lands (APlay PR #20).
+                        let metadata = currentTrack.map { track in
+                            APlay.NowPlayingMetadata(
+                                title: track.name,
+                                artist: track.artistNames,
+                                album: track.album.name,
+                                artworkURL: track.album.picUrl
+                            )
+                        }
+                        playback.load(url, autostart, metadata)
+                    },
                     scrobbleStartEffect(&state),
                     resolved.isTrial
                         ? .send(.toast(String(localized: "VIP 歌曲，当前为试听片段")))

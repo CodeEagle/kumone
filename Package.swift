@@ -26,7 +26,11 @@ let package = Package(
         // 2.1.5 drives autoplay resume off decoded audio instead of download
         // progress or a 0.5s delay, so a seek back to an early position (below
         // the old whole-stream threshold) no longer leaves the player paused.
-        .package(url: "https://github.com/CodeEagle/APlay.git", from: "2.1.5"),
+        // 2.1.6–2.1.8: serialize the output-unit teardown and the composer-slot
+        // preload takeover (render-time disposal race + leak), and play/prepare
+        // can take Now Playing metadata so the card does not flash the previous
+        // track while the host pushes its own copy.
+        .package(url: "https://github.com/CodeEagle/APlay.git", from: "2.1.8"),
     ],
     targets: [
         // Compiles the .metal sources in Sources/KumoneShaders/Shaders into a

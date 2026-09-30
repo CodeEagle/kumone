@@ -9,7 +9,7 @@ public enum PlaybackEngineAdapter {
     public static let client = {
         let engine = PlaybackEngine()
         return PlaybackEngineClient(
-            load: { url, autostart in engine.load(url: url, autostart: autostart) },
+            load: { url, autostart, metadata in engine.load(url: url, autostart: autostart, metadata: metadata) },
             play: { engine.play() },
             pause: { engine.pause() },
             seek: { seconds in engine.seek(to: seconds) },
@@ -125,15 +125,15 @@ fileprivate final class PlaybackEngine: @unchecked Sendable {
 
     // MARK: - Commands
 
-    func load(url: URL, autostart: Bool) {
+    func load(url: URL, autostart: Bool, metadata: APlay.NowPlayingMetadata? = nil) {
         // A track change starts in "preparing": the URL is still being resolved
         // and no samples have arrived, so the shaders hold still rather than
         // flashing the last track's frozen levels.
         AudioSpectrum.shared.beginPreparing()
         if autostart {
-            player.play(url)
+            player.play(url, metadata: metadata)
         } else {
-            player.prepare(url)
+            player.prepare(url, metadata: metadata)
         }
     }
 

@@ -709,9 +709,11 @@ final class AppFeatureTests: XCTestCase {
             $0.unblock.resolve = { _ in nil }
             $0.persistence.setData = { _, _ in }
             $0.playback.updateMetadata = { _, _, _, _ in }
-            $0.playback.load = { loadedURL, autostart in
+            $0.playback.load = { loadedURL, autostart, metadata in
                 XCTAssertEqual(loadedURL, url)
                 XCTAssertTrue(autostart)
+                // The load rides the system Now Playing card (APlay PR #20).
+                XCTAssertEqual(metadata?.title, recommended.name)
             }
             $0.musicProvider = provider
             $0.intelligence = provider

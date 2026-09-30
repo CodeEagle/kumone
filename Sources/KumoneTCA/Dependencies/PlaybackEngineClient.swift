@@ -1,3 +1,4 @@
+import APlay
 import ComposableArchitecture
 import Foundation
 
@@ -15,7 +16,12 @@ public struct PlaybackEngineClient {
     /// Replaces the current item and begins playing if `autostart`. When
     /// `autostart` is false the stream is buffered but the output unit is not
     /// started, so a later `play` of the same URL picks up immediately.
-    public var load: @Sendable (_ url: URL, _ autostart: Bool) -> Void = { _, _ in }
+    ///
+    /// `metadata` rides the load so the system Now Playing card describes the
+    /// new track the moment the engine clears the old one, instead of flashing
+    /// the previous track (or staying blank) until the host pushes its own
+    /// copy (APlay PR #20).
+    public var load: @Sendable (_ url: URL, _ autostart: Bool, _ metadata: APlay.NowPlayingMetadata?) -> Void = { _, _, _ in }
     public var play: @Sendable () -> Void = {}
     public var pause: @Sendable () -> Void = {}
     public var seek: @Sendable (_ seconds: TimeInterval) -> Void = { _ in }
@@ -60,7 +66,7 @@ extension PlaybackEngineClient: DependencyKey {
     // engine's streams simply never deliver in tests; tests that assert on a
     // command override the endpoint (or the whole client) per-store.
     public static let testValue = PlaybackEngineClient(
-        load: { _, _ in },
+        load: { _, _, _ in },
         play: {},
         pause: {},
         seek: { _ in },
