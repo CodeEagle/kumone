@@ -61,6 +61,24 @@ public struct VinylTurntableView: View {
     @State private var dragOffset: CGFloat = 0
     @State private var isDragging = false
     @State private var isTransitioningTrack = false
+    /// The turntable shares the AppKit shell only on macOS; elsewhere the
+    /// director never starts a flight, so this stays false and the hold is
+    /// inert.
+    @ObservedObject private var heroFlight = HeroFlightDirector.shared
+
+    /// True while the cover's hero flight is still in the air toward this
+    /// record's label. The turntable waits for the cover to land before it
+    /// engages: a disc already spinning while the cover flies in reads as if
+    /// the landing never happened.
+    private var coverIsFlying: Bool {
+        heroFlight.active[HeroID.nowPlayingArtwork] != nil
+    }
+
+    /// The disc and tonearm both engage once the cover has landed (and, of
+    /// course, only while actually playing).
+    private var discEngaged: Bool {
+        isPlaying && !isDragging && !isTransitioningTrack && !coverIsFlying
+    }
 
     public init(
         artworkImage: PlatformImage?,
@@ -91,6 +109,9 @@ public struct VinylTurntableView: View {
         return ZStack(alignment: .top) {
             // MARK: 1. Rotating Vinyl Disc (with horizontal drag & slide transitions)
             TimelineView(.animation(paused: !isPlaying || isDragging || isTransitioningTrack)) { timeline in
+                // While the cover is flying in, `rotationState` is stopped, so
+                // the angle holds at its frozen value instead of advancing:
+                // the record starts from a dead stop once the cover lands.
                 let currentAngle = rotationState.currentAngle(at: timeline.date)
 
                 VinylRecordView(artworkImage: artworkImage, size: discSize)
@@ -108,7 +129,7 @@ public struct VinylTurntableView: View {
 
             // MARK: 2. Tonearm (Placed at the top-center above the disc, reaching down)
             VinylTonearmView(
-                isPlaying: isPlaying && !isDragging && !isTransitioningTrack,
+                isPlaying: discEngaged,
                 height: armHeight
             )
             .offset(x: discSize * 0.12, y: -armHeight * 0.08)
@@ -117,15 +138,24 @@ public struct VinylTurntableView: View {
         }
         .frame(width: stageWidth, height: stageHeight, alignment: .top)
         .onAppear {
-            if isPlaying {
+            if discEngaged {
                 rotationState.start(at: Date())
             }
         }
         .onChange(of: isPlaying) { _, playing in
-            if playing {
+            if playing, !coverIsFlying {
                 rotationState.start(at: Date())
             } else {
                 rotationState.stop(at: Date())
+            }
+        }
+        // The cover's flight gates the engagement: stop while it is in the
+        // air, spin up from the frozen angle the moment it lands.
+        .onChange(of: coverIsFlying) { _, flying in
+            if flying {
+                rotationState.stop(at: Date())
+            } else if isPlaying {
+                rotationState.start(at: Date())
             }
         }
         .onChange(of: trackId) {

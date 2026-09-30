@@ -74,9 +74,11 @@ struct SidebarView: View {
         // would draw its own system material over it and hide it. The plain
         // style with transparent rows lets the shader through, while the
         // selection highlight is still drawn by the rows themselves.
+        // Separators come back with the plain style, so every row hides its
+        // own (the List-level modifier does not reach into section rows).
         .listStyle(.plain)
         .scrollContentBackground(.hidden)
-        .listRowSeparator(.hidden)
+        .background(SidebarGlassDisabler())
         #else
         .listStyle(.sidebar)
         .scrollContentBackground(.hidden)
@@ -116,6 +118,9 @@ struct SidebarView: View {
             title: title, icon: icon, isSelected: store.selection == item,
             action: { store.send(.selectionChanged(item)) }
         )
+        #if os(macOS)
+        .listRowSeparator(.hidden)
+        #endif
     }
 
     private func playlistRow(_ playlist: PlaylistSummary) -> some View {
@@ -124,6 +129,9 @@ struct SidebarView: View {
             isSelected: store.selection == .playlist(playlist.id),
             action: { store.send(.selectionChanged(.playlist(playlist.id))) }
         )
+        #if os(macOS)
+        .listRowSeparator(.hidden)
+        #endif
         .contextMenu {
             Button("播放") {
                 Task {
@@ -426,3 +434,71 @@ private struct SidebarPlaylistRow: View {
         }
     }
 }
+
+#if os(macOS)
+// MARK: - Sidebar glass disabler
+
+/// Turns the sidebar pane's system Liquid Glass surface transparent so the
+/// window-level shader reaches it.
+///
+/// `NavigationSplitView` wraps its primary column in a private
+/// `NSGlassEffectView`, which paints an adaptive material over whatever sits
+/// behind the pane — measured with a red layer behind the window, the pane
+/// rendered white instead of red. Hiding it lets the shader through; the pane
+/// keeps drawing its own content (rows, selection, scroll view), so nothing
+/// functional is lost. The split view's inter-column shadow is hidden too:
+/// with the glass gone it is the only thing still drawing a seam between the
+/// sidebar and the detail column.
+///
+/// Mounted as a zero-size background inside the sidebar content so the walk
+/// up the view hierarchy finds *this* pane's glass (the detail pane is not
+/// wrapped in one). `makeNSView`/`updateNSView` re-run whenever SwiftUI
+/// rebuilds the pane, which is exactly when a fresh glass view reappears —
+/// the pane is torn down and rebuilt every time the immersive page collapses
+/// and restores the column.
+private struct SidebarGlassDisabler: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView(frame: .zero)
+        DispatchQueue.main.async { Self.apply(from: view) }
+        return view
+    }
+
+    func updateNSView(_ nsview: NSView, context: Context) {
+        DispatchQueue.main.async { Self.apply(from: nsview) }
+    }
+
+    private static func apply(from view: NSView) {
+        guard let glass = nearestGlass(above: view) else { return }
+        if !glass.isHidden { glass.isHidden = true }
+        hideSplitShadow(inside: enclosingSplitView(of: glass))
+    }
+
+    /// Walks the superview chain to the pane's glass container, if any.
+    private static func nearestGlass(above view: NSView) -> NSView? {
+        guard let glassClass = NSClassFromString("NSGlassEffectView") else { return nil }
+        var current: NSView? = view
+        while let v = current {
+            if v.isKind(of: glassClass) { return v }
+            current = v.superview
+        }
+        return nil
+    }
+
+    private static func enclosingSplitView(of view: NSView) -> NSSplitView? {
+        var current: NSView? = view.superview
+        while let v = current {
+            if let split = v as? NSSplitView { return split }
+            current = v.superview
+        }
+        return nil
+    }
+
+    private static func hideSplitShadow(inside split: NSSplitView?) {
+        guard let split,
+              let shadowClass = NSClassFromString("_NSSplitViewShadowView") else { return }
+        for sub in split.subviews where sub.isKind(of: shadowClass) && !sub.isHidden {
+            sub.isHidden = true
+        }
+    }
+}
+#endif
