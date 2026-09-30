@@ -28,6 +28,11 @@ struct Uniforms {
     float4  paletteSecondary;
     float4  paletteAccent;
     float4  paletteBackground;
+    // Birth times (same clock as `time`, so negative = never born) of the
+    // arrow patterns each beat spawned. Each entry stays frozen at the kick
+    // that created it, so a copy's phase runs from that moment forever — one
+    // pattern per beat, several alive at once, none of them fading away.
+    float   beatBirthTs[4];
 };
 
 struct Varying {

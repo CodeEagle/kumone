@@ -21,6 +21,9 @@ public struct ShaderAudioBridge {
     private var bandSmoothed: [Float] = [0, 0, 0, 0]
     private var loudnessSmoothed: Float = 0
     private var beatEnvelope: Float = 0
+    /// The low band was over the beat threshold last frame, so a sustained
+    /// loud passage only counts as one hit.
+    private var beatWasHit: Bool = false
 
     /// Raw low-band history behind the beat detector.
     ///
@@ -103,6 +106,10 @@ public struct ShaderAudioBridge {
         let threshold = min(mean * 1.30 + 0.07, 0.95)
 
         let beatTarget: Float = raw[0] > threshold ? 1.0 : 0.0
+        // Rising edge only: the whole envelope glows for a while after a hit,
+        // but a birth time has to be stamped exactly once per kick.
+        let beatJustHit = beatTarget > 0 && !beatWasHit
+        beatWasHit = beatTarget > 0
         // Snap up hard and release almost as hard: a beat should read as a
         // crisp accent on top of the slow sway, not another long fade. The
         // attack was 0.70 — fast, but a kick is supposed to *snap*, so it goes
@@ -119,7 +126,8 @@ public struct ShaderAudioBridge {
             mid: (b1 + b2) * 0.5,
             high: b3,
             beat: beatEnvelope,
-            loudness: loudnessSmoothed
+            loudness: loudnessSmoothed,
+            beatJustHit: beatJustHit
         )
     }
 

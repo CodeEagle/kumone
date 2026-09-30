@@ -22,14 +22,18 @@ public struct ShaderUniforms {
     public var paletteSecondary: SIMD4<Float> = .zero
     public var paletteAccent: SIMD4<Float> = .zero
     public var paletteBackground: SIMD4<Float> = .zero
+    /// Same clock as `time`; negative means "never born". Mirrors
+    /// `beatBirthTs[4]` in the shader header.
+    public var beatBirthTs: (Float, Float, Float, Float) = (-1, -1, -1, -1)
 
     public init() {}
 
     /// Fails the build at link time if Swift ever disagrees with the shader.
-    /// The struct is 128 bytes: `time` then 4 bytes of alignment padding before
+    /// The struct is 144 bytes: `time` then 4 bytes of alignment padding before
     /// the 8-byte-aligned `resolution`, then `bands` and the scalar envelope,
-    /// then 4 bytes of padding before the 16-byte-aligned palette float4s.
-    public static let expectedSize = 128
+    /// then 4 bytes of padding before the 16-byte-aligned palette float4s,
+    /// then the 16-byte `beatBirthTs` array.
+    public static let expectedSize = 144
 }
 
 /// Palette the host derives from `ArtworkColors`. `accent`/`background` are
@@ -59,6 +63,9 @@ public struct ShaderAudioFrame {
     public var high: Float = 0
     public var beat: Float = 0
     public var loudness: Float = 0
+    /// True on the frame the beat detector first sees a hit (rising edge only,
+    /// not the whole envelope), so the renderer can stamp a birth time.
+    public var beatJustHit: Bool = false
 
     public static let silent = ShaderAudioFrame()
 }

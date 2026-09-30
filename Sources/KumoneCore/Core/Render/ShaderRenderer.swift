@@ -34,6 +34,9 @@ public final class ShaderRenderer: NSObject, MTKViewDelegate {
     private let uniformStride: Int
 
     private var bridge = ShaderAudioBridge()
+    /// Birth times of the arrow patterns spawned by the last four beats
+    /// (-1 = never born), rotating so the oldest is evicted, not the newest.
+    private var beatBirthTs: [Float] = [-1, -1, -1, -1]
     private var paletteMixer = ShaderPaletteMixer()
     private var startTime: CFTimeInterval = 0
     /// Timestamp of the previous drawn frame, for the palette ease and the
@@ -199,6 +202,16 @@ public final class ShaderRenderer: NSObject, MTKViewDelegate {
             ? bridge.frame(sampler: bandSampler)
             : bridge.frame(sampler: { _ in 0 })
 
+        // Stamp a birth time on the rising edge of each beat. The ring of
+        // timestamps is the only place the pattern copies live: the shader is
+        // stateless, so a copy has to be identified by the moment it was born.
+        // A silent frame never stamps one, so with no track playing the field
+        // holds only the standing pattern.
+        if frame.beatJustHit && isAudioLive {
+            beatBirthTs.removeFirst()
+            beatBirthTs.append(time)
+        }
+
         var uniforms = ShaderUniforms()
         uniforms.time = time
         uniforms.resolution = SIMD2(Float(view.drawableSize.width),
@@ -214,6 +227,7 @@ public final class ShaderRenderer: NSObject, MTKViewDelegate {
         uniforms.paletteSecondary = palette.secondary
         uniforms.paletteAccent = palette.accent
         uniforms.paletteBackground = palette.background
+        uniforms.beatBirthTs = (beatBirthTs[0], beatBirthTs[1], beatBirthTs[2], beatBirthTs[3])
 
         buffer.contents().copyMemory(from: &uniforms, byteCount: MemoryLayout<ShaderUniforms>.stride)
 
