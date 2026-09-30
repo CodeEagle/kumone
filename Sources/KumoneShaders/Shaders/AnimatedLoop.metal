@@ -34,10 +34,19 @@ fragment float4 kumone_fragment_animated_loop(Varying in [[stage_in]],
     constexpr float PATTERN_MOD    = 0.2;
     constexpr float ROTATION       = 0.0;
     constexpr float SCALE          = 1.0;
-    // How far a beat shoves the arrow phase forward. Beat stays >= 0 so the
-    // advance is monotone — rings never run backwards, each kick just hurries
-    // the next arrow into being, so the arrows' birth times follow the drum.
-    constexpr float BEAT_PUSH      = 0.1;
+    // Main field brightness. The original adds the three channels with no
+    // compression, so where they overlap the sum shoots far past white and the
+    // separate strokes merge into a glare — nothing reads as individual lines
+    // any more. Scaling the whole sum back down keeps every ring and every
+    // arrow stroke distinct.
+    constexpr float DIM            = 0.22;
+    // The beat layer: a second, complete copy of the same arrow pattern,
+    // offset in phase and colour start so it never winks on top of the first,
+    // appearing with each hit and fading out with the envelope. Not a push of
+    // the main phase (that reads as the picture speeding up / zooming), but
+    // one extra whole pattern on the beat.
+    constexpr float BEAT_PHASE     = 0.37;
+    constexpr float BEAT_WEIGHT    = 0.5;
 
     float2 position = in.uv * u.resolution.y;
     float2 size = u.resolution;
@@ -48,9 +57,8 @@ fragment float4 kumone_fragment_animated_loop(Varying in [[stage_in]],
     float s = sin(ROTATION);
     uv = float2(uv.x * c - uv.y * s, uv.x * s + uv.y * c);
 
-    // Time drives the outward march exactly as in the original, and a beat
-    // adds its own advance on top — that is the whole change.
-    float t = u.time * SPEED + BEAT_PUSH * audio_pulse(u.beat);
+    // Time alone drives the outward march, exactly as in the original.
+    float t     = u.time * SPEED;
     int   count = max(1, LINES);
 
     float d = length(uv);                     // circle
@@ -59,6 +67,8 @@ fragment float4 kumone_fragment_animated_loop(Varying in [[stage_in]],
 
     float3 ch[3] = { u.palettePrimary.rgb, u.paletteSecondary.rgb, u.paletteAccent.rgb };
 
+    // Main pattern: unchanged recipe, summed and then dimmed so the strokes
+    // stay separate instead of blowing out.
     float3 col = float3(0.0);
     for (int j = 0; j < 3; j++) {
         float acc = 0.0;
@@ -68,6 +78,24 @@ fragment float4 kumone_fragment_animated_loop(Varying in [[stage_in]],
         }
         col += ch[j] * acc;
     }
+    col *= DIM;
+
+    // The beat's own copy: same recipe with the phase shifted and the colour
+    // rotation offset, so it lands as a visibly second set of arrows rather
+    // than doubling the first into more glare. Its weight follows the beat
+    // envelope — on with the hit, gone with its decay, one extra pattern per
+    // kick.
+    float3 beatCol = float3(0.0);
+    float  tBeat   = t + BEAT_PHASE;
+    for (int j = 0; j < 3; j++) {
+        float acc = 0.0;
+        for (int i = 0; i < count; i++) {
+            float f = fract(tBeat - CHANNEL_OFFSET * float(j) + 0.01 * float(i)) * SPACING - d + m;
+            acc += LINE_WIDTH * float(i * i) / max(abs(f), 0.00001);
+        }
+        beatCol += ch[(j + 1) % 3] * acc;
+    }
+    col += beatCol * BEAT_WEIGHT * audio_pulse(u.beat);
 
     float3 bg = u.paletteBackground.rgb;
     return float4(bg + col, 1.0);
