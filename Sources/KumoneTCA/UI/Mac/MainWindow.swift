@@ -31,6 +31,10 @@ public struct MainWindow: View {
                 }
         }
         .navigationSplitViewStyle(.balanced)
+        // Blurred top fade: content softens out before it reaches the window
+        // titlebar instead of colliding with the Liquid Glass toolbar. Fades
+        // out with the rest of the navigation chrome while now-playing is up.
+        .topFadeBlur()
         // The immersive page is the only visible surface while it is up: the
         // underlying navigation content fades out (layout and frames survive,
         // so the hero anchors on the mini player keep measuring) and the

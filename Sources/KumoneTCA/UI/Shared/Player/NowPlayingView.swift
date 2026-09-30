@@ -111,28 +111,24 @@ struct NowPlayingView: View {
             // Pin to the screen width so an intrinsically-wide child can never
             // stretch the ZStack and push the corner overlays off-screen.
             .frame(width: geo.size.width)
+            #if os(iOS)
+            // iOS keeps the dismiss chevron top-leading (no traffic lights);
+            // macOS moves it to the trailing overlay below.
             .overlay(alignment: .topLeading) {
                 if showsClassicChrome(isCompact: isCompact) {
-                    Button {
-                        close()
-                    } label: {
-                        Image(systemName: "chevron.down")
-                            .font(.system(size: 14, weight: .semibold))
-                            .foregroundStyle(.white.opacity(0.85))
-                            .frame(width: 36, height: 36)
-                            .background(.white.opacity(0.12), in: Circle())
-                    }
-                    .buttonStyle(.pressable)
-                    .padding(.top, 20)
-                    .padding(.leading, 20)
-                    #if os(macOS)
-                    .opacity(isZenActive ? 0 : 1)
-                    .allowsHitTesting(!isZenActive)
-                    #endif
+                    closeButton
+                        .padding(.top, 20)
+                        .padding(.leading, 20)
                 }
             }
+            #endif
             .overlay(alignment: .topTrailing) {
                 HStack(spacing: 10) {
+                    #if os(macOS)
+                    if showsClassicChrome(isCompact: isCompact) {
+                        closeButton
+                    }
+                    #endif
                     if isCompact, showsClassicChrome(isCompact: isCompact) {
                         Button {
                             withAnimation(AppAnimation.standard) {
@@ -258,6 +254,26 @@ struct NowPlayingView: View {
     private var hasLyricsColumn: Bool {
         if let lyrics = player.lyrics, !lyrics.isEmpty { return true }
         return player.lyrics == nil // still loading — keep layout stable
+    }
+
+    /// The chevron-down button that dismisses the immersive page. On macOS it
+    /// rides the top-trailing corner: the window traffic lights sit top-leading
+    /// and the two overlapped while the window toolbar is hidden for this page.
+    private var closeButton: some View {
+        Button {
+            close()
+        } label: {
+            Image(systemName: "chevron.down")
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(.white.opacity(0.85))
+                .frame(width: 36, height: 36)
+                .background(.white.opacity(0.12), in: Circle())
+        }
+        .buttonStyle(.pressable)
+        #if os(macOS)
+        .opacity(isZenActive ? 0 : 1)
+        .allowsHitTesting(!isZenActive)
+        #endif
     }
 
     private func close() {

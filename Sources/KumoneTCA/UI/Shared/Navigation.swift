@@ -79,6 +79,45 @@ extension View {
     }
 }
 
+/// A blurred fade covering the window's top edge: full-strength material at
+/// the titlebar's bottom rail thinning to nothing over `height` points. The
+/// window toolbar's Liquid Glass sits above this band, so content scrolling
+/// up to it softens out instead of colliding with the chrome (same trick as
+/// the lyrics column's edge fade). Non-interactive and a no-op on iOS, whose
+/// main window has no titlebar to clear.
+struct TopFadeBlur: ViewModifier {
+    var height: CGFloat = 52
+
+    func body(content: Content) -> some View {
+        #if os(macOS)
+        content
+            .overlay(alignment: .top) {
+                Rectangle()
+                    .fill(.ultraThinMaterial)
+                    .frame(height: height)
+                    .mask(
+                        LinearGradient(
+                            colors: [.black, .black.opacity(0.92), .clear],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                    )
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
+            }
+        #else
+        content
+        #endif
+    }
+}
+
+extension View {
+    /// Blurred top fade so content clears the window titlebar (macOS only).
+    func topFadeBlur(height: CGFloat = 52) -> some View {
+        modifier(TopFadeBlur(height: height))
+    }
+}
+
 /// Trailing spacer for scrollable pages so the last row clears the
 /// floating player bar.
 struct PlayerClearanceSpacer: View {
