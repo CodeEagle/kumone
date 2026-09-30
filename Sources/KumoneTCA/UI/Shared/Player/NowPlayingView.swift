@@ -38,7 +38,6 @@ struct NowPlayingView: View {
     @State private var showQueueOnMobile = false
     @State private var lyricsColumnHold = false
     #if os(macOS)
-    @State private var showLyricsColumn = true
     @State private var hasStartedPlayPauseFlight = false
     @State private var hasStartedPreviousFlight = false
     @State private var hasStartedNextFlight = false
@@ -130,18 +129,14 @@ struct NowPlayingView: View {
                     }
                     #endif
                     if isCompact, showsClassicChrome(isCompact: isCompact) {
-                        Button {
-                            withAnimation(AppAnimation.standard) {
-                                showLyricsOnMobile.toggle()
-                            }
-                        } label: {
-                            Image(systemName: showLyricsOnMobile ? "music.note" : "quote.bubble")
-                                .font(.system(size: 14, weight: .semibold))
-                                .foregroundStyle(showLyricsOnMobile ? Theme.accent : .white.opacity(0.85))
-                                .frame(width: 36, height: 36)
-                                .background(.white.opacity(0.12), in: Circle())
+                        PlayerIconButton(
+                            icon: "quote.bubble",
+                            size: 13,
+                            isActive: player.activePanel == .lyrics
+                        ) {
+                            appStore?.send(.player(.togglePanel(.lyrics)))
                         }
-                        .buttonStyle(.pressable)
+                        .help("歌词")
                     }
                 }
                 .padding(.top, 20)
@@ -222,7 +217,8 @@ struct NowPlayingView: View {
         #endif
         #if os(macOS)
         .onChange(of: hasLyricsColumn) { _, hasColumn in
-            if lyricsColumnWasVisible && !hasColumn && showLyricsColumn && isWindowHovered {
+            if lyricsColumnWasVisible && !hasColumn
+                && player.activePanel == .lyrics && isWindowHovered {
                 lyricsColumnHold = true
             }
             if hasColumn { lyricsColumnHold = false }
@@ -405,7 +401,7 @@ struct NowPlayingView: View {
 
     private var isLyricsColumnVisible: Bool {
         #if os(macOS)
-        hasLyricsColumn && showLyricsColumn || lyricsColumnHold
+        hasLyricsColumn && (player.activePanel == .lyrics) || lyricsColumnHold
         #else
         hasLyricsColumn
         #endif
@@ -433,6 +429,7 @@ struct NowPlayingView: View {
         .frame(maxWidth: .infinity)
         .padding(.horizontal, 48)
         .padding(.vertical, size.height < 500 ? 24 : 40)
+        .animation(AppAnimation.smooth, value: isLyricsColumnVisible)
     }
 
     @ViewBuilder
@@ -988,9 +985,71 @@ struct NowPlayingView: View {
     }
 
     private func leftColumn(artworkSize: CGFloat) -> some View {
-        VStack(spacing: 26) {
-            Spacer()
+        Group {
+            #if os(macOS)
+            // Zen mode slides the artwork and metadata to the viewport's
+            // vertical centre. The offset is applied through `visualEffect`
+            // and only while zen is active, so the resting layout — and the
+            // hero anchors read off this column — is untouched otherwise.
+            GeometryReader { viewport in
+                VStack(spacing: 0) {
+                    Spacer()
+                    artworkAndMetadata(artworkSize: artworkSize)
+                        // Keep the title and destination links at their natural
+                        // height, even when the viewport proposes less space.
+                        .fixedSize(horizontal: false, vertical: true)
+                        .visualEffect { content, geometry in
+                            content.offset(
+                                y: isZenActive
+                                    ? viewport.size.height / 2
+                                        - geometry.frame(in: .named("nowPlayingColumn")).midY
+                                    : 0
+                            )
+                        }
+                        .animation(Self.zenAnimation, value: isZenActive)
 
+                    // Keep identity and layout stable while hidden: rebuilding
+                    // these subviews can restart transitions during hover and
+                    // layout updates. Zen only fades them now — no offset — so
+                    // the column above never reflows while they disappear.
+                    VStack(spacing: 26) {
+                        VStack(spacing: 14) {
+                            NowPlayingScrubber()
+                                .frame(maxWidth: 380)
+                            controls(showsRoamingBadge: false, showsRoutePicker: false)
+                        }
+                        actionRow
+                    }
+                    .padding(.top, 26)
+                    .opacity(isZenActive ? 0 : 1)
+                    .allowsHitTesting(!isZenActive)
+                    .accessibilityHidden(isZenActive)
+                    Spacer()
+                }
+                .frame(width: viewport.size.width, height: viewport.size.height)
+                .coordinateSpace(name: "nowPlayingColumn")
+            }
+            #else
+            VStack(spacing: 26) {
+                Spacer()
+                artworkAndMetadata(artworkSize: artworkSize)
+                VStack(spacing: 14) {
+                    NowPlayingScrubber()
+                        .frame(maxWidth: 380)
+                    controls()
+                }
+                Spacer()
+            }
+            #endif
+        }
+        .padding(.trailing, isLyricsColumnVisible ? 30 : 0)
+    }
+
+    /// The artwork (or vinyl record) plus the title/artist row: the block that
+    /// centres itself in zen mode and shares one identity between the macOS
+    /// and iOS layouts of `leftColumn`.
+    private func artworkAndMetadata(artworkSize: CGFloat) -> some View {
+        VStack(spacing: 26) {
             if settings.nowPlayingMode == .vinyl {
                 VinylTurntableView(
                     artworkImage: artworkImage,
@@ -1022,36 +1081,7 @@ struct NowPlayingView: View {
                 artworkView(size: artworkSize)
             }
             trackMetaView
-
-            #if os(macOS)
-            // Keep identity and layout stable while hidden: rebuilding these
-            // subviews can restart transitions during hover/layout updates.
-            VStack(spacing: 14) {
-                NowPlayingScrubber()
-                    .frame(maxWidth: 380)
-                controls(showsRoamingBadge: false, showsRoutePicker: false)
-            }
-            .opacity(isZenActive ? 0 : 1)
-            .offset(y: isZenActive ? 20 : 0)
-            .allowsHitTesting(!isZenActive)
-            .accessibilityHidden(isZenActive)
-
-            actionRow
-                .opacity(isZenActive ? 0 : 1)
-                .offset(y: isZenActive ? 20 : 0)
-                .allowsHitTesting(!isZenActive)
-                .accessibilityHidden(isZenActive)
-            #else
-            VStack(spacing: 14) {
-                NowPlayingScrubber()
-                    .frame(maxWidth: 380)
-                controls()
-            }
-            #endif
-
-            Spacer()
         }
-        .padding(.trailing, isLyricsColumnVisible ? 30 : 0)
     }
 
     #if os(macOS)
@@ -1088,20 +1118,14 @@ struct NowPlayingView: View {
     }
 
     private var lyricsToggleButton: some View {
-        Button {
-            withAnimation(AppAnimation.standard) {
-                showLyricsColumn.toggle()
-            }
-        } label: {
-            Image(systemName: showLyricsColumn ? "music.note" : "quote.bubble")
-                .font(.system(size: 14, weight: .semibold))
-                .foregroundStyle(.white.opacity(0.85))
-                .frame(width: 36, height: 36)
-                .background(.white.opacity(0.12), in: Circle())
+        PlayerIconButton(
+            icon: "quote.bubble",
+            size: 13,
+            isActive: player.activePanel == .lyrics
+        ) {
+            appStore?.send(.player(.togglePanel(.lyrics)))
         }
-        .buttonStyle(.pressable)
-        .help(showLyricsColumn ? "隐藏歌词" : "显示歌词")
-        .accessibilityLabel(showLyricsColumn ? "隐藏歌词" : "显示歌词")
+        .help("歌词")
     }
 
     /// Every hover-driven chrome change uses the same cancellable delay,
@@ -1111,10 +1135,15 @@ struct NowPlayingView: View {
         zenHoverTask = nil
         guard isZenMode else { return }
         let hovering = isWindowHovered
-        guard hovering || !isShaderPickerOpen else { return }
+        if hovering || isShaderPickerOpen {
+            withAnimation(Self.zenAnimation) {
+                isZenActive = false
+            }
+            return
+        }
         zenHoverTask = Task { @MainActor in
             do {
-                try await Task.sleep(for: .seconds(hovering ? 0.8 : 1))
+                try await Task.sleep(for: .seconds(1))
             } catch {
                 return
             }

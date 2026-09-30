@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import KumoneCore
 import SwiftUI
 import ComposableArchitecture
@@ -8,6 +9,8 @@ import KumoneTCA
 final class MainContainerViewController: NSViewController {
     let shaderLayer = ShaderLayerView()
     private let store: StoreOf<AppFeature>
+    private var nowPlayingSubscription: AnyCancellable?
+    private var toolbarObservation: NSKeyValueObservation?
 
     init(store: StoreOf<AppFeature>) {
         self.store = store
@@ -16,6 +19,58 @@ final class MainContainerViewController: NSViewController {
 
     required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
+    }
+
+    override func viewDidAppear() {
+        super.viewDidAppear()
+        // SwiftUI's toolbar visibility preference is not always applied to a
+        // toolbar bridged into a programmatically created AppKit window.
+        syncToolbarVisibility()
+        nowPlayingSubscription = store.publisher.isNowPlayingPresented
+            .removeDuplicates()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                self?.syncToolbarVisibility()
+            }
+        // Bridging can install or replace the toolbar after the view appears.
+        toolbarObservation = view.window?.observe(\.toolbar, options: [.new]) { [weak self] _, _ in
+            Task { @MainActor [weak self] in
+                self?.syncToolbarVisibility()
+            }
+        }
+    }
+
+    override func viewDidDisappear() {
+        super.viewDidDisappear()
+        nowPlayingSubscription = nil
+        toolbarObservation = nil
+    }
+
+    private func syncToolbarVisibility() {
+        guard let window = view.window else {
+            logToolbar("no-window")
+            return
+        }
+        let toolbar = window.toolbar
+        let isVisible = !store.isNowPlayingPresented
+        logToolbar("hasToolbar=\(toolbar != nil) presented=\(store.isNowPlayingPresented) target=\(isVisible) current=\(toolbar?.isVisible ?? false)")
+        guard let toolbar, toolbar.isVisible != isVisible else { return }
+        toolbar.isVisible = isVisible
+        logToolbar("set isVisible -> \(isVisible)")
+    }
+
+    private func logToolbar(_ message: String) {
+        let line = "TOOLBAR SYNC \(message)"
+        KumoneLogger.hero.notice("\(line, privacy: .public)")
+        let url = URL(fileURLWithPath: "/tmp/kumone-toolbar.log")
+        if let data = (line + "\n").data(using: .utf8),
+           let handle = try? FileHandle(forWritingTo: url) {
+            _ = try? handle.seekToEnd()
+            try? handle.write(contentsOf: data)
+            try? handle.close()
+        } else {
+            try? (line + "\n").data(using: .utf8)?.write(to: url, options: [.atomic])
+        }
     }
 
     override func loadView() {

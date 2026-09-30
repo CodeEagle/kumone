@@ -91,7 +91,10 @@ struct TopFadeBlur: ViewModifier {
     func body(content: Content) -> some View {
         #if os(macOS)
         content
-            .overlay(alignment: .top) {
+            .overlay {
+                // Center the fade inside a full-height container, then ignore
+                // the safe area: the band has to sit at the window's y=0 (the
+                // titlebar rail), not at the navigation content's top inset.
                 Rectangle()
                     .fill(.ultraThinMaterial)
                     .frame(height: height)
@@ -102,6 +105,8 @@ struct TopFadeBlur: ViewModifier {
                             endPoint: .bottom
                         )
                     )
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                    .ignoresSafeArea()
                     .allowsHitTesting(false)
                     .accessibilityHidden(true)
             }

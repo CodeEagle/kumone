@@ -21,7 +21,7 @@ struct HeroTargetModifier: ViewModifier {
             guard !hasStarted,
                   HeroProbe.shared.sourceID(for: id) == id
             else { return }
-            HeroProbe.shared.recordTarget(id: id, frame: targetFrame, scale: 1)
+            HeroProbe.shared.recordTarget(id: id, frame: targetFrame, scale: 1, cornerRadius: cornerRadius)
             HeroFlightDirector.shared.start(
                 id: id,
                 content: .artwork(url: artworkURL, cornerRadius: cornerRadius),

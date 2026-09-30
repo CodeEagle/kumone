@@ -18,21 +18,27 @@ public enum HeroSelfTest {
         ProcessInfo.processInfo.environment["KUMONE_HERO_SELF_TEST"] == "1"
     }
 
-    /// The launch-flag tour: one round trip, one summary line, then quit so an
-    /// outer script can tell the run is over. Does nothing unless the flag is
-    /// set, so it is safe to call unconditionally at launch.
+    /// The launch-flag tour: one now-playing round trip, one card round trip,
+    /// one summary line, then quit so an outer script can tell the run is
+    /// over. Does nothing unless the flag is set, so it is safe to call
+    /// unconditionally at launch.
     @MainActor
     public static func run(appStore: StoreOf<AppFeature>) async {
         guard isEnabled else { return }
-        let didPass = await driveRoundTrip(appStore: appStore)
+        let didPlay = await driveRoundTrip(appStore: appStore)
+        let didCard = await driveCardRoundTrip(appStore: appStore)
 
         let judgedCounts = HeroID.nowPlayingPairs.map { pair in
             "\(pair.source):\(HeroProbe.shared.records.filter { $0.id == pair.source && $0.verdict != nil }.count)"
         }.joined(separator: ",")
+        let cardJudged = HeroProbe.shared.records.filter {
+            $0.id.hasPrefix("hero-playlist-") && $0.verdict != nil
+        }.count
         HeroProbe.writeFile(
-            "HERO SELFTEST END pass=\(didPass ? 1 : 0) fail=\(didPass ? 0 : 1)"
+            "HERO SELFTEST END pass=\((didPlay && didCard) ? 1 : 0) fail=\((didPlay && didCard) ? 0 : 1)"
                 + " | \(verdictDescription())"
                 + " | judged \(judgedCounts)"
+                + " | card-judged:\(cardJudged)"
         )
         await flushAndTerminate()
     }
@@ -100,6 +106,118 @@ public enum HeroSelfTest {
             passed = (verdict.map { !$0.isFailure } ?? false) && passed
         }
         return passed
+    }
+
+    // MARK: - Card (playlist/album/artist) round trip
+
+    /// One card→detail hero flight: waits for the home shelf to load, arms the
+    /// first recommended playlist's hero id from its cached anchor geometry,
+    /// opens the detail page, and waits for the flight to be judged. This is
+    /// the same verification the now-playing round trip applies, extended to
+    /// the transitions the home/explore/track-list cards share. A skip (no
+    /// playlist loaded, no anchor registered) counts as a pass: it names a
+    /// missing precondition rather than a misaligned flight.
+    @discardableResult
+    @MainActor
+    public static func driveCardRoundTrip(appStore: StoreOf<AppFeature>) async -> Bool {
+        guard let playlistID = await waitForVisibleRecommendedPlaylistID(appStore: appStore, deadline: 20) else {
+            HeroProbe.writeFile("HERO SELFTEST CARD END pass=1 skip=1 reason=no-recommended-playlist")
+            return true
+        }
+        let id = HeroID.playlist(playlistID)
+
+        // The card's .heroAnchor has to have measured its frame before the
+        // trigger reads it back.
+        await waitForStableAnchors(for: [id], settleInterval: 1.0, deadline: 5.0)
+        guard HeroFrameStore.shared.frame(for: id) != nil else {
+            HeroProbe.writeFile("HERO SELFTEST CARD END pass=1 skip=1 reason=no-source-anchor id=\(id)")
+            return true
+        }
+
+        HeroTrigger.arm(id)
+        appStore.send(.openDestination(.playlist(playlistID)))
+        HeroProbe.writeFile("HERO SELFTEST CARD ARMED id=\(id) playlist=\(playlistID)")
+
+        // The detail header (and its .heroTarget) appears only once the page
+        // loads; the flight starts the moment its geometry matches the armed id.
+        await waitForDetailLoad(appStore: appStore, deadline: 20)
+
+        let verdict = await waitForVerdict(for: id, timeout: 12)
+        let passed = verdict.map { !$0.isFailure } ?? false
+        HeroProbe.writeFile(
+            "HERO SELFTEST CARD END pass=\(passed ? 1 : 0) skip=0 id=\(id) \(cardVerdictDescription(for: id))"
+        )
+        return passed
+    }
+
+    /// Picks the first recommended playlist whose card is fully inside the
+    /// window's visible area: a card cut off at the bottom of the first screen
+    /// fails the probe's off-screen source check, and lazy stacks only render
+    /// cards near the visible region anyway. Falls back to the first playlist
+    /// when no viewport is known yet.
+    @MainActor
+    private static func waitForVisibleRecommendedPlaylistID(
+        appStore: StoreOf<AppFeature>, deadline: TimeInterval
+    ) async -> Int? {
+        let limit = Date().addingTimeInterval(deadline)
+        let margin = HeroProbe.viewportMargin
+        while true {
+            let playlists = appStore.home.recommendPlaylists
+            if let viewport = currentViewport() {
+                if let id = playlists.first(where: { playlist in
+                    guard let frame = HeroFrameStore.shared.frame(for: HeroID.playlist(playlist.id))
+                    else { return false }
+                    return frame.origin.y >= viewport.minY - margin
+                        && frame.maxY <= viewport.maxY + margin
+                })?.id {
+                    return id
+                }
+            } else if let id = playlists.first?.id {
+                return id
+            }
+            if Task.isCancelled || Date() >= limit { return nil }
+            try? await Task.sleep(nanoseconds: 200_000_000)
+        }
+    }
+
+    /// The window's visible rect in the hero coordinate space (SwiftUI global):
+    /// the now-playing flights already recorded it. It is `nil` before any
+    /// flight has run.
+    @MainActor
+    private static func currentViewport() -> CGRect? {
+        HeroProbe.shared.records.compactMap { $0.viewportFrame }.last
+    }
+
+    /// Waits for the top of the navigation stack to be a loaded playlist detail,
+    /// which is when the header's hero target can measure its frame.
+    @MainActor
+    private static func waitForDetailLoad(
+        appStore: StoreOf<AppFeature>, deadline: TimeInterval
+    ) async {
+        let limit = Date().addingTimeInterval(deadline)
+        while true {
+            if appStore.path.count > 0 {
+                let last = appStore.path[appStore.path.count - 1]
+                if case let .playlist(detailState) = last, case .loaded = detailState.loadState {
+                    return
+                }
+            }
+            if Task.isCancelled || Date() >= limit { return }
+            try? await Task.sleep(nanoseconds: 100_000_000)
+        }
+    }
+
+    @MainActor
+    private static func cardVerdictDescription(for id: String) -> String {
+        guard let verdict = judgedRecord(for: id)?.verdict else {
+            return "no verdict (flight did not settle)"
+        }
+        switch verdict {
+        case .pass:
+            return "PASS"
+        case let .fail(reason):
+            return "FAIL: \(reason)"
+        }
     }
 
     // MARK: - Polling
