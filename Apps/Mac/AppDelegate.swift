@@ -55,6 +55,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if HeroSelfTest.isEnabled {
             Task { await HeroSelfTest.run(appStore: store) }
         }
+        // Memory-leak reproduction without a GUI: KUMONE_LEAK_STRESS=1 plays
+        // through a playlist and skips every few seconds while sampling the
+        // resident footprint, writing /tmp/kumone-leak.log.
+        if LeakStress.isEnabled {
+            Task { await LeakStress.run(appStore: store) }
+        }
         #endif
         artworkStore.setArtworkNeeded(true)
         artworkStore.update(

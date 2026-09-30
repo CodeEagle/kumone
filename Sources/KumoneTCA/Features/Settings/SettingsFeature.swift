@@ -87,7 +87,12 @@ public struct SettingsFeature {
                 state.autoCheckUpdates = p.boolForKey(Keys.autoCheckUpdates)
                 state.showDesktopLyrics = p.boolForKey(Keys.desktopLyrics)
                 state.desktopLyricsCentered = p.boolForKey(Keys.desktopLyricsCentered)
-                state.showMainWindowAmbientBackground = p.boolForKey(Keys.mainWindowAmbientBackground)
+                // Stored as a presence check rather than a plain boolForKey:
+                // a missing key must read as the default-on state, not as an
+                // explicit off, or the window shader stays permanently dark for
+                // accounts that never touched the toggle.
+                state.showMainWindowAmbientBackground = p.stringForKey(Keys.mainWindowAmbientBackground) == nil
+                    ? true : p.boolForKey(Keys.mainWindowAmbientBackground)
                 let stored = p.doubleForKey(Keys.mainWindowAmbientBackgroundIntensity)
                 state.mainWindowAmbientBackgroundIntensity = min(
                     max(stored.isZero ? 1 : stored, Self.intensityRange.lowerBound),

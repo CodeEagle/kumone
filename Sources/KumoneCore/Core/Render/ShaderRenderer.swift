@@ -240,8 +240,9 @@ public final class ShaderRenderer: NSObject, MTKViewDelegate {
             lastProbeTime = now
             let p = paletteMixer.current
             let line = String(
-                format: "SHADER PROBE live=%d playing=%d reactive=%d loud=%.3f lvl=%.3f low=%.3f mid=%.3f high=%.3f beat=%.3f palPri=(%.2f,%.2f,%.2f) palSec=(%.2f,%.2f,%.2f) palAcc=(%.2f,%.2f,%.2f) palBg=(%.2f,%.2f,%.2f)",
+                format: "SHADER PROBE live=%d playing=%d reactive=%d tapState=%d loud=%.3f lvl=%.3f low=%.3f mid=%.3f high=%.3f beat=%.3f palPri=(%.2f,%.2f,%.2f) palSec=(%.2f,%.2f,%.2f) palAcc=(%.2f,%.2f,%.2f) palBg=(%.2f,%.2f,%.2f)",
                 isAudioLive ? 1 : 0, isAudioPlaying ? 1 : 0, isAudioReactive ? 1 : 0,
+                AudioSpectrum.shared.tapState.rawValue,
                 frame.loudness, frame.level, frame.low, frame.mid, frame.high, frame.beat,
                 p.primary.x, p.primary.y, p.primary.z,
                 p.secondary.x, p.secondary.y, p.secondary.z,

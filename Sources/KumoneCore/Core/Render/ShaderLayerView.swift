@@ -128,7 +128,11 @@ public final class ShaderLayerView: MTKView {
     public func apply(shader: ShaderDescriptor?, isPlaying: Bool, palette: ShaderPalette, pcmSync: Bool = true) {
         clampDrawableSize()
         isPaused = !isPlaying
-        guard let renderer else { return }
+        guard let renderer else {
+            ShaderLayerView.logApply("no-renderer shaderId=\(shader?.id ?? "nil") isPlaying=\(isPlaying)")
+            return
+        }
+        ShaderLayerView.logApply("shaderId=\(shader?.id ?? "nil") isPlaying=\(isPlaying) pcmSync=\(pcmSync) isPaused=\(isPaused)")
 
         if shader?.id != currentShaderID {
             currentShaderID = shader?.id
@@ -156,4 +160,22 @@ public final class ShaderLayerView: MTKView {
         renderer?.unload()
         releaseDrawables()
     }
+    /// Triage probe for headless runs: `apply` decisions land in
+    /// /tmp/kumone-apply.log so a script can prove which shader id the store
+    /// actually pushed, without a GUI. Keep until the window-shader triage on
+    /// workmini is closed.
+    private static func logApply(_ message: String) {
+        let line = "SHADER APPLY \(message)"
+        KumoneLogger.app.notice("\(line, privacy: .public)")
+        let url = URL(fileURLWithPath: "/tmp/kumone-apply.log")
+        let payload = (line + "\n").data(using: .utf8) ?? Data()
+        if let handle = try? FileHandle(forWritingTo: url) {
+            _ = try? handle.seekToEnd()
+            try? handle.write(contentsOf: payload)
+            try? handle.close()
+        } else {
+            try? payload.write(to: url, options: [.atomic])
+        }
+    }
+
 }
