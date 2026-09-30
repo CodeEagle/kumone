@@ -135,6 +135,7 @@ fragment float4 kumone_fragment_voronoi(Varying in [[stage_in]],
     opacity = mix(1.0, opacity, edge);
 
     col = col + u.paletteBackground.rgb * (1.0 - saturate(opacity));
-    col = beat_flash(col, u.beat, 0.35);
+    col = audio_bands_color(col, u.low, u.mid, u.high);
+    col = audio_fire(col, u.beat, 0.5);
     return float4(col, 1.0);
 }

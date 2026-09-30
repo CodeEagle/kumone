@@ -134,6 +134,7 @@ fragment float4 kumone_fragment_simplex_noise(Varying in [[stage_in]],
                                  float2(12.9898, 78.233))) * 43758.5453123) - 0.5;
     gradient += float3(dither / 256.0);
 
-    gradient = beat_flash(gradient, u.beat, 0.35);
+    gradient = audio_bands_color(gradient, u.low, u.mid, u.high);
+    gradient = audio_fire(gradient, u.beat, 0.5);
     return float4(gradient, 1.0);
 }

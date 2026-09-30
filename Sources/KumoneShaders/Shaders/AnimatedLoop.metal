@@ -109,6 +109,7 @@ fragment float4 kumone_fragment_animated_loop(Varying in [[stage_in]],
     col *= audio_glow(0.7, audio_energy(u.loudness), 0.5);
 
     float3 bg = u.paletteBackground.rgb;
-    col = beat_flash(col, u.beat, 0.35);
+    col = audio_bands_color(col, u.low, u.mid, u.high);
+    col = audio_fire(col, u.beat, 0.5);
     return float4(bg + col, 1.0);
 }

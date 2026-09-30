@@ -86,7 +86,7 @@ fragment float4 kumone_fragment_smoke_ring(Varying in [[stage_in]],
     // Gentle thickness breathing follows slow drift, without sustained beat swelling.
     float thickness = 0.19 + (wander(u.time * 0.04, 1.7) - 0.5) * 2.0 * 0.04;
     // Beats briefly thicken the ring to make each transient a soft punch.
-    thickness = audio_gain(thickness, audio_pulse(u.beat), 0.2);
+    thickness = audio_gain(thickness, audio_pulse(u.beat), 0.1);
     float innerShape = 2.0 + (wander(u.time * 0.04, 3.3) - 0.5) * 2.0 * 1.0;
     float noiseScale = 3.25 + (wander(u.time * 0.04, 5.9) - 0.5) * 2.0 * 1.75;
     // Air raises noise frequency to add fine detail to the smoke.
@@ -156,6 +156,7 @@ fragment float4 kumone_fragment_smoke_ring(Varying in [[stage_in]],
                                  float2(12.9898, 78.233))) * 43758.5453123) - 0.5;
     color += float3(dither / 256.0);
 
-    color = beat_flash(color, u.beat, 0.35);
+    color = audio_bands_color(color, u.low, u.mid, u.high);
+    color = audio_fire(color, u.beat, 0.5);
     return float4(color, 1.0);
 }

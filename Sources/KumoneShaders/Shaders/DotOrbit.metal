@@ -95,7 +95,7 @@ fragment float4 kumone_fragment_dot_orbit(Varying in [[stage_in]],
     spreading = audio_gain(spreading, audio_band(u.bands[1]), 0.3);
     float dotScale = 1.3 + (wander(u.time * 0.04, 3.3) - 0.5) * 2.0 * 0.7;
     // A beat punches the dot size, on top of the slow wander.
-    dotScale = audio_gain(dotScale, audio_pulse(u.beat), 0.2);
+    dotScale = audio_gain(dotScale, audio_pulse(u.beat), 0.1);
 
     float minDim = max(min(size.x, size.y), 1.0);
     float2 uv = (position - 0.5 * size) / minDim;
@@ -143,6 +143,7 @@ fragment float4 kumone_fragment_dot_orbit(Varying in [[stage_in]],
     float3 bgRGB = u.paletteBackground.rgb;
     col = col + bgRGB * (1.0 - dots);
 
-    col = beat_flash(col, u.beat, 0.35);
+    col = audio_bands_color(col, u.low, u.mid, u.high);
+    col = audio_fire(col, u.beat, 0.5);
     return float4(col, 1.0);
 }

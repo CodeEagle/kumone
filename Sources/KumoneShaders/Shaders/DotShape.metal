@@ -30,7 +30,7 @@ fragment float4 kumone_fragment_dot_shape(Varying in [[stage_in]],
     patternScale = audio_gain(patternScale, audio_band(u.bands[0]), 0.2);
     float dotSize = 1.4 + (wander(u.time * 0.04, 1.7) - 0.5) * 2.0 * 0.4;
     // Beats briefly enlarge the dots to make transients visible.
-    dotSize = audio_gain(dotSize, audio_pulse(u.beat), 0.2);
+    dotSize = audio_gain(dotSize, audio_pulse(u.beat), 0.1);
     float brightness = 1.1 + (wander(u.time * 0.04, 3.3) - 0.5) * 2.0 * 0.4;
     // Loudness lifts dot brightness for a slow swell with the mix.
     brightness = audio_glow(brightness, audio_energy(u.loudness), 0.6);
@@ -71,6 +71,7 @@ fragment float4 kumone_fragment_dot_shape(Varying in [[stage_in]],
     float3 fg = u.paletteAccent.rgb * brightness;
     fg = mix(fg, u.palettePrimary.rgb, 0.35);
     float3 col = mix(bg, fg, intensity);
-    col = beat_flash(col, u.beat, 0.35);
+    col = audio_bands_color(col, u.low, u.mid, u.high);
+    col = audio_fire(col, u.beat, 0.5);
     return float4(col, 1.0);
 }

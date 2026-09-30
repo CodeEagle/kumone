@@ -67,7 +67,7 @@ fragment float4 kumone_fragment_metaballs(Varying in [[stage_in]],
     count = audio_gain(count, audio_band(u.bands[0]), 0.2);
     float size  = 0.675 + (wander(u.time * 0.04, 3.3) - 0.5) * 2.0 * 0.275;
     // Beats briefly grow the blobs to make each transient a rounded punch.
-    size = audio_gain(size, audio_pulse(u.beat), 0.2);
+    size = audio_gain(size, audio_pulse(u.beat), 0.1);
 
     float3 colors[8];
     metaballsPalette(u, colors);
@@ -109,6 +109,7 @@ fragment float4 kumone_fragment_metaballs(Varying in [[stage_in]],
     float brightness = audio_glow(1.0, audio_energy(u.loudness), 0.6);
     float3 col = totalColor * finalShape * brightness +
                  u.paletteBackground.rgb * (1.0 - finalShape);
-    col = beat_flash(col, u.beat, 0.35);
+    col = audio_bands_color(col, u.low, u.mid, u.high);
+    col = audio_fire(col, u.beat, 0.5);
     return float4(col, 1.0);
 }

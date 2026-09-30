@@ -51,7 +51,7 @@ fragment float4 kumone_fragment_neuro_noise(Varying in [[stage_in]],
     scale = audio_gain(scale, audio_band(u.bands[0]), 0.2);
     float contrast = 0.55 + (wander(u.time * 0.04, 1.7) - 0.5) * 2.0 * 0.3;
     // Beats briefly sharpen filament contrast to make transients visible.
-    contrast = audio_gain(contrast, audio_pulse(u.beat), 0.2);
+    contrast = audio_gain(contrast, audio_pulse(u.beat), 0.1);
     float brightness = 1.1 + (wander(u.time * 0.04, 5.9) - 0.5) * 2.0 * 0.6;
     // Air lifts filament brightness to give high notes a soft shimmer.
     brightness = audio_glow(brightness, audio_band(u.bands[3]), 0.6);
@@ -79,6 +79,7 @@ fragment float4 kumone_fragment_neuro_noise(Varying in [[stage_in]],
     float3 backRGB = u.paletteBackground.rgb;
     col = col + backRGB * (1.0 - saturate(max(noise, 0.0)));
 
-    col = beat_flash(col, u.beat, 0.35);
+    col = audio_bands_color(col, u.low, u.mid, u.high);
+    col = audio_fire(col, u.beat, 0.5);
     return float4(col, 1.0);
 }

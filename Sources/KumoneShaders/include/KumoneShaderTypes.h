@@ -143,3 +143,47 @@ static inline float audio_glow(float base, float amount, float k) {
 static inline float3 beat_flash(float3 col, float beat, float k) {
     return col + col * audio_pulse(beat) * k;
 }
+
+// Standard fast RGB <-> HSV (hue 0...1, saturation 0...1, value 0...1) so the
+// bands can shape colour directly: saturation, hue rotation and lightness are
+// the three axes a visualizer actually wants, and every reference pipeline
+// (WebAudio/shadertoy) maps bands into HSL/HSV rather than fighting RGB.
+static inline float3 rgb2hsv(float3 c) {
+    float4 K = float4(0.0, -1.0 / 3.0, 2.0 / 3.0, 1.0 / 3.0);
+    float4 p = mix(float4(c.bg, K.wz), float4(c.gb, K.xy), step(c.b, c.g));
+    float4 q = mix(float4(p.xyw, c.r), float4(c.r, p.yzx), step(p.x, c.r));
+    float d = q.x - min(q.w, q.y);
+    return float3(abs(q.z + (q.w - q.y) / (6.0 * d + 1e-10)), d / (q.x + 1e-10), q.x);
+}
+
+static inline float3 hsv2rgb(float3 c) {
+    float4 K = float4(1.0, 2.0 / 3.0, 1.0 / 3.0, 3.0);
+    float3 p = abs(fract(c.xxx + K.xyz) * 6.0 - K.www);
+    return c.z * mix(K.xxx, saturate(p - K.xxx), c.y);
+}
+
+// The kick as light, not geometry: a beat punches value and saturation up and
+// pushes the colour slightly toward white (a touch of over-exposure, the way a
+// camera flash reads on a lit stage). Replaces `beat_flash` where the flash
+// alone still left the rhythm invisible in the palette.
+static inline float3 audio_fire(float3 col, float beat, float k) {
+    float punch = audio_pulse(beat);
+    float3 hsv = rgb2hsv(col);
+    hsv.z = saturate(hsv.z + punch * k * 0.7);
+    hsv.y = saturate(hsv.y * (1.0 + punch * k * 0.4));
+    float3 hot = mix(col, float3(1.0, 1.0, 1.0), punch * k * 0.25);
+    return mix(hot, hsv2rgb(hsv), 0.5);
+}
+
+// The bands as colour: bass deepens saturation, mid nudges the hue around so
+// the palette never sits frozen, treble lifts the light. This is the mapping
+// every reference visualizer converges on (bass warm/structural, highs
+// bright/shimmer) — the appkit shaders were feeding the bands to geometry
+// alone, which read as "everything just zooms".
+static inline float3 audio_bands_color(float3 col, float low, float mid, float high) {
+    float3 hsv = rgb2hsv(col);
+    hsv.y = saturate(hsv.y * (1.0 + audio_band(low) * 0.5));
+    hsv.x = fract(hsv.x + audio_band(mid) * 0.06);
+    hsv.z = saturate(hsv.z * (1.0 + audio_band(high) * 0.4));
+    return hsv2rgb(hsv);
+}

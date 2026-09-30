@@ -227,6 +227,7 @@ fragment float4 kumone_fragment_color_panels(Varying in [[stage_in]],
                                  float2(12.9898, 78.233))) * 43758.5453123) - 0.5;
     color += float3(dither / 256.0);
 
-    color = beat_flash(color, u.beat, 0.35);
+    color = audio_bands_color(color, u.low, u.mid, u.high);
+    color = audio_fire(color, u.beat, 0.5);
     return float4(color, 1.0);
 }
