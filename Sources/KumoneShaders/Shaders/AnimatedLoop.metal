@@ -90,6 +90,14 @@ fragment float4 kumone_fragment_animated_loop(Varying in [[stage_in]],
     float3 ch[3] = { u.palettePrimary.rgb, u.paletteSecondary.rgb, u.paletteAccent.rgb };
 
     float3 col = float3(0.0);
+    // The three channels' raw line weights are squared per ring (float(i*i)),
+    // so their sums reach far past 1 — an additive pile of three of them then
+    // goes through the Reinhard below, which compresses everything toward grey.
+    // Per-channel soft compression keeps each colour at its own saturation
+    // before the sum, so overlap can no longer wash the palette out: green
+    // stays green where green dominates, orange stays orange where it leads.
+    float channelTotal = 0.0;
+    float3 contributions[3];
     for (int j = 0; j < 3; j++) {
         float acc = 0.0;
         for (int i = 0; i < count; i++) {
@@ -102,8 +110,15 @@ fragment float4 kumone_fragment_animated_loop(Varying in [[stage_in]],
             float f = phase * spacing - d + m;
             acc += lineWidth * float(i * i) / max(abs(f), 0.00001);
         }
-        col += ch[j] * acc;
+        // Soft per-channel compression: keeps the shape of the rings, bounds
+        // the weight so the additive sum cannot blow out.
+        float weight = acc / (1.0 + acc);
+        contributions[j] = ch[j] * weight;
+        channelTotal += weight;
+        col += contributions[j];
     }
+    col /= max(channelTotal, 0.0001);
+    col *= channelTotal * 0.75;
 
     // Squared line weights on three additive channels push the sum far past 1,
     // which clips to white and blows out the UI sitting on top of the backdrop.
