@@ -193,7 +193,7 @@ struct ShaderPickerButton: View {
         .frame(width: 320)
     }
 
-    /// "Sync PCM" switch, pinned above the list: it changes every shader at
+    /// Audio-reactive switch, pinned above the list: it changes every shader at
     /// once rather than picking one, so it belongs to the list's header instead
     /// of to any single row.
     private var pcmSyncRow: some View {
@@ -204,9 +204,9 @@ struct ShaderPickerButton: View {
                     .foregroundStyle(settings.pcmSyncEnabled ? Theme.accent : .white.opacity(0.45))
                     .frame(width: 18)
                 VStack(alignment: .leading, spacing: 1) {
-                    Text("同步 PCM")
+                    Text("音频响应")
                         .font(.system(size: 13, weight: .medium))
-                    Text(settings.pcmSyncEnabled ? "画面随音乐律动" : "仅保留自身动效")
+                    Text(settings.pcmSyncEnabled ? "实时 PCM 采样驱动渲染" : "脱机渲染 · 仅内置时序")
                         .font(.system(size: 10))
                         .foregroundStyle(.white.opacity(0.45))
                 }
@@ -217,7 +217,7 @@ struct ShaderPickerButton: View {
         .tint(Theme.accent)
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
-        .help(settings.pcmSyncEnabled ? "关闭后画面不再跟随音乐" : "让画面跟随音乐律动")
+        .help(settings.pcmSyncEnabled ? "关闭后渲染不再响应音频流" : "渲染由实时 PCM 数据驱动")
     }
 
     private var shaderRows: some View {
