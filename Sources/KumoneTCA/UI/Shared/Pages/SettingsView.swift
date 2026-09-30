@@ -65,6 +65,19 @@ public struct SettingsView: View {
                         Text(appearance.displayName).tag(appearance)
                     }
                 }
+                #if os(macOS)
+                // macOS renders only two now-playing layouts — vinyl and the
+                // regular page; the iOS immersive/minimal options fall back to
+                // the same regular page here, so offering four was misleading
+                // (upstream #105). Any stored non-vinyl value maps to classic.
+                Picker("播放页模式", selection: Binding(
+                    get: { store.nowPlayingMode == .vinyl ? .vinyl : .classic },
+                    set: { store.send(.setNowPlayingMode($0)) }
+                )) {
+                    Text(NowPlayingMode.vinyl.displayName).tag(NowPlayingMode.vinyl)
+                    Text(NowPlayingMode.classic.displayName).tag(NowPlayingMode.classic)
+                }
+                #else
                 Picker("播放页模式", selection: Binding(
                     get: { store.nowPlayingMode },
                     set: { store.send(.setNowPlayingMode($0)) }
@@ -73,6 +86,7 @@ public struct SettingsView: View {
                         Text(mode.displayName).tag(mode)
                     }
                 }
+                #endif
                 Toggle("显示歌词翻译", isOn: Binding(
                     get: { store.showLyricsTranslation },
                     set: { store.send(.setShowLyricsTranslation($0)) }

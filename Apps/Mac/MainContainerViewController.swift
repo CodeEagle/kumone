@@ -28,15 +28,17 @@ final class MainContainerViewController: NSViewController {
         syncToolbarVisibility()
         nowPlayingSubscription = store.publisher.isNowPlayingPresented
             .removeDuplicates()
-            .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
+                // Synchronous: deferring the sync let the bridged toolbar render
+                // one visible frame, which read as the search field flickering
+                // in and out between presentations.
                 self?.syncToolbarVisibility()
             }
-        // Bridging can install or replace the toolbar after the view appears.
+        // Bridging can install or replace the toolbar after the view appears;
+        // re-sync in place (no async hop) so a freshly installed toolbar can
+        // never land visible while the immersive page is up.
         toolbarObservation = view.window?.observe(\.toolbar, options: [.new]) { [weak self] _, _ in
-            Task { @MainActor [weak self] in
-                self?.syncToolbarVisibility()
-            }
+            self?.syncToolbarVisibility()
         }
     }
 

@@ -657,7 +657,6 @@ struct NowPlayingView: View {
         VStack(spacing: 17) {
             NowPlayingScrubber()
             CompactTransportControls()
-            CompactVolumeControl()
             CompactSecondaryControls(
                 showsLyrics: showLyricsOnMobile,
                 showsQueue: showQueueOnMobile,
@@ -1982,57 +1981,63 @@ private struct CompactTransportControls: View {
     }
 }
 
-private struct CompactVolumeControl: View {
+#if os(iOS)
+/// The volume slider as a popover (upstream 0e2b764): a vertical capsule
+/// instead of a permanently occupied horizontal row, shown on demand from
+/// the secondary controls.
+private struct CompactVolumePopover: View {
     @Environment(\.appStore) private var appStore: StoreOf<AppFeature>?
 
     private var player: PlayerFeature.State { appStore?.player ?? .init() }
     @State private var isDragging = false
 
     var body: some View {
-        HStack(spacing: 11) {
-            Image(systemName: "speaker.fill")
-                .font(.caption2)
-            // One GeometryReader with the gesture on the ZStack. A nested
-            // GeometryReader (the old TranslucentSliderTrack) silently dropped
-            // the drag, so the volume slider did nothing (#37).
+        VStack(spacing: 12) {
+            Image(systemName: "speaker.wave.3.fill")
+                .font(.system(size: 16, weight: .medium))
+
             GeometryReader { geo in
-                let width = geo.size.width
+                let height = geo.size.height
                 let fraction = min(max(CGFloat(player.volume), 0), 1)
-                ZStack(alignment: .leading) {
-                    Capsule().fill(.white.opacity(0.28))
-                    Capsule().fill(.white.opacity(0.78))
-                        .frame(width: width * fraction)
+                ZStack(alignment: .bottom) {
+                    Capsule().fill(.white.opacity(0.22))
+                    Capsule().fill(.white.opacity(0.82))
+                        .frame(height: height * fraction)
                 }
-                .frame(height: isDragging ? 10 : 6)
-                .frame(maxHeight: .infinity)
+                .frame(width: isDragging ? 12 : 8)
+                .frame(maxWidth: .infinity)
                 .contentShape(Rectangle())
                 .gesture(
                     DragGesture(minimumDistance: 0)
                         .onChanged { value in
                             isDragging = true
-                            updateVolume(at: value.location.x, width: width)
+                            updateVolume(at: value.location.y, height: height)
                         }
                         .onEnded { value in
-                            updateVolume(at: value.location.x, width: width)
+                            updateVolume(at: value.location.y, height: height)
                             isDragging = false
                         }
                 )
                 .animation(.spring(response: 0.24, dampingFraction: 0.82), value: isDragging)
             }
-            .frame(height: 24)
+            .frame(width: 32, height: 132)
             .accessibilityElement()
             .accessibilityLabel("音量")
             .accessibilityValue("\(Int((player.volume * 100).rounded()))%")
             .accessibilityAdjustableAction(adjustVolume)
-            Image(systemName: "speaker.wave.3.fill")
-                .font(.caption)
+
+            Image(systemName: player.volume == 0 ? "speaker.slash.fill" : "speaker.fill")
+                .font(.system(size: 14, weight: .medium))
         }
-        .foregroundStyle(.white.opacity(0.7))
+        .foregroundStyle(.white.opacity(0.85))
+        .padding(.horizontal, 16)
+        .padding(.vertical, 14)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
     }
 
-    private func updateVolume(at location: CGFloat, width: CGFloat) {
-        guard width > 0 else { return }
-        appStore?.send(.player(.setVolume(Float(min(max(location / width, 0), 1)))))
+    private func updateVolume(at location: CGFloat, height:CGFloat) {
+        guard height > 0 else { return }
+        appStore?.send(.player(.setVolume(Float(1 - min(max(location / height, 0), 1)))))
     }
 
     private func adjustVolume(_ direction: AccessibilityAdjustmentDirection) {
@@ -2047,6 +2052,7 @@ private struct CompactVolumeControl: View {
         }
     }
 }
+#endif
 
 private struct CompactSecondaryControls: View {
     @Environment(\.appStore) private var appStore: StoreOf<AppFeature>?
@@ -2054,6 +2060,10 @@ private struct CompactSecondaryControls: View {
     let showsQueue: Bool
     let onToggleLyrics: () -> Void
     let onToggleQueue: () -> Void
+
+    @State private var showsVolumeControl = false
+
+    private var player: PlayerFeature.State { appStore?.player ?? .init() }
 
     var body: some View {
         HStack(spacing: 0) {
@@ -2066,12 +2076,39 @@ private struct CompactSecondaryControls: View {
             RoutePickerButton(diameter: 44, glyphSize: 17)
                 .frame(maxWidth: .infinity)
 
+            // Volume lives in a popover (upstream 0e2b764) so the row stays
+            // short; the icon reflects the level.
+            secondaryButton(
+                icon: volumeIcon,
+                label: showsVolumeControl ? "关闭音量控制" : "显示音量控制",
+                isActive: showsVolumeControl
+            ) {
+                withAnimation(.spring(response: 0.28, dampingFraction: 0.82)) {
+                    showsVolumeControl.toggle()
+                }
+            }
+            .overlay(alignment: .bottom) {
+                if showsVolumeControl {
+                    CompactVolumePopover()
+                        .offset(y: -44)
+                        .transition(.opacity.combined(with: .scale(scale: 0.9, anchor: .bottom)))
+                        .zIndex(1)
+                }
+            }
+
             secondaryButton(
                 icon: "list.bullet",
                 label: showsQueue ? "关闭播放队列" : "显示播放队列",
                 isActive: showsQueue
             ) { onToggleQueue() }
         }
+    }
+
+    private var volumeIcon: String {
+        let volume = player.volume
+        if volume == 0 { return "speaker.slash" }
+        if volume < 0.5 { return "speaker.wave.1" }
+        return "speaker.wave.2"
     }
 
     private func secondaryButton(
