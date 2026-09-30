@@ -1024,6 +1024,10 @@ struct NowPlayingView: View {
                     .opacity(isZenActive ? 0 : 1)
                     .allowsHitTesting(!isZenActive)
                     .accessibilityHidden(isZenActive)
+                    // The lyrics toggle resizes this column; the buttons in the
+                    // action row have to ride the same horizontal slide the rest
+                    // of the page takes instead of jumping to their new spot.
+                    .animation(AppAnimation.smooth, value: isLyricsColumnVisible)
                     Spacer()
                 }
                 .frame(width: viewport.size.width, height: viewport.size.height)

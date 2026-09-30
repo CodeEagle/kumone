@@ -23,6 +23,10 @@ struct PlayerBar: View {
         }
         .frame(height: Theme.Layout.playerBarHeight)
         .compatGlass(interactive: true, in: Capsule())
+        // The Liquid Glass effect layer does not participate in hit testing, so
+        // the capsule itself has to claim the area: without this, clicks on the
+        // bar's empty stretches fall through to whatever is behind it.
+        .contentShape(Capsule())
         .overlay(Capsule().strokeBorder(.primary.opacity(0.06), lineWidth: 0.5))
         // Keep the capsule clear of the window's rounded corners so the inner
         // and outer radii don't visually merge (#88).
