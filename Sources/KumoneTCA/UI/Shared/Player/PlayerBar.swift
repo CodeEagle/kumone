@@ -9,6 +9,8 @@ struct PlayerBar: View {
 
     @ObservedObject private var heroFlight = HeroFlightDirector.shared
 
+    @State private var isBarHovering = false
+
     var body: some View {
         GeometryReader { proxy in
             let compact = proxy.size.width < 860
@@ -24,9 +26,16 @@ struct PlayerBar: View {
         .frame(height: Theme.Layout.playerBarHeight)
         .compatGlass(interactive: true, in: Capsule())
         // The Liquid Glass effect layer does not participate in hit testing, so
-        // the capsule itself has to claim the area: without this, clicks on the
-        // bar's empty stretches fall through to whatever is behind it.
+        // the capsule itself has to claim the area: without this, clicks and
+        // hover on the bar's empty stretches fall through to whatever is
+        // behind it.
         .contentShape(Capsule())
+        .background(
+            Capsule()
+                .fill(Color.primary.opacity(isBarHovering ? 0.05 : 0))
+                .animation(AppAnimation.quick, value: isBarHovering)
+        )
+        .onHover { isBarHovering = $0 }
         .overlay(Capsule().strokeBorder(.primary.opacity(0.06), lineWidth: 0.5))
         // Keep the capsule clear of the window's rounded corners so the inner
         // and outer radii don't visually merge (#88).

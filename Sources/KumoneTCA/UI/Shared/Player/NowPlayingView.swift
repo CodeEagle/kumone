@@ -129,13 +129,18 @@ struct NowPlayingView: View {
                     }
                     #endif
                     if isCompact, showsClassicChrome(isCompact: isCompact) {
-                        PlayerIconButton(
-                            icon: "quote.bubble",
-                            size: 13,
-                            isActive: player.activePanel == .lyrics
-                        ) {
-                            appStore?.send(.player(.togglePanel(.lyrics)))
+                        Button {
+                            withAnimation(AppAnimation.smooth) {
+                                appStore?.send(.player(.togglePanel(.lyrics)))
+                            }
+                        } label: {
+                            Image(systemName: "quote.bubble")
+                                .font(.system(size: 14, weight: .semibold))
+                                .foregroundStyle(player.activePanel == .lyrics ? Theme.accent : .white.opacity(0.85))
+                                .frame(width: 36, height: 36)
+                                .background(.white.opacity(0.12), in: Circle())
                         }
+                        .buttonStyle(.pressable)
                         .help("歌词")
                     }
                 }
@@ -1122,13 +1127,22 @@ struct NowPlayingView: View {
     }
 
     private var lyricsToggleButton: some View {
-        PlayerIconButton(
-            icon: "quote.bubble",
-            size: 13,
-            isActive: player.activePanel == .lyrics
-        ) {
-            appStore?.send(.player(.togglePanel(.lyrics)))
+        Button {
+            // Ride the same spring the columns take: the left column shifts
+            // when the lyrics column opens, and without an explicit animation
+            // transaction the buttons snap to their new spot while everything
+            // else is still sliding.
+            withAnimation(AppAnimation.smooth) {
+                appStore?.send(.player(.togglePanel(.lyrics)))
+            }
+        } label: {
+            Image(systemName: "quote.bubble")
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(player.activePanel == .lyrics ? Theme.accent : .white.opacity(0.85))
+                .frame(width: 36, height: 36)
+                .background(.white.opacity(0.12), in: Circle())
         }
+        .buttonStyle(.pressable)
         .help("歌词")
     }
 
