@@ -35,6 +35,9 @@ let package = Package(
         // park its thread forever, and pin the whole Composer set on its live
         // stack frame — the rapid-track-switching leak.
         .package(url: "https://github.com/CodeEagle/APlay.git", from: "2.1.9"),
+        // YAML for the config-driven UI: screens and themes are user-editable
+        // files, so the markup has to be friendly to humans first.
+        .package(url: "https://github.com/jpsim/Yams", from: "5.0.0"),
     ],
     targets: [
         // Compiles the .metal sources in Sources/KumoneShaders/Shaders into a
@@ -67,9 +70,22 @@ let package = Package(
             ]
         ),
         .target(
+            name: "KumoneUI",
+            dependencies: [
+                "KumoneCore",
+                .product(name: "Yams", package: "Yams"),
+            ],
+            path: "Sources/KumoneUI",
+            resources: [.copy("Resources")],
+            swiftSettings: [
+                .swiftLanguageMode(.v5),
+            ]
+        ),
+        .target(
             name: "KumoneTCA",
             dependencies: [
                 "KumoneCore",
+                "KumoneUI",
                 .product(name: "ComposableArchitecture", package: "swift-composable-architecture"),
             ],
             path: "Sources/KumoneTCA",
@@ -82,6 +98,7 @@ let package = Package(
             dependencies: [
                 "KumoneCore",
                 "KumoneTCA",
+                "KumoneUI",
                 .product(name: "Sparkle", package: "Sparkle", condition: .when(platforms: [.macOS])),
             ],
             path: "Apps/Mac",

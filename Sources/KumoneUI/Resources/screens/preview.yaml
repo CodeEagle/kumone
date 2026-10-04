@@ -1,0 +1,48 @@
+# The preview screen — the M0 proof: this file rendered as a real window,
+# editable live. It uses only built-in components plus the spectrum, which
+# reads the same AudioSpectrum the shaders do.
+
+root:
+  type: Container
+  class: [chrome]
+  padding: 24
+  cornerRadius: 16
+  children:
+    - type: VStack
+      spacing: 20
+      alignment: center
+      children:
+        - type: Text
+          text: Config-Driven UI
+          fontSize: 22
+          fontWeight: semibold
+          color: "#F2F2F5"
+
+        - type: Text
+          text: Edit this file, the window follows.
+          fontSize: 13
+          color: "#8A8A96"
+
+        - type: HStack
+          spacing: 8
+          alignment: center
+          children:
+            - type: SpectrumBars
+              barWidth: 5
+              barHeight: 24
+              spacing: 7
+              color: "#E8567A"
+
+        - type: HStack
+          spacing: 16
+          alignment: center
+          children:
+            - type: Text
+              text: .config/kumone/screens
+              fontSize: 11
+              color: "#5C5C66"
+            - type: Spacer
+            - type: Text
+              text: M0
+              fontSize: 11
+              color: "#5C5C66"

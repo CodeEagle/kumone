@@ -1,0 +1,18 @@
+# Theme tokens and class rules. Sizes, colours and shapes live here so a
+# screen file never repeats a literal twice — one token changes, the whole
+# interface follows. Class rules are merged per node, with the node's own
+# props winning over them (CSS cascade order).
+
+tokens:
+  surface:    "#1C1C22"
+  text:       "#F2F2F5"
+  textDim:    "#8A8A96"
+  accent:     "#E8567A"
+  corner:     16
+  padding:    24
+
+styles:
+  chrome:
+    background: "#1C1C22"
+    cornerRadius: token(corner)
+    padding: token(padding)
