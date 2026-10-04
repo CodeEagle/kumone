@@ -266,8 +266,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func loadConfigPreview() {
+        // SwiftPM compiles the target's Resources/ directory into
+        // Kumone_KumoneUI.bundle/Contents/Resources/Resources/screens/.
         let bundled = Bundle(for: KumoneUIBundleMarker.self)
-            .resourceURL?.appendingPathComponent("screens")
+            .resourceURL?.appendingPathComponent("Resources").appendingPathComponent("screens")
         let user = FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent(".config/kumone/screens")
         let store = ConfigStore(bundled: bundled, user: user)
