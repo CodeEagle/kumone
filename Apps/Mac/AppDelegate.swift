@@ -3,6 +3,7 @@ import Combine
 import ComposableArchitecture
 import KumoneCore
 import KumoneTCA
+import KumoneUI
 import Observation
 import SwiftUI
 
@@ -46,6 +47,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         ShaderDiscovery.shared.reload()
         store.send(.setShader(resolveInitialShaderID()))
+        // Register the config-driven UI components: layout primitives, Text,
+        // Container, SpectrumBars. Screens reference them by `type` name in
+        // their YAML; the registry is the same channel plugins would use.
+        BuiltinComponents.register()
         showMainWindow()
 
         #if DEBUG
@@ -76,6 +81,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         observeAppearance()
         observeDesktopLyrics()
         MainMenu.install(store: store, showSettings: { [weak self] in self?.showSettings() })
+        loadConfigPreview()
     }
 
     private func applyAppearance(_ scheme: ColorScheme?) {
@@ -250,7 +256,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return false
     }
 
-    func showSettings() {
+    /// Opens the settings window.
+    @objc func showSettings() {
         if settingsWindowController == nil {
             settingsWindowController = SettingsWindowController(store: store)
         }
@@ -258,6 +265,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.activate(ignoringOtherApps: true)
     }
 
+    private func loadConfigPreview() {
+        let bundled = Bundle(for: KumoneUIBundleMarker.self)
+            .resourceURL?.appendingPathComponent("screens")
+        let user = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".config/kumone/screens")
+        let store = ConfigStore(bundled: bundled, user: user)
+        let win = ConfigPreviewWindow(screen: "preview", configStore: store)
+        win.makeKeyAndOrderFront(nil)
+    }
+}
+
+/// Marker to resolve the KumoneUI resource bundle (screens/*.yaml are
+/// compiled into that target's Resources).
+final class KumoneUIBundleMarker {}
+
+extension AppDelegate {
     func showMainWindow() {
         let controller = MainWindowController(store: store)
         mainWindowController = controller
