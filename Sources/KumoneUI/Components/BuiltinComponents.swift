@@ -96,9 +96,22 @@ private enum layouts {
 
 // MARK: - Leaf views
 
+private func stringOf(_ prop: Prop) -> String? {
+    switch prop {
+    case .string(let s): return s
+    case .number(let n): return String(n)
+    case .flag(let b): return b ? "true" : "false"
+    case .binding: return nil
+    }
+}
+
 private enum leaf {
     static let text: ComponentBuilder = { node, context in
-        let text = context.style["text"]?.stringValue ?? ""
+        // ${...} bindings resolve here (inside the view's observation frame)
+        // so a bound title/artist changes the text without re-rendering the
+        // whole screen by hand.
+        let text = context.resolve(context.style["text"] ?? .string(""))
+            .flatMap { stringOf($0) } ?? ""
         let size = context.style["fontSize"]?.numberValue ?? 13
         let weight = context.style["fontWeight"]?.stringValue ?? "regular"
         let colour = context.style["color"].flatMap { $0.stringValue }.flatMap(StyleColor.parse)

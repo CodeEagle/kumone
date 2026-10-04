@@ -44,8 +44,21 @@ public struct Node: Equatable, Sendable {
 /// every richer value are *strings the component interprets* (`#RRGGBB`,
 /// `token(name)`), so the model stays simple and the schema stays out of the
 /// engine's way. A bad literal is reported, not fatal.
+///
+/// One dynamic case: `.binding(path)` written in YAML as `${path}` — the
+/// value is not in the file but resolved at render time through the app's
+/// binding resolver, which is how a screen stops being static.
 public enum Prop: Equatable, Sendable {
     case string(String)
     case number(Double)
     case flag(Bool)
+    case binding(String)
+}
+
+extension Prop {
+    /// Pulls the dynamic case's path, or nil for literal props.
+    public var bindingPath: String? {
+        if case .binding(let path) = self { return path }
+        return nil
+    }
 }

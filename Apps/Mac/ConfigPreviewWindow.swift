@@ -11,12 +11,13 @@ import SwiftUI
 final class ConfigPreviewWindow: NSWindow {
     private weak var configStore: ConfigStore?
 
-    init(screen name: String, configStore: ConfigStore) {
+    init(screen name: String, configStore: ConfigStore, resolver: BindingResolver?) {
         self.configStore = configStore
 
         // The window's content view is driven by an ObservableObject, so
         // re-rendering on `screens` changes happens through SwiftUI itself.
         let content = ConfigPreviewContent(name: name, configStore: configStore)
+            .environment(\.bindingResolver, resolver)
         let hosting = NSHostingController(rootView: content)
 
         super.init(

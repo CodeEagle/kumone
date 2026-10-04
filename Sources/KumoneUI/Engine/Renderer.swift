@@ -11,11 +11,27 @@ public struct ComponentContext {
     /// Renders child index `i` of the node the builder received.
     public let child: (Int) -> AnyView
     public let children: [Node]
+    /// Resolves `${path}` props. The engine reads it from the SwiftUI
+    /// environment at body time and hands it down, so a binding read inside
+    /// a component lands inside the same observation-tracking frame as the
+    /// view that hosts it — changing store values rebuild the screen.
+    public let resolver: BindingResolver?
 
-    public init(style: [String: Prop], children: [Node], child: @escaping (Int) -> AnyView) {
+    public init(style: [String: Prop],
+                children: [Node],
+                resolver: BindingResolver? = nil,
+                child: @escaping (Int) -> AnyView) {
         self.style = style
         self.children = children
+        self.resolver = resolver
         self.child = child
+    }
+
+    /// Resolves any prop: literals pass through, `.binding` asks the resolver.
+    /// Returns nil when a binding cannot be resolved (unknown path, no host).
+    public func resolve(_ prop: Prop) -> Prop? {
+        guard case .binding(let path) = prop else { return prop }
+        return resolver?.value(path)
     }
 }
 
@@ -63,18 +79,25 @@ public struct ScreenView: View {
 struct NodeView: View {
     let node: Node
     let stylesheet: Stylesheet
+    @Environment(\.bindingResolver) private var resolver
 
     var body: some View {
         // Missing or invisible nodes render nothing: the config never takes
         // the screen down, it just loses that part (diagnostics elsewhere
         // report which type was not found).
-        guard node.visible else { return AnyView(EmptyView()) }
-        guard let builder = ComponentRegistry.resolve(node.type) else {
+        guard node.visible, let builder = ComponentRegistry.resolve(node.type) else {
             return AnyView(EmptyView())
         }
-        let context = ComponentContext(style: stylesheet.resolve(node), children: node.children) { index in
-            AnyView(NodeView(node: node.children[index], stylesheet: stylesheet))
-        }
+        // Read the environment here so a binding read lands in the tracking
+        // frame of this body, then hand it to the component through context.
+        let bindingResolver = resolver
+        let context = ComponentContext(
+            style: stylesheet.resolve(node),
+            children: node.children,
+            resolver: bindingResolver,
+            child: { index in
+                AnyView(NodeView(node: node.children[index], stylesheet: stylesheet))
+            })
         return AnyView(builder(node, context))
     }
 }

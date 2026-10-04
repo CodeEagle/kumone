@@ -109,11 +109,21 @@ public enum ConfigParser {
 
     private static func prop(from any: Any) -> Prop {
         if let bool = any as? Bool { return .flag(bool) }
+        let string = (any as? String) ?? {
+            // Lists and nested mappings are not properties: stringified so
+            // the component can report what it got rather than the parse
+            // failing.
+            return "\(any)"
+        }()
+        // `${path}` (optionally quoted) → a dynamic binding.
+        let trimmed = string.trimmingCharacters(in: .whitespaces)
+        if trimmed.hasPrefix("${"), trimmed.hasSuffix("}") {
+            let path = String(trimmed.dropFirst(2).dropLast())
+                .trimmingCharacters(in: .whitespaces)
+            if !path.isEmpty { return .binding(path) }
+        }
         if let int = any as? Int { return .number(Double(int)) }
         if let double = any as? Double { return .number(double) }
-        if let string = any as? String { return .string(string) }
-        // Lists and nested mappings are not properties: stringified so the
-        // component can report what it got rather than the parse failing.
-        return .string("\(any)")
+        return .string(string)
     }
 }

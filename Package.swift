@@ -131,6 +131,14 @@ let package = Package(
             ]
         ),
         .testTarget(
+            name: "KumoneUITests",
+            dependencies: ["KumoneUI"],
+            path: "Tests/KumoneUITests",
+            swiftSettings: [
+                .swiftLanguageMode(.v5),
+            ]
+        ),
+        .testTarget(
             name: "KumoneMacTests",
             dependencies: ["KumoneCore", "KumoneTCA", "KumoneMac"],
             path: "Tests/KumoneMacTests",

@@ -272,8 +272,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             .resourceURL?.appendingPathComponent("Resources").appendingPathComponent("screens")
         let user = FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent(".config/kumone/screens")
-        let store = ConfigStore(bundled: bundled, user: user)
-        let win = ConfigPreviewWindow(screen: "preview", configStore: store)
+        let config = ConfigStore(bundled: bundled, user: user)
+        let resolver = AppBindingResolver(store: store)
+        let win = ConfigPreviewWindow(screen: "preview", configStore: config, resolver: resolver)
         win.makeKeyAndOrderFront(nil)
     }
 }
