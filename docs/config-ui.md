@@ -88,6 +88,15 @@ never crash. There is deliberately no expression *language*: if you
 need logic, the answer is a new binding in the app's table, not more
 grammar in YAML.
 
+### Item scope
+
+A `ForEach` opens a scope for the element it is stamping: inside the
+repeated child, `${item}` is the element itself (when the list holds
+strings) and `${item.title}` / `${item.artist}` / … address its fields
+(when it holds mappings). Everything outside `item.` still resolves
+against the app's state, so one row can mix `${item.title}` and
+`${player.title}`.
+
 ## Table 1 — Components
 
 | Component | Props (besides `visible`/`class`) | Notes |
@@ -100,6 +109,7 @@ grammar in YAML.
 | `Button` | `action`, `argument` | children become the label; `argument` is a literal or binding the verb receives |
 | `ProgressSlider` | `value`, `duration`, `action`, `color` | drag-held locally, commits the position as the action's argument on release |
 | `Artwork` | `url`, `size`, `cornerRadius` | remote album art; placeholder while loading or missing |
+| `ForEach` | `items`, `spacing` | repeats its first child once per element of a list binding; `${item}` / `${item.field}` in that child resolves to the element |
 | `SpectrumBars` | `barWidth`, `barHeight`, `spacing`, `color` | live audio spectrum |
 
 Any node type not in this table renders nothing; a screen survives a
@@ -124,8 +134,10 @@ Read-only, resolved per render:
 | `player.shuffleEnabled` | flag | shuffle on |
 | `player.repeatMode` | string | `off` / `all` / `one` |
 | `player.isBuffering` | flag | stream buffering |
+| `player.upcomingTracks` | list<mapping> | what is coming: each item has `title`, `artist`, `artworkURL`, `duration` (capped at 50) |
 | `lyrics.currentLine` | string | the line the desktop sheet shows |
 | `lyrics.lineCount` | number | how many lines exist |
+| `lyrics.lines` | list<string> | every lyric line, for a ForEach |
 | `app.nowPlayingOpen` | flag | immersive page presented |
 | `app.shaderName` | string | active shader id |
 

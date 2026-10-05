@@ -18,6 +18,7 @@ public enum BuiltinComponents {
         ComponentRegistry.register("Container", builder: leaf.container)
         ComponentRegistry.register("SpectrumBars", builder: data.spectrumBars)
         ComponentRegistry.register("Button", builder: leaf.button)
+        ComponentRegistry.register("ForEach", builder: leaf.forEach)
         ComponentRegistry.register("ProgressSlider", builder: leaf.progressSlider)
         ComponentRegistry.register("Artwork", builder: leaf.artwork)
     }
@@ -104,7 +105,7 @@ private func stringOf(_ prop: Prop) -> String? {
     case .string(let s): return s
     case .number(let n): return String(n)
     case .flag(let b): return b ? "true" : "false"
-    case .binding: return nil
+    case .binding, .list, .mapping: return nil
     }
 }
 
@@ -140,6 +141,23 @@ private enum leaf {
                 }
             })
         return AnyView(ActionButton(name: action, argument: argument, label: label))
+    }
+
+    static let forEach: ComponentBuilder = { node, context in
+        // A collection consumed, not declared: `items` is a binding the app
+        // resolves to a list (upcoming tracks, lyric lines); the first child
+        // is the stamp repeated per item, and each stamp's `item.` bindings
+        // see its own element through the scope the view below installs.
+        // Non-list or unresolvable items render nothing — same never-crash
+        // rule as an unknown component.
+        let resolved = context.resolve(context.style["items"] ?? .list([]))
+        let items: [Prop]
+        if case .list(let values) = resolved { items = values } else { items = [] }
+        let spacing = context.style["spacing"]?.numberValue ?? 8
+        let template = context.children.first
+            ?? Node(type: "Text", props: ["text": .string("")])
+        return AnyView(ForEachItems(
+            items: items, template: template, stylesheet: context.stylesheet, spacing: spacing))
     }
 
     static let progressSlider: ComponentBuilder = { node, context in
@@ -324,5 +342,28 @@ struct ArtworkView: View {
             .overlay(
                 Image(systemName: "music.note")
                     .foregroundStyle(.secondary))
+    }
+}
+
+/// The collection renderer: repeats one template node per element of a
+/// list, and for each copy overrides the resolver with a scope where `item`
+/// is that element. Everything outside `item.` still talks to the app's
+/// real state, so a row can show the queued title and the now-playing
+/// indicator in the same view.
+struct ForEachItems: View {
+    let items: [Prop]
+    let template: Node
+    let stylesheet: Stylesheet
+    let spacing: Double
+    @Environment(\.bindingResolver) private var base
+
+    var body: some View {
+        VStack(spacing: spacing) {
+            ForEach(items.indices, id: \.self) { index in
+                NodeView(node: template, stylesheet: stylesheet)
+                    .environment(\.bindingResolver,
+                                 ScopedResolver(base: base, item: items[index]))
+            }
+        }
     }
 }

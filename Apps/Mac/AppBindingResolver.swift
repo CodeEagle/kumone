@@ -37,6 +37,20 @@ final class AppBindingResolver: PathBindingResolver {
             "player.shuffleEnabled": { .flag(player().shuffleEnabled) },
             "player.repeatMode": { .string(player().repeatMode.rawValue) },
             "player.isBuffering": { .flag(player().isBuffering) },
+            // What is coming: a list of mappings, so a row template binds
+            // `${item.title}` / `${item.artist}` / `${item.artworkURL}`.
+            // Capped at 50 — a queue screen shows the near future, not the
+            // whole library.
+            "player.upcomingTracks": {
+                .list(player().upcomingTracks.prefix(50).map { track in
+                    .mapping([
+                        "title": .string(track.name),
+                        "artist": .string(track.artists.first?.name ?? ""),
+                        "artworkURL": .string(track.album.picUrl ?? ""),
+                        "duration": .number(Double(track.durationMS) / 1000.0),
+                    ])
+                })
+            },
 
             // The ambient lyric the desktop sheet shows, one line: the
             // simplest way for a screen to carry the current words.
@@ -47,6 +61,11 @@ final class AppBindingResolver: PathBindingResolver {
                 return .string(lines[index].text)
             },
             "lyrics.lineCount": { .number(Double(player().lyrics?.lines.count ?? 0)) },
+            // The whole lyric, one string per line: for a ForEach that lays
+            // them out as a column of Texts.
+            "lyrics.lines": {
+                .list(player().lyrics?.lines.map { .string($0.text) } ?? [])
+            },
 
             // Window-level state
             "app.nowPlayingOpen": { .flag(store.isNowPlayingPresented) },

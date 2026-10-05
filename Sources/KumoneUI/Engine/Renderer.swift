@@ -11,6 +11,9 @@ public struct ComponentContext {
     /// Renders child index `i` of the node the builder received.
     public let child: (Int) -> AnyView
     public let children: [Node]
+    /// The resolved theme, so a component that re-hosts children itself
+    /// (ForEach renders its template through NodeView) can keep the cascade.
+    public let stylesheet: Stylesheet
     /// Resolves `${path}` props. The engine reads it from the SwiftUI
     /// environment at body time and hands it down, so a binding read inside
     /// a component lands inside the same observation-tracking frame as the
@@ -19,10 +22,12 @@ public struct ComponentContext {
 
     public init(style: [String: Prop],
                 children: [Node],
+                stylesheet: Stylesheet = Stylesheet(),
                 resolver: BindingResolver? = nil,
                 child: @escaping (Int) -> AnyView) {
         self.style = style
         self.children = children
+        self.stylesheet = stylesheet
         self.resolver = resolver
         self.child = child
     }
@@ -96,6 +101,7 @@ struct NodeView: View {
         let context = ComponentContext(
             style: stylesheet.resolve(node),
             children: node.children,
+            stylesheet: stylesheet,
             resolver: bindingResolver,
             child: { index in
                 AnyView(NodeView(node: node.children[index], stylesheet: stylesheet))

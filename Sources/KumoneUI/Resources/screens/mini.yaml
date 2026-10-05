@@ -47,3 +47,28 @@ root:
           text: Edit this file; the window follows.
           fontSize: 11
           color: "#5C5C66"
+
+        - type: Text
+          text: Up next
+          fontSize: 11
+          fontWeight: semibold
+          color: "#8A8A96"
+
+        # A collection consumed, not declared: the list comes from a
+        # binding, and the child beneath is the stamp repeated per item —
+        # `item.` in the stamp sees that copy's element.
+        - type: ForEach
+          items: ${player.upcomingTracks}
+          spacing: 10
+          children:
+            - type: HStack
+              spacing: 10
+              children:
+                - type: Artwork
+                  url: ${item.artworkURL}
+                  size: 32
+                  cornerRadius: 6
+                - type: Text
+                  text: ${item.title}
+                  fontSize: 13
+                  color: "#F2F2F5"

@@ -10,7 +10,7 @@ import SwiftUI
 /// tracking SwiftUI runs for that body follows the read through the closure
 /// and rebuilds the view when the value changes. That is the whole binding
 /// layer: no compilers, no reactivity glue, just "read it in body".
-public protocol BindingResolver: AnyObject {
+public protocol BindingResolver {
     /// Current value of a path, or nil when the path is not registered
     /// (a screen referencing an unknown binding renders empty/nil, never
     /// crashes — same rule as unknown components). Called on the main thread
@@ -58,5 +58,33 @@ public extension EnvironmentValues {
     func resolve(_ prop: Prop) -> Prop? {
         guard case .binding(let path) = prop else { return prop }
         return bindingResolver?.value(path)
+    }
+}
+
+/// The scope a `ForEach` opens for one item: a wrapper around the base
+/// resolver that answers `item` / `item.<field>` from the current element
+/// and forwards everything else untouched, so a template can mix
+/// `${item.title}` with `${player.title}` and both work.
+///
+/// Deliberately narrow: there is no nesting (`item.item`), because the
+/// binding table decides the shape of an item, and a screen never
+/// composes scopes by hand.
+public struct ScopedResolver: BindingResolver {
+    public let base: BindingResolver?
+    public let item: Prop
+
+    public init(base: BindingResolver?, item: Prop) {
+        self.base = base
+        self.item = item
+    }
+
+    public func value(_ path: String) -> Prop? {
+        if path == "item" { return item }
+        let prefix = "item."
+        if path.hasPrefix(prefix) {
+            guard case .mapping(let fields) = item else { return nil }
+            return fields[String(path.dropFirst(prefix.count))]
+        }
+        return base?.value(path)
     }
 }

@@ -59,11 +59,18 @@ public enum Visibility: Equatable, Sendable {
 /// One dynamic case: `.binding(path)` written in YAML as `${path}` — the
 /// value is not in the file but resolved at render time through the app's
 /// binding resolver, which is how a screen stops being static.
+///
+/// Two collection cases exist for what a binding hands back: `.list` for
+/// anything enumerable a ForEach repeats over, `.mapping` for one item's
+/// fields (`item.title`). They are not writable in YAML — a screen
+/// *consumes* collections, it does not declare them.
 public enum Prop: Equatable, Sendable {
     case string(String)
     case number(Double)
     case flag(Bool)
     case binding(String)
+    case list([Prop])
+    case mapping([String: Prop])
 }
 
 extension Prop {
@@ -94,6 +101,8 @@ extension Visibility {
         case .flag(let bool): return bool
         case .string(let text): return !text.isEmpty
         case .number(let value): return value != 0
+        case .list(let values): return !values.isEmpty
+        case .mapping(let fields): return !fields.isEmpty
         case .binding, .none: return false
         }
     }
