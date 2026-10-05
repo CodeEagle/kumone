@@ -1,0 +1,12 @@
+# The default keymap: shortcut → named action. The actions are the same
+# verbs a screen's `action:` prop uses, so rebinding here is rebinding
+# the app — no recompile, and the file watcher picks up edits live.
+# Drop a copy in ~/.config/kumone/screens/keymap.yaml to override.
+# Delete every line there to disable all shortcuts.
+
+space: player.togglePlayPause
+escape: app.dismissNowPlaying
+rightarrow: player.next
+leftarrow: player.previous
+cmd+l: player.toggleLyricsPanel
+cmd+shift+q: player.toggleQueuePanel

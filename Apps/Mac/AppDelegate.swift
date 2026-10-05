@@ -20,30 +20,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var cancellables = Set<AnyCancellable>()
     private var mainWindowController: MainWindowController?
     private var settingsWindowController: SettingsWindowController?
-    private var keyMonitor: Any?
+    private var keymapMonitor: AppKeymapMonitor?
+    private var configStore: ConfigStore?
+    private lazy var actions: ActionRegistry = AppActions.dispatcher(store: store)
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         applyAppearance(store.settings.appearance.brightnessIntent.colorScheme)
-        // Space toggles play/pause unless a text field is being edited.
-        keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
-            guard let self else { return event }
-            let noModifiers = event.modifierFlags
-                .intersection([.command, .option, .control, .shift]).isEmpty
-            let editingText = NSApp.keyWindow?.firstResponder is NSText
-                || NSApp.keyWindow?.firstResponder is NSTextView
-
-            // Space: play/pause (unless typing)
-            if event.keyCode == 49, noModifiers, !editingText {
-                self.store.send(.player(.togglePlayPause))
-                return nil
-            }
-            // Esc: close the immersive now-playing page
-            if event.keyCode == 53, noModifiers, self.store.isNowPlayingPresented {
-                self.store.send(.dismissNowPlaying)
-                return nil
-            }
-            return event
-        }
+        // The keymap replaces what used to be a hard-coded space/esc handler:
+        // the same shortcuts now live in keymap.yaml and a user can rebind
+        // them (or remove them) without touching Swift.
+        loadConfigStore()
+        keymapMonitor = AppKeymapMonitor(store: configStore!, dispatcher: actions)
+        keymapMonitor?.start()
 
         ShaderDiscovery.shared.reload()
         store.send(.setShader(resolveInitialShaderID()))
@@ -82,6 +70,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         observeDesktopLyrics()
         MainMenu.install(store: store, showSettings: { [weak self] in self?.showSettings() })
         loadConfigPreview()
+    }
+
+    /// The config root: bundled defaults overridable by the user's
+    /// `~/.config/kumone/screens` directory. App-level (not per window) so
+    /// the keymap and the preview screens share one watcher.
+    private func loadConfigStore() {
+        guard configStore == nil else { return }
+        // SwiftPM compiles the target's Resources/ directory into
+        // Kumone_KumoneUI.bundle/Contents/Resources/Resources/screens/.
+        let bundled = Bundle(for: KumoneUIBundleMarker.self)
+            .resourceURL?.appendingPathComponent("Resources").appendingPathComponent("screens")
+        let user = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".config/kumone/screens")
+        configStore = ConfigStore(bundled: bundled, user: user)
     }
 
     private func applyAppearance(_ scheme: ColorScheme?) {
@@ -266,17 +268,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func loadConfigPreview() {
-        // SwiftPM compiles the target's Resources/ directory into
-        // Kumone_KumoneUI.bundle/Contents/Resources/Resources/screens/.
-        let bundled = Bundle(for: KumoneUIBundleMarker.self)
-            .resourceURL?.appendingPathComponent("Resources").appendingPathComponent("screens")
-        let user = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(".config/kumone/screens")
-        let config = ConfigStore(bundled: bundled, user: user)
+        guard let config = configStore else { return }
         let resolver = AppBindingResolver(store: store)
-        let dispatcher = AppActions.dispatcher(store: store)
         let win = ConfigPreviewWindow(
-            screen: "preview", configStore: config, resolver: resolver, dispatcher: dispatcher)
+            screen: "preview", configStore: config, resolver: resolver, dispatcher: actions)
         win.makeKeyAndOrderFront(nil)
     }
 }

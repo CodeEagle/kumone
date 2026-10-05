@@ -4,7 +4,8 @@ import Combine
 import Darwin
 #endif
 
-/// Loads screens/themes from disk and reloads them when the files change.
+/// Loads screens/themes/keymaps from disk and reloads them when the files
+/// change.
 ///
 /// Two sources, one precedence: the app bundles defaults so a fresh install
 /// works with no user files, and a user directory overrides them per screen
@@ -12,6 +13,7 @@ import Darwin
 ///
 ///     ~/.config/kumone/screens/*.yaml
 ///     ~/.config/kumone/theme.yaml
+///     ~/.config/kumone/keymap.yaml
 ///
 /// Every file watcher is a DispatchSource on the directory: editing a YAML
 /// in any editor rebuilds the affected screens, and SwiftUI's diffing makes
@@ -26,6 +28,7 @@ public final class ConfigStore: ObservableObject {
     }
 
     @Published public private(set) var screens: [String: Screen] = [:]
+    @Published public private(set) var keymap: Keymap = .empty
     @Published public private(set) var diagnostics: [String] = []
 
     private let bundled: URL?
@@ -73,7 +76,12 @@ public final class ConfigStore: ObservableObject {
                 issues.append("\(url.lastPathComponent): \(error)")
             }
         }
+        var keymap = Keymap.empty
+        for url in keymapCandidates() {
+            if let parsed = loadKeymap(url, issues: &issues) { keymap = parsed }
+        }
         screens = loaded
+        self.keymap = keymap
         diagnostics = issues
     }
 
@@ -87,18 +95,35 @@ public final class ConfigStore: ObservableObject {
     }
 
     private func screenCandidates() -> [URL] {
+        let nonScreens: Set<String> = ["theme.yaml", "keymap.yaml"]
         var urls: [URL] = []
         for base in [bundled, user].compactMap({ $0 }) {
             if let contents = try? FileManager.default.contentsOfDirectory(
                 at: base, includingPropertiesForKeys: nil) {
-                // The theme sits in the same directory but is not a screen.
+                // The theme and keymap sit in the same directory but are not
+                // screens.
                 urls.append(contentsOf: contents.filter {
-                    $0.pathExtension == "yaml" && $0.lastPathComponent != "theme.yaml"
+                    $0.pathExtension == "yaml" && !nonScreens.contains($0.lastPathComponent)
                 })
             }
         }
         // User files win on name collisions: later entries replace earlier.
         return urls
+    }
+
+    private func keymapCandidates() -> [URL] {
+        var urls: [URL] = []
+        if let bundled { urls.append(bundled.appendingPathComponent("keymap.yaml")) }
+        if let user { urls.append(user.appendingPathComponent("keymap.yaml")) }
+        return urls
+    }
+
+    private func loadKeymap(_ url: URL, issues: inout [String]) -> Keymap? {
+        guard let data = try? Data(contentsOf: url),
+              let yaml = String(data: data, encoding: .utf8) else { return nil }
+        // Row-level problems land in issues through the parser; the store
+        // reports them, it never throws on a shortcut it cannot read.
+        return Keymap.parse(yaml, issues: &issues)
     }
 
     private func loadTheme(_ url: URL, issues: inout [String]) -> Stylesheet? {
