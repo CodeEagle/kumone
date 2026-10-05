@@ -1,5 +1,5 @@
 {
-  "originHash" : "d09ac9bfeceeed02be8046172f5015f7b2eadac552ce2eaf24d41ffc3019d75c",
+  "originHash" : "c2fd90645c4d9f3f5d16e4ceb0e3998b8a7204db283068aee0a900b4e9be3238",
   "pins" : [
     {
       "identity" : "aplay",
@@ -143,6 +143,15 @@
       "state" : {
         "revision" : "050f1a346fbbac0ca2cfb15a95274f7bd1cf0ccf",
         "version" : "604.0.0"
+      }
+    },
+    {
+      "identity" : "yams",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/jpsim/Yams",
+      "state" : {
+        "revision" : "3d6871d5b4a5cd519adf233fbb576e0a2af71c17",
+        "version" : "5.4.0"
       }
     }
   ],

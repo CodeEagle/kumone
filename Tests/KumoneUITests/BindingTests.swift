@@ -82,13 +82,13 @@ final class BindingTests: XCTestCase {
         XCTAssertNil(context.resolve(.binding("player.title")))  // no resolver: nil
     }
 
-    func testBoolBindingIsAFlag() throws {
+    func testVisibleBoolStaysLiteral() throws {
         let yaml = """
         root:
           type: Container
           visible: false
         """
         let node = try ConfigParser.screen(from: yaml)
-        XCTAssertEqual(node.visible, false)
+        XCTAssertEqual(node.visible, .always(false))
     }
 }

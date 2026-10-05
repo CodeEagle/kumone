@@ -274,7 +274,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             .appendingPathComponent(".config/kumone/screens")
         let config = ConfigStore(bundled: bundled, user: user)
         let resolver = AppBindingResolver(store: store)
-        let win = ConfigPreviewWindow(screen: "preview", configStore: config, resolver: resolver)
+        let dispatcher = AppActions.dispatcher(store: store)
+        let win = ConfigPreviewWindow(
+            screen: "preview", configStore: config, resolver: resolver, dispatcher: dispatcher)
         win.makeKeyAndOrderFront(nil)
     }
 }

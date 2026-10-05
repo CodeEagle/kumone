@@ -82,10 +82,12 @@ struct NodeView: View {
     @Environment(\.bindingResolver) private var resolver
 
     var body: some View {
-        // Missing or invisible nodes render nothing: the config never takes
-        // the screen down, it just loses that part (diagnostics elsewhere
-        // report which type was not found).
-        guard node.visible, let builder = ComponentRegistry.resolve(node.type) else {
+        // Visibility is resolved here (not precomputed) so a bound path is
+        // read inside this body's observation frame — the node appears and
+        // disappears as the state it points at changes, without any other
+        // wiring. Unknown bindings hide (safe direction); unknown component
+        // types render nothing, the same never-crash rule.
+        guard isShown, let builder = ComponentRegistry.resolve(node.type) else {
             return AnyView(EmptyView())
         }
         // Read the environment here so a binding read lands in the tracking
@@ -99,5 +101,14 @@ struct NodeView: View {
                 AnyView(NodeView(node: node.children[index], stylesheet: stylesheet))
             })
         return AnyView(builder(node, context))
+    }
+
+    private var isShown: Bool {
+        switch node.visible {
+        case .always(let visible):
+            return visible
+        case .binding(let path):
+            return Visibility.truth(of: resolver?.value(path))
+        }
     }
 }

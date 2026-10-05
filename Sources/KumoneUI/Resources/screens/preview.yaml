@@ -1,6 +1,7 @@
-# The preview screen — the M0 proof: this file rendered as a real window,
-# editable live. It uses only built-in components plus the spectrum, which
-# reads the same AudioSpectrum the shaders do.
+# The preview screen — the M0 proof became the M2 proof: this file
+# renders as a real window, editable live, and now the buttons do
+# something. `action:` names a verb the app registered; `visible:` is a
+# `${path}` binding, so the transport row exists only with a track.
 
 root:
   type: Container
@@ -24,6 +25,33 @@ root:
           color: "#8A8A96"
 
         - type: HStack
+          spacing: 14
+          alignment: center
+          visible: ${player.hasTrack}
+          children:
+            - type: Button
+              action: player.previous
+              children:
+                - type: Text
+                  text: ◀
+                  fontSize: 15
+                  color: "#F2F2F5"
+            - type: Button
+              action: player.togglePlayPause
+              children:
+                - type: Text
+                  text: ❚❚
+                  fontSize: 15
+                  color: "#E8567A"
+            - type: Button
+              action: player.next
+              children:
+                - type: Text
+                  text: ▶▶
+                  fontSize: 15
+                  color: "#F2F2F5"
+
+        - type: HStack
           spacing: 8
           alignment: center
           children:
@@ -43,6 +71,6 @@ root:
               color: "#5C5C66"
             - type: Spacer
             - type: Text
-              text: M0
+              text: M2
               fontSize: 11
               color: "#5C5C66"

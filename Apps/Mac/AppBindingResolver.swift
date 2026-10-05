@@ -24,8 +24,11 @@ final class AppBindingResolver: PathBindingResolver {
             "player.title": { .string(player().currentTrack?.name ?? "") },
             "player.artist": { .string(player().currentTrack?.artists.first?.name ?? "") },
             "player.album": { .string(player().currentTrack?.album.name ?? "") },
-            // Playback state
+            // Playback state. isPaused exists so a play/pause pair of buttons
+            // can be expressed with only truthy bindings — no expression
+            // language needed in the screens.
             "player.isPlaying": { .flag(player().isPlaying) },
+            "player.isPaused": { .flag(player().hasCurrentTrack && !player().isPlaying) },
             "player.hasTrack": { .flag(player().hasCurrentTrack) },
             "player.progress": { .number(player().progress) },
             "player.duration": { .number(player().duration) },

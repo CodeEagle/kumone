@@ -97,13 +97,17 @@ public enum ConfigParser {
         let names: [String] = (mapping["classes"] as? [String])
             ?? (mapping["class"] as? [String])
             ?? ((mapping["class"] as? String).map { [$0] } ?? [])
+        let visible: Visibility? = (mapping["visible"] as? Bool).map { Visibility.always($0) }
+            ?? ((mapping["visible"] as? String).flatMap { text in
+                Visibility.binding(from: text)
+            })
         return Node(
             type: type,
             id: mapping["id"] as? String,
             classes: names,
             props: props,
             children: children,
-            visible: (mapping["visible"] as? Bool) ?? true
+            visible: visible ?? .always(true)
         )
     }
 

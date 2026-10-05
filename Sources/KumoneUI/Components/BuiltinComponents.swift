@@ -17,6 +17,7 @@ public enum BuiltinComponents {
         ComponentRegistry.register("Text", builder: leaf.text)
         ComponentRegistry.register("Container", builder: leaf.container)
         ComponentRegistry.register("SpectrumBars", builder: data.spectrumBars)
+        ComponentRegistry.register("Button", builder: leaf.button)
     }
 }
 
@@ -122,6 +123,20 @@ private enum leaf {
         )
     }
 
+    static let button: ComponentBuilder = { node, context in
+        // The action name comes from props; the dispatcher comes from the
+        // environment at body time. No name → disabled, not a crash, and no
+        // dispatcher at all (no host) → disabled too: the screen still shows.
+        let action = context.style["action"]?.stringValue
+        let label = AnyView(
+            VStack(spacing: 0) {
+                ForEach(Array(context.children.indices), id: \.self) { index in
+                    context.child(index)
+                }
+            })
+        return AnyView(ActionButton(name: action, label: label))
+    }
+
     static let container: ComponentBuilder = { node, context in
         let corner = context.style["cornerRadius"]?.numberValue ?? 0
         let padding = context.style["padding"]?.numberValue ?? 0
@@ -176,5 +191,37 @@ private enum data {
                 }
             }
         )
+    }
+}
+
+/// The interactive primitive: a SwiftUI button that sends a *named* action
+/// through the environment's dispatcher.
+///
+/// Kept as a View (not a closure) because it needs the environment; the
+/// builder wraps it in AnyView. Its label is whatever children the screen
+/// put inside it, so a button is composable like everything else.
+struct ActionButton: View {
+    let name: String?
+    let label: AnyView
+    @Environment(\.actionDispatcher) private var dispatcher
+
+    var body: some View {
+        Button(action: send) {
+            label
+        }
+        .buttonStyle(.plain)
+        .disabled(name == nil || dispatcher == nil)
+    }
+
+    private func send() {
+        guard let name else { return }
+        // Unknown action names are surfaced by returning false; the log is
+        // the only place that says so, so a typo'd action still renders.
+        guard dispatcher?.invoke(name) == true else {
+            #if DEBUG
+            print("[KumoneUI] unknown action: \(name)")
+            #endif
+            return
+        }
     }
 }
