@@ -32,6 +32,11 @@ final class AppBindingResolver: PathBindingResolver {
             "player.hasTrack": { .flag(player().hasCurrentTrack) },
             "player.progress": { .number(player().progress) },
             "player.duration": { .number(player().duration) },
+            "player.artworkURL": { .string(player().currentTrack?.album.picUrl ?? "") },
+            "player.volume": { .number(Double(player().volume)) },
+            "player.shuffleEnabled": { .flag(player().shuffleEnabled) },
+            "player.repeatMode": { .string(player().repeatMode.rawValue) },
+            "player.isBuffering": { .flag(player().isBuffering) },
 
             // The ambient lyric the desktop sheet shows, one line: the
             // simplest way for a screen to carry the current words.

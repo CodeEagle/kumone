@@ -16,14 +16,29 @@ import KumoneUI
 enum AppActions {
     static func dispatcher(store: StoreOf<AppFeature>) -> ActionRegistry {
         let registry = ActionRegistry()
+        // Parameterless verbs — the button-shaped ones.
         registry.register("player.togglePlayPause") { store.send(.player(.togglePlayPause)) }
         registry.register("player.next") { store.send(.player(.next)) }
         registry.register("player.previous") { store.send(.player(.previous)) }
+        registry.register("player.toggleShuffle") { store.send(.player(.toggleShuffle)) }
+        registry.register("player.cycleRepeatMode") { store.send(.player(.cycleRepeatMode)) }
         registry.register("player.toggleLyricsPanel") { store.send(.player(.togglePanel(.lyrics))) }
         registry.register("player.toggleQueuePanel") { store.send(.player(.togglePanel(.queue))) }
 
         registry.register("app.presentNowPlaying") { store.send(.presentNowPlaying) }
         registry.register("app.dismissNowPlaying") { store.send(.dismissNowPlaying) }
+
+        // Verbs with an argument: the value is whatever the interaction
+        // produced (a slider position), not anything the screen could
+        // hardcode. Unreadable arguments are ignored rather than fatal.
+        registry.register("player.seek") { argument in
+            guard let seconds = argument?.numberValue else { return }
+            store.send(.player(.seek(seconds)))
+        }
+        registry.register("player.setVolume") { argument in
+            guard case .number(let level) = argument else { return }
+            store.send(.player(.setVolume(Float(level))))
+        }
         return registry
     }
 }

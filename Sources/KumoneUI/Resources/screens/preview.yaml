@@ -1,7 +1,8 @@
-# The preview screen — the M0 proof became the M2 proof: this file
-# renders as a real window, editable live, and now the buttons do
-# something. `action:` names a verb the app registered; `visible:` is a
-# `${path}` binding, so the transport row exists only with a track.
+# The preview screen — the M3 proof: this file is a working mini-player.
+# Artwork, transport buttons, and a seek slider, all from bindings and
+# named actions: `value: ${player.progress}` reads state, `action:
+# player.seek` sends the dragged position as its argument, and
+# `visible: ${player.hasTrack}` keeps the transport with a track.
 
 root:
   type: Container
@@ -10,9 +11,14 @@ root:
   cornerRadius: 16
   children:
     - type: VStack
-      spacing: 20
+      spacing: 18
       alignment: center
       children:
+        - type: Artwork
+          url: ${player.artworkURL}
+          size: 96
+          cornerRadius: 12
+
         - type: Text
           text: Config-Driven UI
           fontSize: 22
@@ -51,6 +57,12 @@ root:
                   fontSize: 15
                   color: "#F2F2F5"
 
+        - type: ProgressSlider
+          value: ${player.progress}
+          duration: ${player.duration}
+          action: player.seek
+          color: "#E8567A"
+
         - type: HStack
           spacing: 8
           alignment: center
@@ -71,6 +83,6 @@ root:
               color: "#5C5C66"
             - type: Spacer
             - type: Text
-              text: M2
+              text: M3
               fontSize: 11
               color: "#5C5C66"

@@ -18,15 +18,17 @@ public enum BuiltinComponents {
         ComponentRegistry.register("Container", builder: leaf.container)
         ComponentRegistry.register("SpectrumBars", builder: data.spectrumBars)
         ComponentRegistry.register("Button", builder: leaf.button)
+        ComponentRegistry.register("ProgressSlider", builder: leaf.progressSlider)
+        ComponentRegistry.register("Artwork", builder: leaf.artwork)
     }
 }
 
 // MARK: - Prop helpers
 
 extension Prop {
-    var numberValue: Double? { if case .number(let v) = self { return v } else { return nil } }
-    var flagValue: Bool? { if case .flag(let v) = self { return v } else { return nil } }
-    var stringValue: String? { if case .string(let v) = self { return v } else { return nil } }
+    public var numberValue: Double? { if case .number(let v) = self { return v } else { return nil } }
+    public var flagValue: Bool? { if case .flag(let v) = self { return v } else { return nil } }
+    public var stringValue: String? { if case .string(let v) = self { return v } else { return nil } }
 }
 
 /// `#RRGGBB` / named-colour parsing shared by every component that paints.
@@ -137,6 +139,28 @@ private enum leaf {
         return AnyView(ActionButton(name: action, label: label))
     }
 
+    static let progressSlider: ComponentBuilder = { node, context in
+        // The first bidirectional component: reads where playback is, and
+        // on release sends the position the user chose as the argument of a
+        // named action (`player.seek`). Bindings resolve here (inside the
+        // observation frame) so the track position follows the music.
+        let value = context.resolve(context.style["value"] ?? .number(0))?.numberValue ?? 0
+        let duration = context.resolve(context.style["duration"] ?? .number(0))?.numberValue ?? 0
+        let action = context.style["action"]?.stringValue
+        let colour = context.style["color"].flatMap { $0.stringValue }.flatMap(StyleColor.parse)
+        return AnyView(ProgressSlider(
+            value: value, duration: duration, action: action, tint: colour))
+    }
+
+    static let artwork: ComponentBuilder = { node, context in
+        // Album art from a bound URL — the component knows nothing about
+        // where the URL came from, only that a string arrived.
+        let urlString = context.resolve(context.style["url"] ?? .string(""))?.stringValue ?? ""
+        let size = context.style["size"]?.numberValue ?? 64
+        let corner = context.style["cornerRadius"]?.numberValue ?? 8
+        return AnyView(ArtworkView(url: urlString, side: size, cornerRadius: corner))
+    }
+
     static let container: ComponentBuilder = { node, context in
         let corner = context.style["cornerRadius"]?.numberValue ?? 0
         let padding = context.style["padding"]?.numberValue ?? 0
@@ -223,5 +247,75 @@ struct ActionButton: View {
             #endif
             return
         }
+    }
+}
+
+/// The seek control: bound to position and length, it memorises the drag
+/// while the user holds it (so the music's own progress does not fight the
+/// finger) and commits the final position as the argument of the named
+/// action on release.
+struct ProgressSlider: View {
+    let value: Double
+    let duration: Double
+    let action: String?
+    let tint: Color?
+    @Environment(\.actionDispatcher) private var dispatcher
+    @State private var dragged: Double?
+
+    var body: some View {
+        let display = dragged ?? value
+        Slider(
+            value: Binding(get: { display }, set: { dragged = $0 }),
+            in: 0...(max(duration, 0.001)),
+            onEditingChanged: commit
+        )
+        .tint(tint)
+        // Nothing to seek (no track, or duration unknown) or nobody to tell
+        // — inert instead of broken, same rule as the button.
+        .disabled(duration <= 0 || action == nil || dispatcher == nil)
+    }
+
+    private func commit(editing: Bool) {
+        guard !editing, let final = dragged, let action else { return }
+        dragged = nil
+        guard let dispatcher, dispatcher.invoke(action, with: .number(final)) else {
+            #if DEBUG
+            print("[KumoneUI] unknown action: \(action)")
+            #endif
+            return
+        }
+    }
+}
+
+/// Album art: a remote URL when the track has one, a quiet placeholder when
+/// it does not (or while the image loads).
+struct ArtworkView: View {
+    let url: String
+    let side: Double
+    let cornerRadius: Double
+
+    var body: some View {
+        AsyncImage(url: URL(string: url)) { phase in
+            switch phase {
+            case .success(let image):
+                image.resizable().aspectRatio(contentMode: .fill)
+            case .failure:
+                placeholder
+            case .empty:
+                placeholder
+            @unknown default:
+                placeholder
+            }
+        }
+        .frame(width: side, height: side)
+        .clipShape(RoundedRectangle(cornerRadius: cornerRadius))
+    }
+
+    private var placeholder: some View {
+        RoundedRectangle(cornerRadius: cornerRadius)
+            .fill(Color.secondary.opacity(0.15))
+            .overlay(
+                Image(systemName: "music.note")
+                    .foregroundStyle(.secondary))
     }
 }

@@ -125,4 +125,83 @@ final class InteractionTests: XCTestCase {
             style: [:], children: node.children, resolver: nil) { _ in AnyView(EmptyView()) }
         XCTAssertNotNil(builder(node, context))
     }
+
+    // MARK: actions with an argument
+
+    func testParameterizedInvokeCarriesArgument() {
+        let registry = ActionRegistry()
+        var seen: [Double] = []
+        registry.register("player.seek") { argument in
+            seen.append(argument?.numberValue ?? -1)
+        }
+        XCTAssertTrue(registry.invoke("player.seek", with: .number(41.5)))
+        XCTAssertEqual(seen, [41.5])
+    }
+
+    func testParameterlessInvokeDeliversNil() {
+        let registry = ActionRegistry()
+        var arguments: [Prop?] = [.number(1)]
+        registry.register("player.next") { argument in arguments.append(argument) }
+        // The no-argument form (the one buttons use) reaches the handler
+        // as nil, so a verb registered for sliders still works for taps.
+        XCTAssertTrue(registry.invoke("player.next"))
+        XCTAssertEqual(arguments, [.number(1), nil])
+    }
+
+    func testArgumentFallsThroughUnknownAction() {
+        let registry = ActionRegistry()
+        XCTAssertFalse(registry.invoke("player.nex", with: .number(1)))
+    }
+
+    // MARK: the new components
+
+    func testProgressSliderRegisteredAsComponent() {
+        BuiltinComponents.register()
+        XCTAssertNotNil(ComponentRegistry.resolve("ProgressSlider"))
+        XCTAssertNotNil(ComponentRegistry.resolve("Artwork"))
+    }
+
+    func testProgressSliderInertWithoutDurationOrAction() {
+        // No track (duration 0), no action name, no host: the builder still
+        // returns a view — disabled inside, never a crash.
+        BuiltinComponents.register()
+        guard let builder = ComponentRegistry.resolve("ProgressSlider") else {
+            return XCTFail("ProgressSlider not registered")
+        }
+        let node = Node(type: "ProgressSlider", props: [
+            "value": .number(0), "duration": .number(0)],
+        )
+        let context = ComponentContext(
+            style: [:], children: [], resolver: nil) { _ in AnyView(EmptyView()) }
+        XCTAssertNotNil(builder(node, context))
+    }
+
+    func testArtworkBuildsWithAndWithoutURL() {
+        BuiltinComponents.register()
+        guard let builder = ComponentRegistry.resolve("Artwork") else {
+            return XCTFail("Artwork not registered")
+        }
+        for url in ["https://example/x.jpg", ""] {
+            let node = Node(type: "Artwork", props: ["url": .string(url), "size": .number(48)])
+            let context = ComponentContext(
+                style: [:], children: [], resolver: nil) { _ in AnyView(EmptyView()) }
+            XCTAssertNotNil(builder(node, context))
+        }
+    }
+
+    func testVisibleBindingForSliderProps() throws {
+        // A slider node points its value at a path the app registered — the
+        // mini-player screen's shape, end to end.
+        let yaml = """
+        root:
+          type: ProgressSlider
+          value: ${player.progress}
+          duration: ${player.duration}
+          action: player.seek
+        """
+        let node = try ConfigParser.screen(from: yaml)
+        XCTAssertEqual(node.props["value"], .binding("player.progress"))
+        XCTAssertEqual(node.props["duration"], .binding("player.duration"))
+        XCTAssertEqual(node.props["action"], .string("player.seek"))
+    }
 }
