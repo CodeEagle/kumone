@@ -129,14 +129,17 @@ private enum leaf {
         // The action name comes from props; the dispatcher comes from the
         // environment at body time. No name → disabled, not a crash, and no
         // dispatcher at all (no host) → disabled too: the screen still shows.
+        // An `argument` rides along: a literal (`argument: mini`) or a
+        // `${path}` — whatever the verb wants, e.g. which screen to open.
         let action = context.style["action"]?.stringValue
+        let argument = context.style["argument"].flatMap { context.resolve($0) }
         let label = AnyView(
             VStack(spacing: 0) {
                 ForEach(Array(context.children.indices), id: \.self) { index in
                     context.child(index)
                 }
             })
-        return AnyView(ActionButton(name: action, label: label))
+        return AnyView(ActionButton(name: action, argument: argument, label: label))
     }
 
     static let progressSlider: ComponentBuilder = { node, context in
@@ -226,6 +229,10 @@ private enum data {
 /// put inside it, so a button is composable like everything else.
 struct ActionButton: View {
     let name: String?
+    /// An argument the verb takes: a screen name for `app.presentScreen`,
+    /// nil for verbs that need nothing. Carried as a prop, not unpacked,
+    /// so the verb decides what it means.
+    let argument: Prop?
     let label: AnyView
     @Environment(\.actionDispatcher) private var dispatcher
 
@@ -241,7 +248,7 @@ struct ActionButton: View {
         guard let name else { return }
         // Unknown action names are surfaced by returning false; the log is
         // the only place that says so, so a typo'd action still renders.
-        guard dispatcher?.invoke(name) == true else {
+        guard dispatcher?.invoke(name, with: argument) == true else {
             #if DEBUG
             print("[KumoneUI] unknown action: \(name)")
             #endif

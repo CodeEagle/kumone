@@ -82,7 +82,11 @@ root:
               fontSize: 11
               color: "#5C5C66"
             - type: Spacer
-            - type: Text
-              text: M3
-              fontSize: 11
-              color: "#5C5C66"
+            - type: Button
+              action: app.presentScreen
+              argument: mini
+              children:
+                - type: Text
+                  text: M5 ▸
+                  fontSize: 11
+                  color: "#5FD0E8"

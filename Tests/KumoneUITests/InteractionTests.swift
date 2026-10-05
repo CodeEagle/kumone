@@ -204,4 +204,52 @@ final class InteractionTests: XCTestCase {
         XCTAssertEqual(node.props["duration"], .binding("player.duration"))
         XCTAssertEqual(node.props["action"], .string("player.seek"))
     }
+
+    // MARK: buttons with an argument
+
+    func testButtonArgumentParsesAsLiteral() throws {
+        // The argument a verb receives (`app.presentScreen` takes a screen
+        // name) is a plain prop, so it parses like any other.
+        let yaml = """
+        root:
+          type: Button
+          action: app.presentScreen
+          argument: mini
+        """
+        let node = try ConfigParser.screen(from: yaml)
+        XCTAssertEqual(node.props["action"], .string("app.presentScreen"))
+        XCTAssertEqual(node.props["argument"], .string("mini"))
+    }
+
+    func testButtonArgumentMayBeABinding() throws {
+        let yaml = """
+        root:
+          type: Button
+          action: player.jumpTo
+          argument: ${player.title}
+        """
+        let node = try ConfigParser.screen(from: yaml)
+        XCTAssertEqual(node.props["argument"], .binding("player.title"))
+    }
+
+    func testStringArgumentReachesTheHandler() {
+        let registry = ActionRegistry()
+        var received: [String] = []
+        registry.register("app.presentScreen") { argument in
+            if case .string(let name) = argument { received.append(name) }
+        }
+        XCTAssertTrue(registry.invoke("app.presentScreen", with: .string("mini")))
+        XCTAssertEqual(received, ["mini"])
+    }
+
+    func testButtonArgumentUnsetIsNil() throws {
+        // A button with no argument still parses; nil travels to the verb.
+        let yaml = """
+        root:
+          type: Button
+          action: player.next
+        """
+        let node = try ConfigParser.screen(from: yaml)
+        XCTAssertNil(node.props["argument"])
+    }
 }

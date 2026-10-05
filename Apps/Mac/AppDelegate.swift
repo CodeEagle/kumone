@@ -22,7 +22,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var settingsWindowController: SettingsWindowController?
     private var keymapMonitor: AppKeymapMonitor?
     private var configStore: ConfigStore?
-    private lazy var actions: ActionRegistry = AppActions.dispatcher(store: store)
+    private var screenWindows: [String: ConfigPreviewWindow] = [:]
+    private lazy var actions: ActionRegistry = {
+        let registry = AppActions.dispatcher(store: store)
+        // Window-level verbs are registered here, not in AppActions: they
+        // need this object's window plumbing, not the store.
+        registry.register("app.presentScreen") { [weak self] argument in
+            guard case .string(let name) = argument else { return }
+            self?.presentScreen(name)
+        }
+        return registry
+    }()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         applyAppearance(store.settings.appearance.brightnessIntent.colorScheme)
@@ -69,7 +79,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         observeAppearance()
         observeDesktopLyrics()
         MainMenu.install(store: store, showSettings: { [weak self] in self?.showSettings() })
-        loadConfigPreview()
+        presentScreen("preview")
     }
 
     /// The config root: bundled defaults overridable by the user's
@@ -267,12 +277,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.activate(ignoringOtherApps: true)
     }
 
-    private func loadConfigPreview() {
+    /// Opens a screen by name as its own preview window, or focuses it if
+    /// that screen is already open. Any YAML in the screens directory is a
+    /// screen: drop `fancy.yaml` in `~/.config/kumone/screens`, open it with
+    /// a button (`action: app.presentScreen`, `argument: fancy`) or from a
+    /// keymap once one can carry arguments.
+    func presentScreen(_ name: String) {
+        if let window = screenWindows[name] {
+            window.makeKeyAndOrderFront(nil)
+            return
+        }
         guard let config = configStore else { return }
+        guard config.screens[name] != nil else {
+            #if DEBUG
+            print("[Kumone] no screen named: \(name)")
+            #endif
+            return
+        }
         let resolver = AppBindingResolver(store: store)
-        let win = ConfigPreviewWindow(
-            screen: "preview", configStore: config, resolver: resolver, dispatcher: actions)
-        win.makeKeyAndOrderFront(nil)
+        let window = ConfigPreviewWindow(
+            screen: name, configStore: config, resolver: resolver, dispatcher: actions)
+        screenWindows[name] = window
+        window.makeKeyAndOrderFront(nil)
     }
 }
 

@@ -1,0 +1,49 @@
+# A second screen, to prove a screen is just a file: `preview.yaml` opens
+# this one through the `app.presentScreen` verb, with the name riding as
+# the button's `argument`. Add your own screens the same way — anything
+# in the screens directory is one.
+
+root:
+  type: Container
+  class: [chrome]
+  padding: 24
+  cornerRadius: 16
+  children:
+    - type: VStack
+      spacing: 16
+      alignment: center
+      children:
+        - type: Text
+          text: A Second Screen
+          fontSize: 20
+          fontWeight: bold
+          color: "#5FD0E8"
+
+        - type: Text
+          text: ${player.title}
+          fontSize: 14
+          color: "#8A8A96"
+
+        - type: HStack
+          spacing: 14
+          alignment: center
+          children:
+            - type: Button
+              action: player.togglePlayPause
+              children:
+                - type: Text
+                  text: ❚❚
+                  fontSize: 15
+                  color: "#E8567A"
+            - type: Button
+              action: player.next
+              children:
+                - type: Text
+                  text: ▶▶
+                  fontSize: 15
+                  color: "#F2F2F5"
+
+        - type: Text
+          text: Edit this file; the window follows.
+          fontSize: 11
+          color: "#5C5C66"
