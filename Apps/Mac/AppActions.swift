@@ -28,6 +28,15 @@ enum AppActions {
         registry.register("app.presentNowPlaying") { store.send(.presentNowPlaying) }
         registry.register("app.dismissNowPlaying") { store.send(.dismissNowPlaying) }
 
+        // Volume steps: media keys give relative intent (volumeup), the
+        // store only knows absolute levels, so the step lands here.
+        registry.register("player.volumeUp") { [store] in
+            store.send(.player(.setVolume(min(1, store.player.volume + 0.05))))
+        }
+        registry.register("player.volumeDown") { [store] in
+            store.send(.player(.setVolume(max(0, store.player.volume - 0.05))))
+        }
+
         // Verbs with an argument: the value is whatever the interaction
         // produced (a slider position), not anything the screen could
         // hardcode. Unreadable arguments are ignored rather than fatal.

@@ -10,3 +10,13 @@ rightarrow: player.next
 leftarrow: player.previous
 cmd+l: player.toggleLyricsPanel
 cmd+shift+q: player.toggleQueuePanel
+
+# The physical media keys. They arrive as systemDefined events and are
+# nameable like any other key; volume keys stay unbound by default so the
+# system keeps them, and cmd+shift+up/down steps volume instead.
+
+media-play: player.togglePlayPause
+media-next: player.next
+media-previous: player.previous
+cmd+shift+uparrow: player.volumeUp
+cmd+shift+downarrow: player.volumeDown

@@ -32,6 +32,11 @@ final class AppBindingResolver: PathBindingResolver {
             "player.hasTrack": { .flag(player().hasCurrentTrack) },
             "player.progress": { .number(player().progress) },
             "player.duration": { .number(player().duration) },
+            // Playback position pre-formatted as a clock: config cannot
+            // transform a number, so the shape a screen can bind is one
+            // string per way of reading it.
+            "player.progressClock": { .string(clock(player().progress)) },
+            "player.durationClock": { .string(clock(player().duration)) },
             "player.artworkURL": { .string(player().currentTrack?.album.picUrl ?? "") },
             "player.volume": { .number(Double(player().volume)) },
             "player.shuffleEnabled": { .flag(player().shuffleEnabled) },
@@ -72,4 +77,17 @@ final class AppBindingResolver: PathBindingResolver {
             "app.shaderName": { .string(store.shaderID ?? "") },
         ])
     }
+}
+/// One way to read seconds: `4:07`, or `1:04:07` when the track is long
+/// enough that hours exist. Anything not a real duration reads `0:00` —
+/// the safe direction for an unknown or unloaded value.
+private func clock(_ seconds: Double) -> String {
+    guard seconds.isFinite, seconds > 0 else { return "0:00" }
+    let total = Int(seconds.rounded())
+    let hours = total / 3600
+    let minutes = (total % 3600) / 60
+    let secs = total % 60
+    return hours > 0
+        ? String(format: "%d:%02d:%02d", hours, minutes, secs)
+        : String(format: "%d:%02d", minutes, secs)
 }

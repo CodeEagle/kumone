@@ -22,7 +22,9 @@ final class AppKeymapMonitor {
 
     func start() {
         guard monitor == nil else { return }
-        monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+        // .keyDown for every writable key, .systemDefined for the media
+        // keys (F7–F9 and volume keys arrive there, not as keyDown).
+        monitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .systemDefined]) { [weak self] event in
             self?.handle(event) ?? event
         }
     }
@@ -37,6 +39,13 @@ final class AppKeymapMonitor {
     /// nil = not ours, pass it on; swallowing (returning nil from the
     /// monitor) is what makes a shortcut *consumed*.
     private func handle(_ event: NSEvent) -> NSEvent? {
+        if event.type == .systemDefined {
+            return handleMedia(event)
+        }
+        return handleKeyDown(event)
+    }
+
+    private func handleKeyDown(_ event: NSEvent) -> NSEvent? {
         guard let key = keyName(event) else { return event }
         let pressed = pressedModifiers(event)
         guard let action = store.keymap.action(for: pressed, key: key) else {
@@ -48,14 +57,32 @@ final class AppKeymapMonitor {
         if isEditingText && pressed.isEmpty {
             return event
         }
-        // Unknown action name: false, pass through, log instead of eating.
-        if dispatcher.invoke(action) {
-            return nil
+        return dispatch(action)
+    }
+
+    /// Media keys: their `.systemDefined` events are decoded by
+    /// `mediaKeyName`; whatever fires has no modifiers, and a text field
+    //  never eats them.
+    private func handleMedia(_ event: NSEvent) -> NSEvent? {
+        guard let name = mediaKeyName(event),
+              let action = store.keymap.action(for: [], key: name) else {
+            return event
         }
+        return dispatch(action)
+    }
+
+    /// Fires a verb; nil consumes the key. An unknown action name still
+    /// consumes (the user bound a real key to a broken verb, so the key
+    //  should not also do its system thing) but says so in the log.
+    private func dispatch(_ action: String) -> NSEvent? {
         #if DEBUG
-        print("[Kumone] keymap: unknown action: \(action)")
+        if !dispatcher.invoke(action) {
+            print("[Kumone] keymap: unknown action: \(action)")
+        }
+        #else
+        _ = dispatcher.invoke(action)
         #endif
-        return event
+        return nil
     }
 
     private var isEditingText: Bool {
@@ -111,5 +138,34 @@ final class AppKeymapMonitor {
         122: "f1", 120: "f2", 99: "f3", 118: "f4",
         96: "f5", 97: "f6", 98: "f7", 100: "f8",
         101: "f9", 109: "f10", 103: "f11", 111: "f12",
+    ]
+
+    /// Media key presses arrive as `.systemDefined` events: the key type
+    /// sits in the high half of `data1`, and a press/release byte in the
+    /// low half. Only the *press* fires — the release would double every
+    /// action.
+    private func mediaKeyName(_ event: NSEvent) -> String? {
+        guard event.subtype == mediaKeySubtype else { return nil }
+        let keyType = Int((event.data1 & 0xFFFF0000) >> 16)
+        let isPress = (event.data1 & 0xFF00) >> 8 == mediaKeyPressedFlag
+        guard isPress else { return nil }
+        return mediaKeyNames[keyType]
+    }
+
+    /// NX_SUBTYPE_AUX_CONTROL_BUTTONS: the only `.systemDefined` subtype
+    /// that carries key presses.
+    private let mediaKeySubtype = NSEvent.EventSubtype(rawValue: 8)
+    /// The byte AppKit writes for "this key went down".
+    private let mediaKeyPressedFlag: Int32 = 0x0A
+
+    /// NX_KEYTYPE_* values per ev_keymap.h. Volume keys stay unbound by
+    /// default (the system owns them) but are nameable for a user.
+    private let mediaKeyNames: [Int: String] = [
+        0: "volumeup",
+        1: "volumedown",
+        7: "mute",
+        16: "media-play",
+        17: "media-next",
+        18: "media-previous",
     ]
 }

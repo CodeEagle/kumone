@@ -75,8 +75,11 @@ rightarrow: player.next
 Modifier aliases: `cmd`/`command`, `opt`/`option`/`alt`,
 `ctrl`/`ctl`/`control`, `shift`. Key names are single characters or
 `space` `return` `escape` `tab` `delete` `leftarrow` `rightarrow`
-`uparrow` `downarrow` `f1`…`f12`. Matching is lenient about *extra*
-held modifiers: `cmd+l` still fires with `cmd+shift+l`.
+`uparrow` `downarrow` `f1`…`f12`. The media keys are nameable too —
+`media-play` `media-next` `media-previous` `volumeup` `volumedown`
+`mute` — they arrive as system-defined events, and volume keys stay
+unbound by default so macOS keeps them. Matching is lenient about
+*extra* held modifiers: `cmd+l` still fires with `cmd+shift+l`.
 
 ## Expressions: `${path}`
 
@@ -131,6 +134,7 @@ Read-only, resolved per render:
 | `player.progress` | number | playhead, seconds |
 | `player.duration` | number | track length, seconds |
 | `player.volume` | number | 0…1 |
+| `player.progressClock` / `player.durationClock` | string | position and length pre-formatted (`4:07`, `1:04:07`); config cannot transform a number, so the clock is a binding |
 | `player.shuffleEnabled` | flag | shuffle on |
 | `player.repeatMode` | string | `off` / `all` / `one` |
 | `player.isBuffering` | flag | stream buffering |
@@ -151,6 +155,7 @@ What a `Button`/slider/keymap entry invokes:
 | `player.next` / `player.previous` | — | skip either way |
 | `player.seek` | number | jump the playhead (slider commits) |
 | `player.setVolume` | number | 0…1 |
+| `player.volumeUp` / `player.volumeDown` | — | step 0.05 either way |
 | `player.toggleShuffle` | — | flip shuffle |
 | `player.cycleRepeatMode` | — | off → all → one |
 | `player.toggleLyricsPanel` | — | lyrics side panel |
