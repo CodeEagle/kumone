@@ -113,6 +113,7 @@ against the app's state, so one row can mix `${item.title}` and
 | `ProgressSlider` | `value`, `duration`, `action`, `color` | drag-held locally, commits the position as the action's argument on release |
 | `Artwork` | `url`, `size`, `cornerRadius` | remote album art; placeholder while loading or missing |
 | `ForEach` | `items`, `spacing` | repeats its first child once per element of a list binding; `${item}` / `${item.field}` in that child resolves to the element |
+| `LyricView` | `lines`, `currentIndex`, `fontSize`, `activeColor`, `inactiveColor`, `placeholder`, `alignment` | a whole lyric sheet: the current line highlighted (colors as `#RRGGBB`) and held centered; it is a *composite* component — a view written in Swift, because "which row is current" is a comparison the grammar does not have |
 | `SpectrumBars` | `barWidth`, `barHeight`, `spacing`, `color` | live audio spectrum |
 
 Any node type not in this table renders nothing; a screen survives a
@@ -141,6 +142,7 @@ Read-only, resolved per render:
 | `player.upcomingTracks` | list<mapping> | what is coming: each item has `title`, `artist`, `artworkURL`, `duration` (capped at 50) |
 | `lyrics.currentLine` | string | the line the desktop sheet shows |
 | `lyrics.lineCount` | number | how many lines exist |
+| `lyrics.currentIndex` | number | which line is live (-1 = none) |
 | `lyrics.lines` | list<string> | every lyric line, for a ForEach |
 | `app.nowPlayingOpen` | flag | immersive page presented |
 | `app.shaderName` | string | active shader id |

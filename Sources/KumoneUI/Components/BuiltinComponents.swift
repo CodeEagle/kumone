@@ -19,6 +19,7 @@ public enum BuiltinComponents {
         ComponentRegistry.register("SpectrumBars", builder: data.spectrumBars)
         ComponentRegistry.register("Button", builder: leaf.button)
         ComponentRegistry.register("ForEach", builder: leaf.forEach)
+        ComponentRegistry.register("LyricView", builder: leaf.lyricView)
         ComponentRegistry.register("ProgressSlider", builder: leaf.progressSlider)
         ComponentRegistry.register("Artwork", builder: leaf.artwork)
     }
@@ -158,6 +159,34 @@ private enum leaf {
             ?? Node(type: "Text", props: ["text": .string("")])
         return AnyView(ForEachItems(
             items: items, template: template, stylesheet: context.stylesheet, spacing: spacing))
+    }
+
+    /// The first *composite* component: a column of lyric lines with the
+    /// current one highlighted and kept centered. Could a screen express
+    /// this from atoms? No — "is this row current" is a comparison, and
+    /// there is no expression language by design. The registry does not
+    /// care: a component may be config composed of children (a VStack) or
+    /// a view composed in Swift (this), exactly as plugins will be.
+    static let lyricView: ComponentBuilder = { node, context in
+        let lines: [String]
+        if case .list(let values) = context.resolve(context.style["lines"] ?? .list([])) {
+            lines = values.compactMap(stringOf)
+        } else {
+            lines = []
+        }
+        let cursor = context.resolve(context.style["currentIndex"] ?? .number(-1))
+            .flatMap { $0.numberValue }.map(Int.init) ?? -1
+        let size = context.style["fontSize"]?.numberValue ?? 14
+        let active = context.style["activeColor"].flatMap { $0.stringValue }.flatMap(StyleColor.parse)
+            ?? Color.primary
+        let inactive = context.style["inactiveColor"].flatMap { $0.stringValue }.flatMap(StyleColor.parse)
+            ?? Color.secondary
+        let placeholder = context.resolve(context.style["placeholder"] ?? .string(""))
+            .flatMap { stringOf($0) } ?? ""
+        let leading = (context.style["alignment"]?.stringValue ?? "center") == "leading"
+        return AnyView(LyricView(
+            lines: lines, cursor: cursor, fontSize: size, active: active,
+            inactive: inactive, placeholder: placeholder, leading: leading))
     }
 
     static let progressSlider: ComponentBuilder = { node, context in
@@ -364,6 +393,54 @@ struct ForEachItems: View {
                     .environment(\.bindingResolver,
                                  ScopedResolver(base: base, item: items[index]))
             }
+        }
+    }
+}
+
+/// A full lyric sheet: every line, the current one highlighted and held at
+/// the middle of the view. The cursor arrives as an index from a binding
+/// (`lyrics.currentIndex`), so which line is current is the app's truth —
+/// the component only renders the consequence.
+struct LyricView: View {
+    let lines: [String]
+    /// Index of the live line; -1 (or out of range) highlights nothing,
+    /// which is the state before the first word and after the last.
+    let cursor: Int
+    let fontSize: Double
+    let active: Color
+    let inactive: Color
+    let placeholder: String
+    let leading: Bool
+
+    var body: some View {
+        if lines.isEmpty {
+            Text(placeholder.isEmpty ? "No lyrics" : placeholder)
+                .font(.system(size: fontSize))
+                .foregroundStyle(inactive)
+                .frame(maxWidth: .infinity, alignment: leading ? .leading : .center)
+        } else {
+            ScrollViewReader { proxy in
+                ScrollView {
+                    VStack(alignment: leading ? .leading : .center, spacing: 10) {
+                        ForEach(lines.indices, id: \.self) { index in
+                            Text(lines[index])
+                                .font(.system(size: fontSize))
+                                .foregroundStyle(index == cursor ? active : inactive)
+                                .id(index)
+                        }
+                    }
+                    .padding(.vertical, 120)  // room so the active line centers
+                }
+                .onAppear { scrollToCursor(proxy) }
+                .onChange(of: cursor) { _ in scrollToCursor(proxy) }
+            }
+        }
+    }
+
+    private func scrollToCursor(_ proxy: ScrollViewProxy) {
+        guard lines.indices.contains(cursor) else { return }
+        withAnimation(.easeInOut(duration: 0.25)) {
+            proxy.scrollTo(cursor, anchor: .center)
         }
     }
 }

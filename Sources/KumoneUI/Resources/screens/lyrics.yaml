@@ -1,0 +1,76 @@
+# A dedicated lyrics screen: the first composite component in action.
+# LyricView is a view composed in Swift rather than config composed of
+# children — the registry makes no distinction. Copy this file, edit it,
+# the window follows.
+
+root:
+  type: Container
+  class: [chrome]
+  padding: 28
+  cornerRadius: 18
+  children:
+    - type: VStack
+      spacing: 20
+      alignment: center
+      children:
+        - type: HStack
+          spacing: 12
+          alignment: center
+          children:
+            - type: Artwork
+              url: ${player.artworkURL}
+              size: 44
+              cornerRadius: 8
+            - type: VStack
+              spacing: 2
+              alignment: leading
+              children:
+                - type: Text
+                  text: ${player.title}
+                  fontSize: 15
+                  fontWeight: semibold
+                  color: "#F2F2F5"
+                - type: Text
+                  text: ${player.artist}
+                  fontSize: 12
+                  color: "#8A8A96"
+
+        - type: ProgressSlider
+          value: ${player.progress}
+          duration: ${player.duration}
+          action: player.seek
+          color: "#E8567A"
+
+        - type: LyricView
+          lines: ${lyrics.lines}
+          currentIndex: ${lyrics.currentIndex}
+          fontSize: 16
+          activeColor: "#F2F2F5"
+          inactiveColor: "#5C5C66"
+          alignment: center
+
+        - type: HStack
+          spacing: 14
+          alignment: center
+          children:
+            - type: Button
+              action: player.previous
+              children:
+                - type: Text
+                  text: ◀
+                  fontSize: 15
+                  color: "#F2F2F5"
+            - type: Button
+              action: player.togglePlayPause
+              children:
+                - type: Text
+                  text: ❚❚
+                  fontSize: 15
+                  color: "#E8567A"
+            - type: Button
+              action: player.next
+              children:
+                - type: Text
+                  text: ▶▶
+                  fontSize: 15
+                  color: "#F2F2F5"

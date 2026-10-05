@@ -77,10 +77,14 @@ root:
           spacing: 16
           alignment: center
           children:
-            - type: Text
-              text: .config/kumone/screens
-              fontSize: 11
-              color: "#5C5C66"
+            - type: Button
+              action: app.presentScreen
+              argument: lyrics
+              children:
+                - type: Text
+                  text: Lyrics ▸
+                  fontSize: 11
+                  color: "#5FD0E8"
             - type: Spacer
             - type: Button
               action: app.presentScreen

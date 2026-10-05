@@ -66,6 +66,10 @@ final class AppBindingResolver: PathBindingResolver {
                 return .string(lines[index].text)
             },
             "lyrics.lineCount": { .number(Double(player().lyrics?.lines.count ?? 0)) },
+            // Which line is current: a LyricView highlights and scrolls
+            // to it. -1 (before the first word or no lyrics) is valid —
+            // nothing is highlighted then.
+            "lyrics.currentIndex": { .number(Double(player().lyricsCursorIndex ?? -1)) },
             // The whole lyric, one string per line: for a ForEach that lays
             // them out as a column of Texts.
             "lyrics.lines": {
