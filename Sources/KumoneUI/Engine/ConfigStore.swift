@@ -21,11 +21,22 @@ import Darwin
 /// the swap free — nothing reloads but what the tree actually changed.
 @MainActor
 public final class ConfigStore: ObservableObject {
-    /// One parsed screen plus its resolved theme.
+    /// One parsed screen plus its resolved theme and window geometry.
     public struct Screen: Equatable {
         public let name: String
         public let root: Node
         public let stylesheet: Stylesheet
+        public let window: ConfigParser.ScreenWindow
+
+        public init(name: String,
+                    root: Node,
+                    stylesheet: Stylesheet,
+                    window: ConfigParser.ScreenWindow = ConfigParser.ScreenWindow()) {
+            self.name = name
+            self.root = root
+            self.stylesheet = stylesheet
+            self.window = window
+        }
     }
 
     @Published public private(set) var screens: [String: Screen] = [:]
@@ -93,9 +104,11 @@ public final class ConfigStore: ObservableObject {
                 continue
             }
             do {
+                let document = try ConfigParser.screenDocument(from: yaml)
                 loaded[name] = Screen(name: name,
-                                      root: try ConfigParser.screen(from: yaml),
-                                      stylesheet: stylesheet)
+                                      root: document.root,
+                                      stylesheet: stylesheet,
+                                      window: document.window)
             } catch {
                 issues.append("\(url.lastPathComponent): \(error)")
             }
@@ -120,7 +133,9 @@ public final class ConfigStore: ObservableObject {
         // Re-render the screens with the new sheet: same code the reload
         // ran, without re-reading any file.
         guard let stylesheet = themes[name] else { return }
-        screens = screens.mapValues { Screen(name: $0.name, root: $0.root, stylesheet: stylesheet) }
+        screens = screens.mapValues {
+            Screen(name: $0.name, root: $0.root, stylesheet: stylesheet, window: $0.window)
+        }
     }
 
     // MARK: - Discovery

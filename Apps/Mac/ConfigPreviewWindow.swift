@@ -2,17 +2,27 @@ import Combine
 import KumoneUI
 import SwiftUI
 
-/// A small window that renders a parsed screen as a live preview.
+/// A window that renders a parsed screen, on the geometry the screen asks
+/// for.
 ///
-/// The M0 vehicle: `ScreenView` renders the parsed node tree; this window
-/// just puts it on screen. Built so config changes (from the file watcher)
-/// appear immediately — the source of truth is the YAML, never the window.
+/// The screen's `window:` block (sizes, title) is applied on open and
+/// re-applied live when the file watcher reloads it — editing the YAML
+/// resizes and retitles the open window, the same immediacy the tree
+/// inside it already has. The source of truth is always the YAML: nothing
+/// here caches geometry.
 @MainActor
 final class ConfigPreviewWindow: NSWindow {
     private weak var configStore: ConfigStore?
+    private var subscriptions: Set<AnyCancellable> = []
+    private let screenName: String
 
-    init(screen name: String, configStore: ConfigStore, resolver: BindingResolver?, dispatcher: ActionDispatcher?) {
+    init(screen name: String,
+         screenWindow: ConfigParser.ScreenWindow,
+         configStore: ConfigStore,
+         resolver: BindingResolver?,
+         dispatcher: ActionDispatcher?) {
         self.configStore = configStore
+        self.screenName = name
 
         // The window's content view is driven by an ObservableObject, so
         // re-rendering on `screens` changes happens through SwiftUI itself.
@@ -22,22 +32,57 @@ final class ConfigPreviewWindow: NSWindow {
         let hosting = NSHostingController(rootView: content)
 
         super.init(
-            contentRect: NSRect(x: 0, y: 0, width: 420, height: 300),
+            contentRect: NSRect(
+                x: 0, y: 0,
+                width: screenWindow.width ?? 420,
+                height: screenWindow.height ?? 300),
             styleMask: [.titled, .closable, .miniaturizable, .resizable],
             backing: .buffered,
             defer: false)
-        title = "配置预览 — \(name)"
+        title = screenWindow.title ?? "配置预览 — \(name)"
         contentView = hosting.view
         isReleasedWhenClosed = false  // keep one instance alive per app
+        applyMinSize(screenWindow)
 
-        // Simple lifecycle: re-rendering handled by SwiftUI on @Published
-        // change. We forward the publisher through.
-        // (KVO-style observation avoided; the content view observes
-        //  configStore.screens directly.)
+        // Live geometry: a window block edit reaches the open window the
+        // moment the watcher reloads the file, without reopening anything.
+        configStore.$screens
+            .map { [weak self] screens in
+                screens[self?.screenName ?? ""]?.window ?? ConfigParser.ScreenWindow()
+            }
+            .removeDuplicates()
+            .sink { [weak self] window in self?.applyWindow(window) }
+            .store(in: &subscriptions)
     }
 
     required init?(coder: NSCoder) {
         fatalError("init(coder:) is not supported")
+    }
+
+    private func applyWindow(_ window: ConfigParser.ScreenWindow) {
+        applyMinSize(window)
+        if let width = window.width, let height = window.height,
+           width > 0, height > 0 {
+            // Keep the top-left corner where the user left it; screens grow
+            // down and right in the coordinate system AppKit uses.
+            let frame = self.frame
+            let newFrame = NSRect(
+                x: frame.minX,
+                y: frame.maxY - height,
+                width: width,
+                height: height)
+            setFrame(newFrame, display: true, animate: false)
+        }
+        if let title = window.title {
+            self.title = title
+        }
+    }
+
+    private func applyMinSize(_ window: ConfigParser.ScreenWindow) {
+        let minWidth = window.minWidth ?? 0
+        let minHeight = window.minHeight ?? 0
+        guard minWidth > 0 || minHeight > 0 else { return }
+        minSize = NSSize(width: max(minWidth, 1), height: max(minHeight, 1))
     }
 }
 

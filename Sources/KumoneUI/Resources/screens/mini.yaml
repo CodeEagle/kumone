@@ -3,6 +3,15 @@
 # the button's `argument`. Add your own screens the same way — anything
 # in the screens directory is one.
 
+# A screen also declares the window it wants to open in: open it again
+# after editing this block and the window takes the new geometry.
+window:
+  width: 400
+  height: 620
+  minWidth: 320
+  minHeight: 480
+  title: Mini
+
 root:
   type: Container
   class: [chrome]

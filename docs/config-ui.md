@@ -27,6 +27,12 @@ merge by name — a user `mini.yaml` adds a screen, it cannot remove one.
 ### A screen
 
 ```yaml
+window:
+  width: 480
+  height: 640
+  minWidth: 360
+  title: Mini
+
 root:
   type: VStack
   class: [chrome]
@@ -42,6 +48,11 @@ root:
         - type: Text
           text: ❚❚
 ```
+
+The optional `window` block shapes the window the screen opens in —
+size, minimum size, title. Everything is optional: a screen that says
+nothing keeps the app's default geometry. It applies live too: edit the
+block while the window is open and the watcher resizes and retitles it.
 
 Every node takes: `type` (the component), `class` (theme rules, see
 below), `props` (written inline as YAML keys), `children`, and

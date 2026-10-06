@@ -15,6 +15,9 @@ public struct ConfigParseError: Error, Equatable {
 public enum ConfigParser {
     /// One screen document:
     ///
+    ///     window:
+    ///       width: 480
+    ///       height: 640
     ///     root:
     ///       type: HStack
     ///       class: [chrome]
@@ -23,7 +26,48 @@ public enum ConfigParser {
     ///         - type: Text
     ///           text: Hello
     ///
+    /// The `window` block is optional; both parts are returned by
+    /// `screenDocument`. The legacy `screen` accessor returns the tree only.
     public static func screen(from yaml: String) throws -> Node {
+        try screenDocument(from: yaml).root
+    }
+
+    /// A screen's window geometry and title, all optional — every missing
+    /// field means "the app's usual behaviour", so a screen that says
+    /// nothing about its window is unchanged from before this existed.
+    public struct ScreenWindow: Equatable, Sendable {
+        public let width: Double?
+        public let height: Double?
+        public let minWidth: Double?
+        public let minHeight: Double?
+        /// The window's title, overriding the app's default.
+        public let title: String?
+
+        public init(width: Double? = nil,
+                    height: Double? = nil,
+                    minWidth: Double? = nil,
+                    minHeight: Double? = nil,
+                    title: String? = nil) {
+            self.width = width
+            self.height = height
+            self.minWidth = minWidth
+            self.minHeight = minHeight
+            self.title = title
+        }
+    }
+
+    /// A whole screen document: its tree plus its window block.
+    public struct ScreenDocument: Equatable, Sendable {
+        public let root: Node
+        public let window: ScreenWindow
+
+        public init(root: Node, window: ScreenWindow = ScreenWindow()) {
+            self.root = root
+            self.window = window
+        }
+    }
+
+    public static func screenDocument(from yaml: String) throws -> ScreenDocument {
         guard let doc = try Yams.load(yaml: yaml) else {
             throw ConfigParseError("empty document")
         }
@@ -33,7 +77,9 @@ public enum ConfigParser {
         guard let rootNode = root["root"] else {
             throw ConfigParseError("missing 'root' node")
         }
-        return try node(from: rootNode)
+        let window = (root["window"] as? [String: Any]).map { window(from: $0) }
+            ?? ScreenWindow()
+        return ScreenDocument(root: try node(from: rootNode), window: window)
     }
 
     /// One theme document: `tokens:` and `styles:` mappings.
@@ -109,6 +155,26 @@ public enum ConfigParser {
             children: children,
             visible: visible ?? .always(true)
         )
+    }
+
+    /// One window block: numeric sizes and an optional title. Values that
+    /// are missing, non-numeric, or non-positive stay nil — no window
+    /// shrinks to nothing because of a typo.
+    private static func window(from mapping: [String: Any]) -> ScreenWindow {
+        func size(_ key: String) -> Double? {
+            guard case .number(let value) = prop(from: mapping[key] ?? 0) else { return nil }
+            return value > 0 ? value : nil
+        }
+        func title() -> String? {
+            guard case .string(let text) = prop(from: mapping["title"]) else { return nil }
+            return text.isEmpty ? nil : text
+        }
+        return ScreenWindow(
+            width: size("width"),
+            height: size("height"),
+            minWidth: size("minWidth"),
+            minHeight: size("minHeight"),
+            title: title())
     }
 
     private static func prop(from any: Any) -> Prop {

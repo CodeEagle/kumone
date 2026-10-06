@@ -295,7 +295,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
         guard let config = configStore else { return }
-        guard config.screens[name] != nil else {
+        guard let screen = config.screens[name] else {
             #if DEBUG
             print("[Kumone] no screen named: \(name)")
             #endif
@@ -303,7 +303,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         let resolver = AppBindingResolver(store: store, configStore: config)
         let window = ConfigPreviewWindow(
-            screen: name, configStore: config, resolver: resolver, dispatcher: actions)
+            screen: name, screenWindow: screen.window,
+            configStore: config, resolver: resolver, dispatcher: actions)
         screenWindows[name] = window
         window.makeKeyAndOrderFront(nil)
     }
