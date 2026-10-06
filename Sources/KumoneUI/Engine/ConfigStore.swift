@@ -13,6 +13,7 @@ import Darwin
 ///
 ///     ~/.config/kumone/screens/*.yaml
 ///     ~/.config/kumone/theme.yaml
+///     ~/.config/kumone/theme-<name>.yaml
 ///     ~/.config/kumone/keymap.yaml
 ///
 /// Every file watcher is a DispatchSource on the directory: editing a YAML
@@ -29,19 +30,34 @@ public final class ConfigStore: ObservableObject {
 
     @Published public private(set) var screens: [String: Screen] = [:]
     @Published public private(set) var keymap: Keymap = .empty
+    /// Every theme file found, by name (`theme-aurora.yaml` → `aurora`).
+    /// `theme.yaml` is the nameless default and maps to `default`.
+    @Published public private(set) var themes: [String: Stylesheet] = [:]
+    /// Which theme screens are rendered with. Persists through
+    /// `themeStorage` when one was given, so the choice survives launch.
+    @Published public private(set) var currentTheme: String = "default"
     @Published public private(set) var diagnostics: [String] = []
 
     private let bundled: URL?
     private let user: URL?
+    private let themeStorage: ThemeStorage?
     private var watchers: [DispatchSourceFileSystemObject] = []
     private var contentsWatchers: [DispatchSourceFileSystemObject] = []
 
     /// - Parameters:
     ///   - bundled: The app's default screens (Resource bundle dir).
     ///   - user: The user's override directory (`nil` to disable).
-    public init(bundled: URL?, user: URL?) {
+    ///   - themeStorage: Persisted current theme (`nil` = forget choices
+    ///     at quit; the app passes a UserDefaults-backed one).
+    public init(bundled: URL?,
+                user: URL?,
+                themeStorage: ThemeStorage? = nil) {
         self.bundled = bundled
         self.user = user
+        self.themeStorage = themeStorage
+        if let stored = themeStorage?.themeName(), !stored.isEmpty {
+            currentTheme = stored
+        }
         reload()
         startWatching()
     }
@@ -54,13 +70,21 @@ public final class ConfigStore: ObservableObject {
     /// Re-reads everything. Called on startup and on file changes; safe to
     /// call anytime since failures land in `diagnostics` instead of throwing.
     public func reload() {
-        var loaded: [String: Screen] = [:]
         var issues: [String] = []
 
-        var theme = Stylesheet()
+        var themes: [String: Stylesheet] = [:]
         for url in themeCandidates() {
-            if let parsed = loadTheme(url, issues: &issues) { theme = parsed }
+            if let parsed = loadTheme(url, issues: &issues) {
+                themes[themeName(of: url)] = parsed
+            }
         }
+        self.themes = themes
+        // A stored theme that no longer exists (the file was deleted, or a
+        // name typo) falls back to default rather than an empty sheet.
+        if !themes.keys.contains(currentTheme) { currentTheme = "default" }
+
+        var loaded: [String: Screen] = [:]
+        let stylesheet = themes[currentTheme] ?? themes["default"] ?? Stylesheet()
         for url in screenCandidates() {
             let name = url.deletingPathExtension().lastPathComponent
             guard let data = try? Data(contentsOf: url),
@@ -71,7 +95,7 @@ public final class ConfigStore: ObservableObject {
             do {
                 loaded[name] = Screen(name: name,
                                       root: try ConfigParser.screen(from: yaml),
-                                      stylesheet: theme)
+                                      stylesheet: stylesheet)
             } catch {
                 issues.append("\(url.lastPathComponent): \(error)")
             }
@@ -85,25 +109,59 @@ public final class ConfigStore: ObservableObject {
         diagnostics = issues
     }
 
+    /// Switches every screen to another theme by name. Unknown names
+    /// keep the current theme (a typo'd switch does nothing); the file
+    /// watcher re-renders on edit, so this is the same path as a reload.
+    public func setCurrentTheme(_ name: String) {
+        guard themes.keys.contains(name) else { return }
+        guard name != currentTheme else { return }
+        currentTheme = name
+        themeStorage?.setThemeName(name)
+        // Re-render the screens with the new sheet: same code the reload
+        // ran, without re-reading any file.
+        guard let stylesheet = themes[name] else { return }
+        screens = screens.mapValues { Screen(name: $0.name, root: $0.root, stylesheet: stylesheet) }
+    }
+
     // MARK: - Discovery
 
     private func themeCandidates() -> [URL] {
+        // theme.yaml (the nameless default) and theme-<name>.yaml side by
+        // side; user files replace bundled ones of the same name, since
+        // later entries overwrite earlier.
         var urls: [URL] = []
-        if let bundled { urls.append(bundled.appendingPathComponent("theme.yaml")) }
-        if let user { urls.append(user.appendingPathComponent("theme.yaml")) }
+        for base in [bundled, user].compactMap({ $0 }) {
+            guard let contents = try? FileManager.default.contentsOfDirectory(
+                at: base, includingPropertiesForKeys: nil) else { continue }
+            urls.append(contentsOf: contents.filter { isThemeFile($0) })
+        }
         return urls
     }
 
+    private func isThemeFile(_ url: URL) -> Bool {
+        guard url.pathExtension == "yaml" else { return false }
+        let stem = url.deletingPathExtension().lastPathComponent
+        return stem == "theme" || stem.hasPrefix("theme-")
+    }
+
+    /// The theme's name from its file: `theme.yaml` → `default`,
+    /// `theme-aurora.yaml` → `aurora`.
+    private func themeName(of url: URL) -> String {
+        let stem = url.deletingPathExtension().lastPathComponent
+        return stem == "theme" ? "default" : String(stem.dropFirst("theme-".count))
+    }
+
     private func screenCandidates() -> [URL] {
-        let nonScreens: Set<String> = ["theme.yaml", "keymap.yaml"]
         var urls: [URL] = []
         for base in [bundled, user].compactMap({ $0 }) {
             if let contents = try? FileManager.default.contentsOfDirectory(
                 at: base, includingPropertiesForKeys: nil) {
-                // The theme and keymap sit in the same directory but are not
-                // screens.
+                // Themes and the keymap sit in the same directory but are
+                // not screens.
                 urls.append(contentsOf: contents.filter {
-                    $0.pathExtension == "yaml" && !nonScreens.contains($0.lastPathComponent)
+                    $0.pathExtension == "yaml"
+                    && !isThemeFile($0)
+                    && $0.lastPathComponent != "keymap.yaml"
                 })
             }
         }
@@ -193,4 +251,14 @@ public final class ConfigStore: ObservableObject {
             reload()
         }
     }
+}
+
+/// Persists the user's chosen theme across launches. The engine stays free
+/// of storage specifics (UserDefaults is an app concern); tests inject an
+/// in-memory one, the app injects a real one.
+public protocol ThemeStorage {
+    /// The theme name to start from, or nil when none was chosen.
+    func themeName() -> String?
+    /// Records the new choice.
+    func setThemeName(_ name: String)
 }

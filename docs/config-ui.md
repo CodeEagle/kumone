@@ -48,7 +48,7 @@ below), `props` (written inline as YAML keys), `children`, and
 `visible` — a boolean or a binding (`visible: ${player.hasTrack}`);
 unknown bindings hide, which is the safe direction.
 
-### A theme
+### Themes
 
 ```yaml
 tokens:
@@ -62,6 +62,15 @@ styles:
 
 Class rules apply in the order the node lists them, the node's own props
 override them, and `token(name)` inside a string expands to a token.
+
+Themes are a *library*, not a single file: `theme.yaml` is the nameless
+default, `theme-<name>.yaml` is another one (`theme-aurora.yaml` → the
+theme `aurora`). Drop `theme-<name>.yaml` in your config directory and it
+appears in `app.themeNames` — no registration. Switching is live: the
+`app.setTheme` verb (argument: the theme name) re-renders every screen
+with the new sheet, and the choice persists across launches. A theme
+switcher in config is a ForEach over `app.themeNames` whose buttons pass
+`argument: ${item}` (the mini screen ships one).
 
 ### A keymap
 
@@ -146,6 +155,8 @@ Read-only, resolved per render:
 | `lyrics.lines` | list<string> | every lyric line, for a ForEach |
 | `app.nowPlayingOpen` | flag | immersive page presented |
 | `app.shaderName` | string | active shader id |
+| `app.themeName` | string | the theme every screen renders with |
+| `app.themeNames` | list<string> | every theme file found, sorted — for a switcher |
 
 ## Table 3 — Actions
 
@@ -163,6 +174,7 @@ What a `Button`/slider/keymap entry invokes:
 | `player.toggleLyricsPanel` | — | lyrics side panel |
 | `player.toggleQueuePanel` | — | queue side panel |
 | `app.presentScreen` | string | open a screen by name as a window |
+| `app.setTheme` | string | switch every screen to that theme |
 | `app.presentNowPlaying` / `app.dismissNowPlaying` | — | immersive page |
 
 Unknown verbs do nothing visibly (a DEBUG log names them); a typo never

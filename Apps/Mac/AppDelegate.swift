@@ -31,6 +31,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             guard case .string(let name) = argument else { return }
             self?.presentScreen(name)
         }
+        // The theme switch: one verb, one string argument — a ForEach over
+        // app.themeNames with `argument: ${item}` makes the buttons.
+        registry.register("app.setTheme") { [weak self] argument in
+            guard case .string(let name) = argument else { return }
+            self?.configStore?.setCurrentTheme(name)
+        }
         return registry
     }()
 
@@ -93,7 +99,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             .resourceURL?.appendingPathComponent("Resources").appendingPathComponent("screens")
         let user = FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent(".config/kumone/screens")
-        configStore = ConfigStore(bundled: bundled, user: user)
+        configStore = ConfigStore(
+            bundled: bundled, user: user, themeStorage: UserDefaultsThemeStorage())
     }
 
     private func applyAppearance(_ scheme: ColorScheme?) {
@@ -294,7 +301,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             #endif
             return
         }
-        let resolver = AppBindingResolver(store: store)
+        let resolver = AppBindingResolver(store: store, configStore: config)
         let window = ConfigPreviewWindow(
             screen: name, configStore: config, resolver: resolver, dispatcher: actions)
         screenWindows[name] = window
@@ -312,5 +319,20 @@ extension AppDelegate {
         mainWindowController = controller
         controller.showWindow(nil)
         NSApplication.shared.activate(ignoringOtherApps: true)
+    }
+}
+
+/// Theme choice on disk: UserDefaults, one string. The engine only knows
+/// the `ThemeStorage` protocol; the key is an app detail.
+private struct UserDefaultsThemeStorage: ThemeStorage {
+    private let key = "kumone.config.themeName"
+
+    func themeName() -> String? {
+        let name = UserDefaults.standard.string(forKey: key)
+        return name?.isEmpty == false ? name : nil
+    }
+
+    func setThemeName(_ name: String) {
+        UserDefaults.standard.set(name, forKey: key)
     }
 }

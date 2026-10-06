@@ -17,7 +17,7 @@ import KumoneUI
 /// view that bound it, exactly like an @State read.
 @MainActor
 final class AppBindingResolver: PathBindingResolver {
-    init(store: StoreOf<AppFeature>) {
+    init(store: StoreOf<AppFeature>, configStore: ConfigStore? = nil) {
         let player = { store.player }
         super.init([
             // Track identity
@@ -79,6 +79,13 @@ final class AppBindingResolver: PathBindingResolver {
             // Window-level state
             "app.nowPlayingOpen": { .flag(store.isNowPlayingPresented) },
             "app.shaderName": { .string(store.shaderID ?? "") },
+            // The theme surface: what every screen is rendered with, and
+            // the list a ForEach turns into switcher buttons (argument:
+            // ${item} + app.setTheme).
+            "app.themeName": { .string(configStore?.currentTheme ?? "default") },
+            "app.themeNames": {
+                .list((configStore?.themes.keys.sorted() ?? ["default"]).map { .string($0) })
+            },
         ])
     }
 }

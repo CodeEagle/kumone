@@ -48,6 +48,22 @@ root:
           fontSize: 11
           color: "#5C5C66"
 
+        # A theme switcher in four lines of config: the list of theme names
+        # is a binding, each becomes a button whose argument is the name,
+        # and the verb does the switch. Works for any list of strings.
+        - type: ForEach
+          items: ${app.themeNames}
+          spacing: 14
+          children:
+            - type: Button
+              action: app.setTheme
+              argument: ${item}
+              children:
+                - type: Text
+                  text: ${item}
+                  fontSize: 11
+                  color: "#5FD0E8"
+
         - type: Text
           text: Up next
           fontSize: 11

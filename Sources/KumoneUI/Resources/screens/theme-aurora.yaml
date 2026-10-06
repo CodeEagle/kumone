@@ -1,0 +1,17 @@
+# A second theme to prove themes are switchable, not just overridable:
+# app.setTheme with this file's name swaps every screen's sheet live.
+# A user's ~/.config/kumone/theme-<name>.yaml is exactly the same shape.
+
+tokens:
+  surface:    "#0D1B2A"
+  text:       "#E8F1F8"
+  textDim:    "#7FA8C4"
+  accent:     "#5FD0E8"
+  corner:     20
+  padding:    28
+
+styles:
+  chrome:
+    background: "#0D1B2A"
+    cornerRadius: token(corner)
+    padding: token(padding)
