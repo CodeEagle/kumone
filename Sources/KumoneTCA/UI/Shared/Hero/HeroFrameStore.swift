@@ -12,6 +12,12 @@ final class HeroFrameStore: ObservableObject {
 
     @Published private(set) var frames: [String: CGRect] = [:]
     @Published private(set) var scales: [String: CGFloat] = [:]
+    /// Ids whose frame store entry now belongs to the *target* end of a
+    /// flight. A trigger waiting for its source must not read one of these:
+    /// the target registers under the same id, and the waiting arm would
+    /// snap the source to the destination geometry — a flight that starts
+    //  where it lands, which is no flight at all.
+    @Published private(set) var targetOwned: Set<String> = []
 
     func set(_ id: String, frame: CGRect, scale: CGFloat) {
         frames[id] = frame
@@ -26,9 +32,22 @@ final class HeroFrameStore: ObservableObject {
         scales[id]
     }
 
+    /// Marks this id as target-owned, so a source that has not measured yet
+    /// knows the next frame to appear is the landing view's, not the card's.
+    func markTarget(_ id: String) {
+        targetOwned.insert(id)
+    }
+
+    /// Lifts the target-owned mark when the detail page leaves, so the next
+    /// card tap watches the store in a clean state again.
+    func clearTarget(_ id: String) {
+        targetOwned.remove(id)
+    }
+
     func clear(_ id: String) {
         frames.removeValue(forKey: id)
         scales.removeValue(forKey: id)
+        targetOwned.remove(id)
     }
 }
 

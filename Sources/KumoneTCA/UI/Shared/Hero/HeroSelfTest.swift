@@ -25,7 +25,6 @@ public enum HeroSelfTest {
     @MainActor
     public static func run(appStore: StoreOf<AppFeature>) async {
         guard isEnabled else { return }
-        KumoneLogger.hero.notice("HERO SELFTEST ENTER")
         let didPlay = await driveRoundTrip(appStore: appStore)
         let didCard = await driveCardRoundTrip(appStore: appStore)
         let didAlbum = await driveAlbumRoundTrip(appStore: appStore)
