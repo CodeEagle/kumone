@@ -39,9 +39,16 @@ final class HeroFrameStore: ObservableObject {
     }
 
     /// Lifts the target-owned mark when the detail page leaves, so the next
-    /// card tap watches the store in a clean state again.
+    /// card tap watches the store in a clean state again. The cached frame
+    /// goes with it: that frame was the detail header's, and a card whose
+    /// geometry never changed while the page was open does not re-measure
+    /// when the home page returns — the header's landing frame would sit in
+    /// the store until the next `arm` read it as a source and started the
+    /// flight where it ends: no flight at all.
     func clearTarget(_ id: String) {
         targetOwned.remove(id)
+        frames.removeValue(forKey: id)
+        scales.removeValue(forKey: id)
     }
 
     func clear(_ id: String) {

@@ -88,8 +88,11 @@ public struct HomeFeature {
         Reduce { state, action in
             switch action {
             case .onAppear:
+                let loadState = String(describing: state.loadState)
+                KumoneLogger.api.notice("HOME onAppear loadState=\(loadState, privacy: .public)")
                 guard state.loadState != .loaded else { return .none }
                 state.loadState = .loading
+                KumoneLogger.api.notice("HOME effect dispatched")
                 return loadEffect(state: state)
 
             case .reload:
@@ -144,6 +147,7 @@ public struct HomeFeature {
     private func loadEffect(state: State) -> Effect<Action> {
         .run { [provider] send in
             let loggedIn = state.isLoggedIn
+            KumoneLogger.api.notice("HOME load begin loggedIn=\(loggedIn, privacy: .public)")
 
             async let playlists = Self.fetchRecommendPlaylists(
                 loggedIn: loggedIn, provider: provider)
@@ -160,15 +164,23 @@ public struct HomeFeature {
                 newAlbums: await albums ?? [],
                 topArtists: Array((await artists ?? []).shuffled().prefix(6)),
                 dailyFirstCover: nil)
+            KumoneLogger.api.notice(
+                "HOME sections assembled playlists=\(sections.recommendPlaylists.count, privacy: .public) albums=\(sections.newAlbums.count, privacy: .public)"
+            )
 
             if loggedIn {
                 if let daily = try? await provider.dailyRecommendSongs() {
                     sections.dailyFirstCover = daily.first?.album.picUrl
                 }
+                KumoneLogger.api.notice("HOME daily done")
                 sections.radarPlaylists = await Self.fetchRadarPlaylists(provider: provider)
+                KumoneLogger.api.notice(
+                    "HOME radar done count=\(sections.radarPlaylists.count, privacy: .public)"
+                )
             }
 
             await send(.loaded(sections))
+            KumoneLogger.api.notice("HOME loaded sent")
         }
     }
 

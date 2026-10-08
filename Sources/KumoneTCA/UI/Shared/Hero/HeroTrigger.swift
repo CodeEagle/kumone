@@ -27,7 +27,13 @@ enum HeroTrigger {
     static func arm(_ heroID: String?) {
         guard let heroID else { return }
         HeroProbe.shared.begin(heroID)
-        if let frame = HeroFrameStore.shared.frame(for: heroID) {
+        // A target-owned entry is the landing view's frame under this id —
+        // reading it immediately would start the flight at its landing
+        // frame. The polling path knows to give up on it; the immediate read
+        // has to check too, or a tap while the detail page is settling in
+        // looks up its own destination as the source.
+        if !HeroFrameStore.shared.targetOwned.contains(heroID),
+           let frame = HeroFrameStore.shared.frame(for: heroID) {
             recordSource(heroID, frame: frame, waited: nil)
             return
         }
