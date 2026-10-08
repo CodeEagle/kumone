@@ -25,8 +25,10 @@ public enum HeroSelfTest {
     @MainActor
     public static func run(appStore: StoreOf<AppFeature>) async {
         guard isEnabled else { return }
+        KumoneLogger.hero.notice("HERO SELFTEST ENTER")
         let didPlay = await driveRoundTrip(appStore: appStore)
         let didCard = await driveCardRoundTrip(appStore: appStore)
+        let didAlbum = await driveAlbumRoundTrip(appStore: appStore)
 
         let judgedCounts = HeroID.nowPlayingPairs.map { pair in
             "\(pair.source):\(HeroProbe.shared.records.filter { $0.id == pair.source && $0.verdict != nil }.count)"
@@ -34,11 +36,15 @@ public enum HeroSelfTest {
         let cardJudged = HeroProbe.shared.records.filter {
             $0.id.hasPrefix("hero-playlist-") && $0.verdict != nil
         }.count
+        let albumJudged = HeroProbe.shared.records.filter {
+            $0.id.hasPrefix("hero-album-") && $0.verdict != nil
+        }.count
         HeroProbe.writeFile(
-            "HERO SELFTEST END pass=\((didPlay && didCard) ? 1 : 0) fail=\((didPlay && didCard) ? 0 : 1)"
+            "HERO SELFTEST END pass=\((didPlay && didCard && didAlbum) ? 1 : 0) fail=\((didPlay && didCard && didAlbum) ? 0 : 1)"
                 + " | \(verdictDescription())"
                 + " | judged \(judgedCounts)"
                 + " | card-judged:\(cardJudged)"
+                + " | album-judged:\(albumJudged)"
         )
         await flushAndTerminate()
     }
@@ -188,24 +194,36 @@ public enum HeroSelfTest {
         HeroProbe.shared.records.compactMap { $0.viewportFrame }.last
     }
 
-    /// Waits for the top of the navigation stack to be a loaded playlist detail,
-    /// which is when the header's hero target can measure its frame.
+    /// Waits for the top of the navigation stack to be a loaded details page
+    /// of the expected kind, which is when the header's hero target can
+    /// measure its frame.
     @MainActor
     private static func waitForDetailLoad(
-        appStore: StoreOf<AppFeature>, deadline: TimeInterval
+        appStore: StoreOf<AppFeature>, deadline: TimeInterval, expecting: Destination = .playlist
     ) async {
         let limit = Date().addingTimeInterval(deadline)
         while true {
             if appStore.path.count > 0 {
                 let last = appStore.path[appStore.path.count - 1]
-                if case let .playlist(detailState) = last, case .loaded = detailState.loadState {
-                    return
+                switch (last, expecting) {
+                case let (.playlist(detailState), .playlist):
+                    if case .loaded = detailState.loadState { return }
+                case let (.album(detailState), .album):
+                    if case .loaded = detailState.loadState { return }
+                default:
+                    break
                 }
             }
             if Task.isCancelled || Date() >= limit { return }
             try? await Task.sleep(nanoseconds: 100_000_000)
         }
     }
+
+    /// Which detail page a round trip is driving, so the wait above only
+    /// succeeds on the one it armed.
+    private enum Destination { case playlist, album }
+
+    // MARK: - Polling
 
     @MainActor
     private static func cardVerdictDescription(for id: String) -> String {
@@ -220,7 +238,71 @@ public enum HeroSelfTest {
         }
     }
 
-    // MARK: - Polling
+    // MARK: - Album (home card) round trip
+
+    /// One home-album-card → album-detail hero flight, the same shape of
+    /// verification the playlist card and the now-playing round trips apply:
+    /// wait for a visible card, arm its id from the anchor's cached geometry,
+    /// open the detail page, wait for the flight to be judged. The album card
+    /// is the transition the home page makes most often, so it gets its own
+    /// END line rather than living under the playlist's.
+    @discardableResult
+    @MainActor
+    public static func driveAlbumRoundTrip(appStore: StoreOf<AppFeature>) async -> Bool {
+        guard let albumID = await waitForVisibleAlbumID(appStore: appStore, deadline: 20) else {
+            HeroProbe.writeFile("HERO SELFTEST ALBUM END pass=1 skip=1 reason=no-new-album")
+            return true
+        }
+        let id = HeroID.album(albumID)
+
+        await waitForStableAnchors(for: [id], settleInterval: 1.0, deadline: 5.0)
+        guard HeroFrameStore.shared.frame(for: id) != nil else {
+            HeroProbe.writeFile("HERO SELFTEST ALBUM END pass=1 skip=1 reason=no-source-anchor id=\(id)")
+            return true
+        }
+
+        HeroTrigger.arm(id)
+        appStore.send(.openDestination(.album(albumID)))
+        HeroProbe.writeFile("HERO SELFTEST ALBUM ARMED id=\(id) album=\(albumID)")
+
+        await waitForDetailLoad(appStore: appStore, deadline: 20, expecting: .album)
+
+        let verdict = await waitForVerdict(for: id, timeout: 12)
+        let passed = verdict.map { !$0.isFailure } ?? false
+        HeroProbe.writeFile(
+            "HERO SELFTEST ALBUM END pass=\(passed ? 1 : 0) skip=0 id=\(id) \(cardVerdictDescription(for: id))"
+        )
+        return passed
+    }
+
+    /// The first new-album card fully inside the visible area — the same
+    /// viewport rule the playlist picker applies. A card cut off at the
+    /// bottom of the shelf fails the probe's off-screen source check, and
+    /// lazy stacks render it late anyway.
+    @MainActor
+    private static func waitForVisibleAlbumID(
+        appStore: StoreOf<AppFeature>, deadline: TimeInterval
+    ) async -> Int? {
+        let limit = Date().addingTimeInterval(deadline)
+        let margin = HeroProbe.viewportMargin
+        while true {
+            let albums = appStore.home.newAlbums
+            if let viewport = currentViewport() {
+                if let id = albums.first(where: { album in
+                    guard let frame = HeroFrameStore.shared.frame(for: HeroID.album(album.id))
+                    else { return false }
+                    return frame.origin.y >= viewport.minY - margin
+                        && frame.maxY <= viewport.maxY + margin
+                })?.id {
+                    return id
+                }
+            } else if let id = albums.first?.id {
+                return id
+            }
+            if Task.isCancelled || Date() >= limit { return nil }
+            try? await Task.sleep(nanoseconds: 200_000_000)
+        }
+    }
 
     /// Waits for the anchor set among `ids` to stop growing: once no new id
     /// has appeared for `settleInterval`, the set counts as stable and the
