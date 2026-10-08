@@ -1,99 +1,133 @@
-# A second screen, to prove a screen is just a file: `preview.yaml` opens
-# this one through the `app.presentScreen` verb, with the name riding as
-# the button's `argument`. Add your own screens the same way — anything
-# in the screens directory is one.
+# The mini player — same card, taller: it also carries the queue and the
+# theme switcher. Any YAML in the screens directory is a screen; this one
+# is what `app.presentScreen` opens from the preview's Lyrics button and
+# what a user copies as the starting point for their own.
 
-# A screen also declares the window it wants to open in: open it again
-# after editing this block and the window takes the new geometry.
 window:
   width: 400
   height: 620
-  minWidth: 320
+  minWidth: 340
   minHeight: 480
-  title: Mini
+  title: Kumone
 
 root:
   type: Container
   class: [chrome]
-  padding: 24
-  cornerRadius: 16
   children:
     - type: VStack
-      spacing: 16
-      alignment: center
+      spacing: 20
+      alignment: leading
       children:
-        - type: Text
-          text: A Second Screen
-          fontSize: 20
-          fontWeight: bold
-          color: "#5FD0E8"
-
-        - type: Text
-          text: ${player.title}
-          fontSize: 14
-          color: "#8A8A96"
-
         - type: HStack
           spacing: 14
           alignment: center
           children:
-            - type: Button
-              action: player.togglePlayPause
+            - type: Artwork
+              url: ${player.artworkURL}
+              size: 72
+              cornerRadius: 10
+            - type: VStack
+              spacing: 4
+              alignment: leading
               children:
                 - type: Text
-                  text: ❚❚
-                  fontSize: 15
-                  color: "#E8567A"
+                  class: [title]
+                  text: ${player.title}
+                - type: Text
+                  class: [meta]
+                  text: ${player.artist}
+
+        - type: HStack
+          spacing: 10
+          alignment: center
+          children:
+            - type: Text
+              class: [caption]
+              text: ${player.progressClock}
+            - type: ProgressSlider
+              class: [seek]
+              value: ${player.progress}
+              duration: ${player.duration}
+              action: player.seek
+            - type: Text
+              class: [caption]
+              text: ${player.durationClock}
+
+        - type: HStack
+          spacing: 34
+          alignment: center
+          children:
+            - type: Button
+              action: player.previous
+              children:
+                - type: Icon
+                  class: [transportSide]
+                  name: backward.fill
+                  size: 18
+            - type: Button
+              action: player.togglePlayPause
+              visible: ${player.isPlaying}
+              children:
+                - type: Icon
+                  class: [transportMain]
+                  name: pause.fill
+                  size: 22
+            - type: Button
+              action: player.togglePlayPause
+              visible: ${player.isPaused}
+              children:
+                - type: Icon
+                  class: [transportMain]
+                  name: play.fill
+                  size: 22
             - type: Button
               action: player.next
               children:
-                - type: Text
-                  text: ▶▶
-                  fontSize: 15
-                  color: "#F2F2F5"
+                - type: Icon
+                  class: [transportSide]
+                  name: forward.fill
+                  size: 18
 
         - type: Text
-          text: Edit this file; the window follows.
-          fontSize: 11
-          color: "#5C5C66"
-
-        # A theme switcher in four lines of config: the list of theme names
-        # is a binding, each becomes a button whose argument is the name,
-        # and the verb does the switch. Works for any list of strings.
-        - type: ForEach
-          items: ${app.themeNames}
-          spacing: 14
-          children:
-            - type: Button
-              action: app.setTheme
-              argument: ${item}
-              children:
-                - type: Text
-                  text: ${item}
-                  fontSize: 11
-                  color: "#5FD0E8"
-
-        - type: Text
+          class: [caption]
           text: Up next
-          fontSize: 11
-          fontWeight: semibold
-          color: "#8A8A96"
 
-        # A collection consumed, not declared: the list comes from a
-        # binding, and the child beneath is the stamp repeated per item —
-        # `item.` in the stamp sees that copy's element.
+        # A collection consumed, not declared: the queue comes from a
+        # binding, each row is the same stamp, and `item.` inside sees
+        # that copy's element.
         - type: ForEach
           items: ${player.upcomingTracks}
-          spacing: 10
+          spacing: 12
           children:
             - type: HStack
-              spacing: 10
+              spacing: 12
+              alignment: center
               children:
                 - type: Artwork
                   url: ${item.artworkURL}
-                  size: 32
-                  cornerRadius: 6
+                  size: 36
+                  cornerRadius: 7
                 - type: Text
+                  class: [rowTitle]
                   text: ${item.title}
-                  fontSize: 13
-                  color: "#F2F2F5"
+
+        # Theme switcher: two plain words, either one re-skins every
+        # screen live through the app.setTheme verb.
+        - type: HStack
+          spacing: 18
+          alignment: leading
+          children:
+            - type: Button
+              action: app.setTheme
+              argument: default
+              children:
+                - type: Text
+                  class: [caption]
+                  text: Vinyl night
+            - type: Button
+              action: app.setTheme
+              argument: aurora
+              children:
+                - type: Text
+                  class: [caption]
+                  text: Deep water

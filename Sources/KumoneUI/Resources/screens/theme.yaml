@@ -1,18 +1,40 @@
-# Theme tokens and class rules. Sizes, colours and shapes live here so a
-# screen file never repeats a literal twice — one token changes, the whole
-# interface follows. Class rules are merged per node, with the node's own
-# props winning over them (CSS cascade order).
+# "Vinyl night" — the default theme. The brief: a night-listening player,
+# so the palette is a slate-blue black (a coloured darkness, not dead
+# #000), text in two clearly-separated steps, and one low-saturation
+# amber accent reserved for the living thing on screen (the play glyph,
+# the seek fill, the active lyric). Everything else stays quiet so the
+# cover art carries the page.
+#
+# Class rules below are the components' shared wardrobe: a screen writes
+# `class: [title]` and gets the token-driven size and colour, its own
+# props still win where it needs a one-off.
 
 tokens:
-  surface:    "#1C1C22"
-  text:       "#F2F2F5"
-  textDim:    "#8A8A96"
-  accent:     "#E8567A"
-  corner:     16
-  padding:    24
+  canvas:    "#12151C"
+  surface:   "#1B2029"
+  text:      "#EDEFF2"
+  textSub:   "#8B93A1"
+  accent:    "#D8A657"
+  hairline:  "#2A303B"
 
 styles:
   chrome:
-    background: "#1C1C22"
-    cornerRadius: token(corner)
-    padding: token(padding)
+    background: token(canvas)
+    cornerRadius: 14
+    padding: 22
+
+  # Type scale: three steps only (20 / 13 / 11), lyrics at reading size.
+  title:        { color: token(text),    fontSize: 20, fontWeight: semibold }
+  meta:         { color: token(textSub), fontSize: 13 }
+  caption:      { color: token(textSub), fontSize: 11 }
+  rowTitle:     { color: token(text),    fontSize: 13 }
+  rowMeta:      { color: token(textSub), fontSize: 11 }
+  lyricActive:  { color: token(text),    fontSize: 15 }
+  lyricInactive: { color: "#6E7684",      fontSize: 15 }
+
+  # Single accent, reserved: the playing glyph, the seek fill, the live
+  # lyric, and navigation. Nothing else is loud.
+  seek:         { color: token(accent) }
+  transportMain: { color: token(accent) }
+  transportSide: { color: token(textSub) }
+  nav:          { color: token(accent), fontSize: 11 }

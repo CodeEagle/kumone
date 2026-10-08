@@ -1,17 +1,22 @@
-# A dedicated lyrics screen: the first composite component in action.
-# LyricView is a view composed in Swift rather than config composed of
-# children — the registry makes no distinction. Copy this file, edit it,
-# the window follows.
+# The lyrics screen: one sleeve row, the whole lyric sheet, and the
+# transport at the foot. The LyricView holds the current line centred —
+# the one place centred text earns itself, because a lyric sheet reads
+# that way.
+
+window:
+  width: 400
+  height: 620
+  minWidth: 340
+  minHeight: 480
+  title: Lyrics
 
 root:
   type: Container
   class: [chrome]
-  padding: 28
-  cornerRadius: 18
   children:
     - type: VStack
       spacing: 20
-      alignment: center
+      alignment: leading
       children:
         - type: HStack
           spacing: 12
@@ -22,55 +27,74 @@ root:
               size: 44
               cornerRadius: 8
             - type: VStack
-              spacing: 2
+              spacing: 3
               alignment: leading
               children:
                 - type: Text
+                  class: [title]
                   text: ${player.title}
-                  fontSize: 15
-                  fontWeight: semibold
-                  color: "#F2F2F5"
                 - type: Text
+                  class: [meta]
                   text: ${player.artist}
-                  fontSize: 12
-                  color: "#8A8A96"
 
-        - type: ProgressSlider
-          value: ${player.progress}
-          duration: ${player.duration}
-          action: player.seek
-          color: "#E8567A"
+        - type: HStack
+          spacing: 10
+          alignment: center
+          children:
+            - type: Text
+              class: [caption]
+              text: ${player.progressClock}
+            - type: ProgressSlider
+              class: [seek]
+              value: ${player.progress}
+              duration: ${player.duration}
+              action: player.seek
+            - type: Text
+              class: [caption]
+              text: ${player.durationClock}
 
+        # The sheet: every line, the current one held centred and lit,
+        # others two steps dimmer. `currentIndex` is the app's truth;
+        # the component only draws the consequence.
         - type: LyricView
           lines: ${lyrics.lines}
           currentIndex: ${lyrics.currentIndex}
-          fontSize: 16
-          activeColor: "#F2F2F5"
-          inactiveColor: "#5C5C66"
+          activeColor: "#EDEFF2"
+          inactiveColor: "#6E7684"
           alignment: center
+          fontSize: 15
 
         - type: HStack
-          spacing: 14
+          spacing: 34
           alignment: center
           children:
             - type: Button
               action: player.previous
               children:
-                - type: Text
-                  text: ◀
-                  fontSize: 15
-                  color: "#F2F2F5"
+                - type: Icon
+                  class: [transportSide]
+                  name: backward.fill
+                  size: 18
             - type: Button
               action: player.togglePlayPause
+              visible: ${player.isPlaying}
               children:
-                - type: Text
-                  text: ❚❚
-                  fontSize: 15
-                  color: "#E8567A"
+                - type: Icon
+                  class: [transportMain]
+                  name: pause.fill
+                  size: 22
+            - type: Button
+              action: player.togglePlayPause
+              visible: ${player.isPaused}
+              children:
+                - type: Icon
+                  class: [transportMain]
+                  name: play.fill
+                  size: 22
             - type: Button
               action: player.next
               children:
-                - type: Text
-                  text: ▶▶
-                  fontSize: 15
-                  color: "#F2F2F5"
+                - type: Icon
+                  class: [transportSide]
+                  name: forward.fill
+                  size: 18

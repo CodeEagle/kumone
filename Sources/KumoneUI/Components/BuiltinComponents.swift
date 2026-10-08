@@ -15,6 +15,7 @@ public enum BuiltinComponents {
         ComponentRegistry.register("ZStack", builder: layouts.zstack)
         ComponentRegistry.register("Spacer", builder: layouts.spacer)
         ComponentRegistry.register("Text", builder: leaf.text)
+        ComponentRegistry.register("Icon", builder: leaf.icon)
         ComponentRegistry.register("Container", builder: leaf.container)
         ComponentRegistry.register("SpectrumBars", builder: data.spectrumBars)
         ComponentRegistry.register("Button", builder: leaf.button)
@@ -111,6 +112,17 @@ private func stringOf(_ prop: Prop) -> String? {
 }
 
 private enum leaf {
+    static let icon: ComponentBuilder = { node, context in
+        // SF Symbols by name — the one pictorial primitive. A config that
+        // wants a play button writes `play.fill`, not a Unicode glyph that
+        // stands in for one.
+        let name = context.style["name"]?.stringValue ?? "music.note"
+        let size = context.style["size"]?.numberValue ?? 16
+        let weight = context.style["fontWeight"]?.stringValue ?? "regular"
+        let colour = context.style["color"].flatMap { $0.stringValue }.flatMap(StyleColor.parse)
+        return AnyView(IconView(name: name, fontSize: size, weight: weightOf(weight), tint: colour))
+    }
+
     static let text: ComponentBuilder = { node, context in
         // ${...} bindings resolve here (inside the view's observation frame)
         // so a bound title/artist changes the text without re-rendering the
@@ -301,6 +313,22 @@ struct ActionButton: View {
             #endif
             return
         }
+    }
+}
+
+/// A pictogram: one SF Symbol by name, sized and coloured like text.
+/// Configs reach for it instead of pasting a Unicode glyph that only
+/// pretends to be an icon.
+struct IconView: View {
+    let name: String
+    let fontSize: Double
+    let weight: Font.Weight
+    let tint: Color?
+
+    var body: some View {
+        Image(systemName: name)
+            .font(.system(size: fontSize, weight: weight))
+            .foregroundStyle(tint ?? .primary)
     }
 }
 

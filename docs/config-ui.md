@@ -128,6 +128,7 @@ against the app's state, so one row can mix `${item.title}` and
 | `ZStack` | — | children layer back to front |
 | `Spacer` | `minLength` | expands |
 | `Text` | `text`, `fontSize`, `fontWeight`, `color` | weight: `bold`/`semibold`/`light`/`thin`; color `#RRGGBB` |
+| `Icon` | `name`, `size`, `fontWeight`, `color` | an SF Symbol by name — a play button writes `play.fill`, never a Unicode glyph standing in for one |
 | `Container` | `cornerRadius`, `padding`, `background` | the panel primitive; children stack vertically |
 | `Button` | `action`, `argument` | children become the label; `argument` is a literal or binding the verb receives |
 | `ProgressSlider` | `value`, `duration`, `action`, `color` | drag-held locally, commits the position as the action's argument on release |

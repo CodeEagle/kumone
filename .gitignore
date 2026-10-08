@@ -16,3 +16,4 @@ ios/Config/Generated/
 # agent working artifacts
 .git-agent/
 .plan/
+.shots-tw/

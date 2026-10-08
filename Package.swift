@@ -7,6 +7,7 @@ let package = Package(
     platforms: [.macOS("15.0"), .iOS("17.0"), .tvOS("17.0"), .visionOS("1.0")],
     products: [
         .executable(name: "Kumone", targets: ["KumoneMac"]),
+        .executable(name: "ConfigShots", targets: ["ConfigShots"]),
         .library(name: "KumoneCore", targets: ["KumoneCore"]),
         .library(name: "KumoneShaders", targets: ["KumoneShaders"]),
         .library(name: "KumoneTCA", targets: ["KumoneTCA"]),
@@ -92,6 +93,11 @@ let package = Package(
             swiftSettings: [
                 .swiftLanguageMode(.v5),
             ]
+        ),
+        .executableTarget(
+            name: "ConfigShots",
+            dependencies: ["KumoneUI"],
+            path: "ConfigShots"
         ),
         .executableTarget(
             name: "KumoneMac",

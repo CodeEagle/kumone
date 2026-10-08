@@ -12,6 +12,7 @@ final class LyricViewTests: XCTestCase {
     func testRegisteredAsComponent() {
         BuiltinComponents.register()
         XCTAssertNotNil(ComponentRegistry.resolve("LyricView"))
+        XCTAssertNotNil(ComponentRegistry.resolve("Icon"))
     }
 
     func testBuildsWithLinesAndCursor() {
@@ -48,6 +49,25 @@ final class LyricViewTests: XCTestCase {
         let context = ComponentContext(
             style: [:], children: [], resolver: nil) { _ in AnyView(EmptyView()) }
         XCTAssertNotNil(builder(node, context))
+    }
+
+    func testIconBuildsWithAndWithoutName() {
+        // A nameless icon falls back to music.note; missing size and colour
+        // fall back to 16 and primary — the never-crash rule again.
+        BuiltinComponents.register()
+        guard let builder = ComponentRegistry.resolve("Icon") else {
+            return XCTFail("Icon not registered")
+        }
+        let cases: [[String: Prop]] = [
+            ["name": .string("play.fill"), "size": .number(22)],
+            [:],
+        ]
+        for props in cases {
+            let node = Node(type: "Icon", props: props)
+            let context = ComponentContext(
+                style: props, children: [], resolver: nil) { _ in AnyView(EmptyView()) }
+            XCTAssertNotNil(builder(node, context))
+        }
     }
 
     func testCursorOutOfRangeBuilds() {
