@@ -1215,7 +1215,8 @@ struct NowPlayingView: View {
                 let liked = account.isLiked(track.id)
                 circleButton(
                     icon: liked ? "heart.fill" : "heart",
-                    size: 15, tint: liked ? Theme.accent : nil
+                    size: 15, tint: liked ? Theme.accent : nil,
+                    heroID: HeroID.nowPlayingLike
                 ) {
                     appStore?.send(.account(.toggleLike(track.id)))
                 }
@@ -1230,13 +1231,12 @@ struct NowPlayingView: View {
                     isPresented: appStore?.isNowPlayingPresented == true,
                     hasStarted: $hasStartedLikeFlight
                 )
-                .opacity(heroFlight.active[HeroID.nowPlayingLike] != nil ? 0 : 1)
                 #endif
                 .frame(maxWidth: .infinity)
             }
 
             if player.isFMMode {
-                circleButton(icon: "trash", size: 14) {
+                circleButton(icon: "trash", size: 14, heroID: HeroID.nowPlayingFMTrash) {
                     appStore?.send(.player(.fmTrash))
                 }
                 #if os(macOS)
@@ -1250,13 +1250,13 @@ struct NowPlayingView: View {
                     isPresented: appStore?.isNowPlayingPresented == true,
                     hasStarted: $hasStartedFMTrashFlight
                 )
-                .opacity(heroFlight.active[HeroID.nowPlayingFMTrash] != nil ? 0 : 1)
                 #endif
                 .frame(maxWidth: .infinity)
             } else {
                 circleButton(
                     icon: "shuffle", size: 14,
-                    tint: player.shuffleEnabled ? Theme.accent : nil
+                    tint: player.shuffleEnabled ? Theme.accent : nil,
+                    heroID: HeroID.nowPlayingShuffle
                 ) {
                     appStore?.send(.player(.toggleShuffle))
                 }
@@ -1271,10 +1271,9 @@ struct NowPlayingView: View {
                     isPresented: appStore?.isNowPlayingPresented == true,
                     hasStarted: $hasStartedShuffleFlight
                 )
-                .opacity(heroFlight.active[HeroID.nowPlayingShuffle] != nil ? 0 : 1)
                 #endif
                 .frame(maxWidth: .infinity)
-                circleButton(icon: "backward.fill", size: 16) {
+                circleButton(icon: "backward.fill", size: 16, heroID: HeroID.nowPlayingPrevious) {
                     appStore?.send(.player(.previous))
                 }
                 #if os(macOS)
@@ -1288,7 +1287,6 @@ struct NowPlayingView: View {
                     isPresented: appStore?.isNowPlayingPresented == true,
                     hasStarted: $hasStartedPreviousFlight
                 )
-                .opacity(heroFlight.active[HeroID.nowPlayingPrevious] != nil ? 0 : 1)
                 #endif
                 .frame(maxWidth: .infinity)
             }
@@ -1296,7 +1294,7 @@ struct NowPlayingView: View {
             playPauseButton
                 .frame(maxWidth: .infinity)
 
-            circleButton(icon: "forward.fill", size: 16) {
+            circleButton(icon: "forward.fill", size: 16, heroID: HeroID.nowPlayingNext) {
                 appStore?.send(.player(.next))
             }
             #if os(macOS)
@@ -1310,7 +1308,6 @@ struct NowPlayingView: View {
                 isPresented: appStore?.isNowPlayingPresented == true,
                 hasStarted: $hasStartedNextFlight
             )
-            .opacity(heroFlight.active[HeroID.nowPlayingNext] != nil ? 0 : 1)
             #endif
             .frame(maxWidth: .infinity)
 
@@ -1331,7 +1328,8 @@ struct NowPlayingView: View {
                 circleButton(
                     icon: player.repeatMode == .one ? "repeat.1" : "repeat",
                     size: 14,
-                    tint: player.repeatMode != .off ? Theme.accent : nil
+                    tint: player.repeatMode != .off ? Theme.accent : nil,
+                    heroID: HeroID.nowPlayingRepeat
                 ) {
                     appStore?.send(.player(.cycleRepeatMode))
                 }
@@ -1346,7 +1344,6 @@ struct NowPlayingView: View {
                     isPresented: appStore?.isNowPlayingPresented == true,
                     hasStarted: $hasStartedRepeatFlight
                 )
-                .opacity(heroFlight.active[HeroID.nowPlayingRepeat] != nil ? 0 : 1)
                 #endif
                 .frame(maxWidth: .infinity)
             }
@@ -1370,6 +1367,8 @@ struct NowPlayingView: View {
         }
         .buttonStyle(.pressable)
         #if os(macOS)
+        .opacity(heroFlight.active[HeroID.nowPlayingPlayPause] != nil ? 0 : 1)
+        .animation(nil, value: heroFlight.active[HeroID.nowPlayingPlayPause] != nil)
         .heroAnchor(HeroID.nowPlayingPlayPauseTarget)
         .nowPlayingHeroTarget(
             id: HeroID.nowPlayingPlayPause,
@@ -1379,12 +1378,12 @@ struct NowPlayingView: View {
             isPresented: appStore?.isNowPlayingPresented == true,
             hasStarted: $hasStartedPlayPauseFlight
         )
-        .opacity(heroFlight.active[HeroID.nowPlayingPlayPause] != nil ? 0 : 1)
         #endif
     }
 
     private func circleButton(icon: String, size: CGFloat,
-                              tint: Color? = nil, action: @escaping () -> Void) -> some View {
+                              tint: Color? = nil, heroID: String? = nil,
+                              action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: icon)
                 .font(.system(size: size, weight: .medium))
@@ -1393,6 +1392,10 @@ struct NowPlayingView: View {
                 .background(.white.opacity(0.1), in: Circle())
         }
         .buttonStyle(.pressable)
+        #if os(macOS)
+        .opacity(heroID.map { heroFlight.active[$0] == nil ? 1 : 0 } ?? 1)
+        .animation(nil, value: heroID.map { heroFlight.active[$0] != nil } ?? false)
+        #endif
     }
 
     // MARK: - Lyrics column

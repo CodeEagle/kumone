@@ -135,8 +135,12 @@ private struct NowPlayingHeroTargetModifier: ViewModifier {
                   HeroProbe.shared.sourceFrame(for: id) != nil else { return }
             HeroProbe.shared.recordTarget(id: id, frame: frame, scale: scale, cornerRadius: payload.cornerRadius)
             HeroFlightDirector.shared.start(
-                id: id, content: payload, targetFrame: frame, targetScale: scale,
-                liveAnchorID: anchorID
+                id: id, content: payload, targetFrame: frame, targetScale: scale
+                // The now-playing page is already laid out when its controls
+                // report this frame. Following the anchor during the flight
+                // makes any titlebar/toolbar re-measure retarget the stand-in
+                // and produces a visible one-frame snap. Lock this landing
+                // frame; card-detail targets still use the live anchor path.
             )
             hasStarted = true
         }

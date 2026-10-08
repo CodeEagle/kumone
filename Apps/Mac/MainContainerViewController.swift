@@ -11,6 +11,9 @@ final class MainContainerViewController: NSViewController {
     private let store: StoreOf<AppFeature>
     private var nowPlayingSubscription: AnyCancellable?
     private var toolbarObservation: NSKeyValueObservation?
+    private var toolbarToRestore: NSToolbar?
+    private var titlebarAccessoriesToRestore: [NSTitlebarAccessoryViewController] = []
+    private let toolbarAnimationDuration: TimeInterval = 0.22
 
     init(store: StoreOf<AppFeature>) {
         self.store = store
@@ -53,12 +56,78 @@ final class MainContainerViewController: NSViewController {
             logToolbar("no-window")
             return
         }
-        let toolbar = window.toolbar
         let isVisible = !store.isNowPlayingPresented
-        logToolbar("hasToolbar=\(toolbar != nil) presented=\(store.isNowPlayingPresented) target=\(isVisible) current=\(toolbar?.isVisible ?? false)")
-        guard let toolbar, toolbar.isVisible != isVisible else { return }
-        toolbar.isVisible = isVisible
-        logToolbar("set isVisible -> \(isVisible)")
+        if isVisible {
+            restoreTitlebarAccessories(on: window)
+            if window.toolbar == nil, let toolbarToRestore {
+                window.toolbar = toolbarToRestore
+                self.toolbarToRestore = nil
+                animateToolbarItems(toolbarToRestore, visible: true)
+            }
+            guard let toolbar = window.toolbar else {
+                logToolbar("hasToolbar=false presented=false target=true")
+                return
+            }
+            toolbarToRestore = nil
+            logToolbar("hasToolbar=true presented=false target=true current=\(toolbar.isVisible)")
+            if !toolbar.isVisible { toolbar.isVisible = true }
+            return
+        }
+
+        hideTitlebarAccessories(on: window)
+        if let toolbar = window.toolbar {
+            toolbarToRestore = toolbar
+            logToolbar("hasToolbar=true presented=true target=false current=\(toolbar.isVisible)")
+            // Keep the toolbar installed while Hero measures and animates.
+            // Removing it changes the content rect/titlebar height and moves
+            // every now-playing target during the flight, which reads as a
+            // visible jitter. Its item views are enough to hide the chrome.
+            animateToolbarItems(toolbar, visible: false)
+        } else {
+            logToolbar("hasToolbar=false presented=true target=false")
+        }
+    }
+
+    private func animateToolbarItems(
+        _ toolbar: NSToolbar,
+        visible: Bool,
+        completion: (() -> Void)? = nil
+    ) {
+        let itemViews = toolbar.items.compactMap(\NSToolbarItem.view)
+        if visible {
+            toolbar.isVisible = true
+            itemViews.forEach { $0.alphaValue = 0 }
+        }
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = toolbarAnimationDuration
+            context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            itemViews.forEach { $0.animator().alphaValue = visible ? 1 : 0 }
+        } completionHandler: {
+            completion?()
+        }
+    }
+
+    private func hideTitlebarAccessories(on window: NSWindow) {
+        guard titlebarAccessoriesToRestore.isEmpty,
+              !window.titlebarAccessoryViewControllers.isEmpty else { return }
+        titlebarAccessoriesToRestore = window.titlebarAccessoryViewControllers
+        let views = titlebarAccessoriesToRestore.map(\NSTitlebarAccessoryViewController.view)
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = toolbarAnimationDuration
+            context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            views.forEach { $0.animator().alphaValue = 0 }
+        }
+    }
+
+    private func restoreTitlebarAccessories(on window: NSWindow) {
+        guard !titlebarAccessoriesToRestore.isEmpty else { return }
+        let accessories = titlebarAccessoriesToRestore
+        titlebarAccessoriesToRestore = []
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = toolbarAnimationDuration
+            context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            accessories.forEach { $0.view.animator().alphaValue = 1 }
+        }
     }
 
     private func logToolbar(_ message: String) {
@@ -106,6 +175,9 @@ final class MainContainerViewController: NSViewController {
         hosting.sceneBridgingOptions = [.title, .toolbars]
         addChild(hosting)
         hosting.view.translatesAutoresizingMaskIntoConstraints = false
+        hosting.view.wantsLayer = true
+        hosting.view.layer?.isOpaque = false
+        hosting.view.layer?.backgroundColor = NSColor.clear.cgColor
         root.addSubview(hosting.view)
         NSLayoutConstraint.activate([
             hosting.view.leadingAnchor.constraint(equalTo: root.leadingAnchor),

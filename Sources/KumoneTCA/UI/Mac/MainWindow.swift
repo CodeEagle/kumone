@@ -2,6 +2,10 @@ import ComposableArchitecture
 import KumoneCore
 import SwiftUI
 
+#if os(macOS)
+import AppKit
+#endif
+
 public struct MainWindow: View {
     public init(store: StoreOf<AppFeature>) {
         self.store = store
@@ -30,6 +34,13 @@ public struct MainWindow: View {
                     detailWidth = width
                 }
         }
+        #if os(macOS)
+        // NavigationSplitView installs private Liquid Glass views inside the
+        // hosting hierarchy. The shader lives below that hierarchy at the
+        // AppKit window level, so leave the SwiftUI surfaces transparent and
+        // keep the AppKit backdrop underneath as the fallback background.
+        .background(WindowGlassDisabler())
+        #endif
         .navigationSplitViewStyle(.balanced)
         // Blurred top fade: content softens out before it reaches the window
         // titlebar instead of colliding with the Liquid Glass toolbar. Fades
@@ -44,28 +55,39 @@ public struct MainWindow: View {
         .opacity(store.isNowPlayingPresented ? 0 : 1)
         .animation(AppAnimation.quick, value: store.isNowPlayingPresented)
         .toolbar {
+            // Keep the item structurally present while the immersive page is
+            // shown. Removing it changes the titlebar/content geometry during
+            // the Hero flight and makes the target frame jump. The AppKit
+            // container fades the bridged item out without removing its slot.
             if #available(macOS 26.0, iOS 26.0, *) {
                 ToolbarItem(placement: .primaryAction) {
                     SearchFieldView { query in
                         store.send(.openDestination(.search(query)))
                     }
+                    .opacity(store.isNowPlayingPresented ? 0 : 1)
+                    .allowsHitTesting(!store.isNowPlayingPresented)
+                    .transaction { transaction in
+                        transaction.animation = nil
+                    }
                 }
-                // Hide the Liquid Glass shared toolbar background behind the
-                // custom capsule search field, else it double-backgrounds on
-                // macOS 26 (dropped by #86's toolbar rewrite, restored here).
+                // Hide the Liquid Glass shared toolbar background behind
+                // the custom capsule search field, else it double-
+                // backgrounds on macOS 26.
                 .sharedBackgroundVisibility(.hidden)
             } else {
                 ToolbarItem(placement: .primaryAction) {
                     SearchFieldView { query in
                         store.send(.openDestination(.search(query)))
                     }
+                    .opacity(store.isNowPlayingPresented ? 0 : 1)
+                    .allowsHitTesting(!store.isNowPlayingPresented)
+                    .transaction { transaction in
+                        transaction.animation = nil
+                    }
                 }
             }
         }
         #if os(macOS)
-        // Immersive now-playing page: hide the whole window toolbar
-        // (sidebar toggle, navigation title, search field).
-        .toolbar(store.isNowPlayingPresented ? .hidden : .automatic, for: .windowToolbar)
         // Keep the single main window alive on Cmd+W / red button so the Dock
         // icon can always bring it back (#60/#63/#66/#70).
         .background(
@@ -124,16 +146,14 @@ public struct MainWindow: View {
                 )
                     .environment(\.appStore, store)
                     .environmentObject(artworkStore)
-                    // Resolve the slide at the page boundary, including artwork
+                    // Resolve the page at the boundary, including artwork
                     // inserted asynchronously while the transition is running.
                     .geometryGroup()
-                    // The hero flight owns the spatial animation (the artwork
-                    // flying from the PlayerBar to the header); a slide-in
-                    // here would race it and the hero gate would lock onto the
-                    // off-screen slide start as the target. A scale is safe
-                    // instead: the hero targets keep measuring live and the
-                    // flight's retargeting follows them to their settled size.
-                    .transition(.opacity.combined(with: .scale(scale: 0.96)))
+                    // The Hero flight owns the spatial animation. A scale
+                    // transition here changes every target's global frame
+                    // after the flight has settled, causing a visible second
+                    // snap. Keep the page transition non-geometric.
+                    .transition(.opacity)
                 #else
                 NowPlayingView(
                     onOpenDestination: openDestination
@@ -362,6 +382,75 @@ public struct MainWindow: View {
     }
     #endif
 }
+
+#if os(macOS)
+/// Removes system background surfaces from the SwiftUI host without touching
+/// the AppKit backdrop or the Metal shader behind it.
+private struct WindowGlassDisabler: NSViewRepresentable {
+    private final class ProbeView: NSView {
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            scheduleApply()
+        }
+
+        override func layout() {
+            super.layout()
+            scheduleApply()
+        }
+
+        private func scheduleApply() {
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                WindowGlassDisabler.apply(from: self)
+            }
+        }
+    }
+
+    func makeNSView(context: Context) -> NSView {
+        ProbeView(frame: .zero)
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {
+        DispatchQueue.main.async { Self.apply(from: nsView) }
+    }
+
+    private static func apply(from view: NSView) {
+        guard let host = hostingView(above: view) else { return }
+        clearSurfaces(in: host)
+    }
+
+    private static func hostingView(above view: NSView) -> NSView? {
+        var current: NSView? = view
+        while let candidate = current {
+            if NSStringFromClass(type(of: candidate)).contains("NSHostingView") {
+                return candidate
+            }
+            current = candidate.superview
+        }
+        return view.window?.contentView?.subviews.first(where: {
+            NSStringFromClass(type(of: $0)).contains("NSHostingView")
+        })
+    }
+
+    private static func clearSurfaces(in view: NSView) {
+        if let effect = view as? NSVisualEffectView {
+            effect.material = .underWindowBackground
+            effect.blendingMode = .behindWindow
+            effect.state = .active
+        }
+        if let scroll = view as? NSScrollView {
+            scroll.drawsBackground = false
+            scroll.backgroundColor = .clear
+            scroll.contentView.drawsBackground = false
+            scroll.contentView.backgroundColor = .clear
+        }
+        view.layer?.backgroundColor = NSColor.clear.cgColor
+        for child in view.subviews {
+            clearSurfaces(in: child)
+        }
+    }
+}
+#endif
 
 #if os(macOS)
 // MARK: - Main window configurator
