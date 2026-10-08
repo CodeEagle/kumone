@@ -52,6 +52,7 @@ fileprivate final class PlaybackEngine: @unchecked Sendable {
 
     init() {
         let configuration = APlay.Configuration(
+            maxDiskCacheSize: UInt32(AudioCacheMaintenance.limitBytes),
             // Network streams carry no ID3 tags — the reducer pushes track
             // metadata via `metadataUpdate`.
             autoFillID3InfoToNowPlayingCenter: false,
@@ -62,6 +63,7 @@ fileprivate final class PlaybackEngine: @unchecked Sendable {
             enableRemoteCommandHandling: false
         )
         player = APlay(configuration: configuration)
+        AudioCacheMaintenance.trimIfNeeded()
         // The reducer owns the queue: it loads one URL at a time and decides what
         // follows. APlay's own list advance must stay out of it — with the
         // default `.order` pattern a single-item list wraps back to the same
@@ -97,6 +99,14 @@ fileprivate final class PlaybackEngine: @unchecked Sendable {
                 // raw progress is forwarded; the reducer decides whether that
                 // counts as "loading" (it does only before playback starts).
                 self.bufferingChangedContinuation.yield(Double(progress))
+            case .streamerEndEncountered:
+                // The streamer read to EOF: every byte of this track is
+                // loaded. The last `hasBytesAvailable` before it often
+                // reported 0.9-something, and without this fix the preload
+                // bar sits short of full on a track that is, in fact,
+                // completely buffered.
+                KumoneLogger.player.info("BUFFER end-of-stream -> 1.0")
+                self.bufferingChangedContinuation.yield(1.0)
             case let .state(state):
                 self.isPlaying = state.isPlaying
                 self.isPlayingChangedContinuation.yield(state.isPlaying)
@@ -126,6 +136,7 @@ fileprivate final class PlaybackEngine: @unchecked Sendable {
     // MARK: - Commands
 
     func load(url: URL, autostart: Bool, metadata: APlay.NowPlayingMetadata? = nil) {
+        AudioCacheMaintenance.trimIfNeeded()
         // A track change starts in "preparing": the URL is still being resolved
         // and no samples have arrived, so the shaders hold still rather than
         // flashing the last track's frozen levels.
