@@ -125,7 +125,74 @@ final class HeroFlightDirector: ObservableObject {
 
     func end(id: String) {
         active.removeValue(forKey: id)
+        settleWatchers.removeValue(forKey: id)?.invalidate()
         KumoneLogger.hero.info("HERO DIR end \(id, privacy: .public) count=\(self.active.count, privacy: .public)")
+    }
+
+    // MARK: - Settle watch
+
+    /// `withAnimation(..., completionCriteria: .removed)` does not guarantee
+    /// the completion handler: flights over the now-playing transport row ran
+    /// every spring to its final frame without one ever firing — not even the
+    /// superseded path — while the same flights in the return direction fired
+    /// theirs. The stand-in then sits frozen a hair off the real control,
+    /// its hand-off never happening, for as long as the page stays open.
+    ///
+    /// A run-loop timer does not depend on the render tree's cooperation, and
+    /// a timer wakes a main thread parked in `nextEventMatchingMask`, which a
+    /// superseded-spring callback does not. Each armed spring schedules one:
+    /// if the spring's own completion lands the flight first, `end(id:)`
+    /// cancels the watch; if the completion never comes, the watch lands the
+    /// flight from the probe's last measured frame instead.
+    private var settleWatchers: [String: Timer] = [:]
+
+    /// The longest `AppAnimation.heroSpring` takes to settle, plus margin. A
+    /// normal completion always wins the race; the watch is the floor, not
+    /// the ceiling, of the flight's duration.
+    private static let settleDeadline: TimeInterval = 1.5
+
+    /// Arms the settle watch for one flight. Re-arming replaces the previous
+    /// watch, so a flight that is retargeted mid-air is watched from its
+    /// newest spring and a superseded spring's stale watch never fires.
+    func watchSettle(_ id: String) {
+        settleWatchers[id]?.invalidate()
+        // A run-loop timer, not a dispatch timer: the main dispatch queue's
+        // callback source is not what services this app's loop — a GCD timer
+        // armed once per spring never fired across an entire run, while
+        // Swift's own `Timer` on the main run loop wakes the main thread
+        // directly out of its parked `mach_msg` wait.
+        let timer = Timer.scheduledTimer(
+            withTimeInterval: Self.settleDeadline, repeats: false
+        ) { [weak self] _ in
+            self?.settle(id)
+        }
+        settleWatchers[id] = timer
+        KumoneLogger.hero.notice("HERO WATCH arm \(id, privacy: .public)")
+        HeroProbe.writeFile("HERO WATCH arm \(id)")
+    }
+
+    /// Lands a flight whose spring completion never fired. The probe's last
+    /// sample is the stand-in's last measured frame — the same evidence the
+    /// completion path's `measuredFrame` holds — and the judge compares it
+    /// against the recorded target exactly as a normal landing would.
+    private func settle(_ id: String) {
+        settleWatchers.removeValue(forKey: id)
+        KumoneLogger.hero.notice(
+            "HERO WATCH fire \(id, privacy: .public) active=\(self.active[id] != nil, privacy: .public)"
+        )
+        HeroProbe.writeFile("HERO WATCH fire \(id) active=\(active[id] != nil)")
+        guard let flight = active[id] else { return }
+        let frame = HeroProbe.shared.lastSampleFrame(for: id) ?? flight.target
+        HeroProbe.shared.recordProxyState(.landed, id: id, frame: frame)
+        KumoneLogger.hero.notice(
+            "HERO SETTLE \(id, privacy: .public) reason=watcher frame=\(HeroProbe.frameDescription(frame), privacy: .public)"
+        )
+        HeroProbe.writeFile("HERO SETTLE \(id) reason=watcher frame=\(HeroProbe.frameDescription(frame))")
+        HeroProbe.shared.recordLanding(
+            id: id, frame: frame,
+            scale: flight.targetScale, cornerRadius: flight.cornerRadius
+        )
+        end(id: id)
     }
 }
 

@@ -23,6 +23,13 @@ struct HeroFlight: View {
     @State private var shadowProgress: CGFloat = 0
     @State private var frame: CGRect
     @State private var scale: CGFloat
+    /// A landing view's frame can flap by half a point while its page's
+    /// entrance spring rings down — every flap re-armed the flight's spring,
+    /// and a completion that never fires (see `watchSettle`) meant the
+    /// stand-in never landed at all. A target within a point of the one this
+    /// spring is already flying to is the same place to the eye: keep the
+    /// flight armed where it is and let the watch land it.
+    @State private var armedTarget: CGRect?
     @State private var measuredFrame: CGRect?
     @State private var recordedInitialFrame = false
     @State private var finished = false
@@ -79,15 +86,15 @@ struct HeroFlight: View {
             #if os(macOS)
             HeroProbe.shared.recordWindowScale(NSApp.keyWindow?.backingScaleFactor ?? 1, id: flight.id)
             #endif
-            animate(to: liveTarget ?? flight.target)
+            animate(to: liveTarget ?? flight.target, reason: "appear")
         }
         .onChange(of: liveTarget) { _, target in
             guard let target, !finished, !frame.approximately(target) else { return }
-            animate(to: target)
+            animate(to: target, reason: "liveAnchor")
         }
         .onChange(of: flight.target) { _, target in
             guard !finished, !frame.approximately(target) else { return }
-            animate(to: target)
+            animate(to: target, reason: "director")
         }
     }
 
@@ -102,7 +109,11 @@ struct HeroFlight: View {
         return (0.2 + 0.25 * Double(amount), 4 + 32 * amount, 2 + 16 * amount)
     }
 
-    private func animate(to target: CGRect) {
+    private func animate(to target: CGRect, reason: String) {
+        if let armed = armedTarget, armed.approximately(target, tolerance: 1.0) {
+            return
+        }
+        armedTarget = target
         let generation = UUID()
         animationGeneration = generation
         if flight.targetAnchorID != nil || flight.liveAnchorID != nil {
@@ -111,6 +122,13 @@ struct HeroFlight: View {
                 cornerRadius: flight.cornerRadius
             )
         }
+        let startLine = "HERO SPRING start \(flight.id)"
+            + " gen=\(String(generation.uuidString.prefix(8)))"
+            + " reason=\(reason)"
+            + " tgt=\(HeroProbe.frameDescription(target))"
+        KumoneLogger.hero.notice("\(startLine, privacy: .public)")
+        HeroProbe.writeFile(startLine)
+        HeroFlightDirector.shared.watchSettle(flight.id)
         withAnimation(AppAnimation.heroSpring, completionCriteria: .removed) {
             frame = target
             scale = flight.targetScale
@@ -118,9 +136,21 @@ struct HeroFlight: View {
         } completion: {
             // A resize may retarget the flight while its previous spring is
             // completing. Only the latest spring can hand back to the mini bar.
-            guard !finished, animationGeneration == generation,
-                  HeroFlightDirector.shared.active[flight.id]?.nonce == flight.nonce
-            else { return }
+            // A superseded spring still fires this completion when its animation
+            // is removed; say which clause dropped it so a flight that never
+            // settled is distinguishable from one that was merely interrupted.
+            if finished {
+                springBail("already-finished", generation: generation)
+                return
+            }
+            guard animationGeneration == generation else {
+                springBail("superseded", generation: generation)
+                return
+            }
+            guard HeroFlightDirector.shared.active[flight.id]?.nonce == flight.nonce else {
+                springBail("replaced-in-director", generation: generation)
+                return
+            }
             finished = true
             if let measuredFrame {
                 HeroProbe.shared.recordProxyState(.landed, id: flight.id, frame: measuredFrame)
@@ -133,6 +163,17 @@ struct HeroFlight: View {
             )
             HeroFlightDirector.shared.end(id: flight.id)
         }
+    }
+
+    /// A spring whose landing was dropped by the completion guard — superseded
+    /// by a retarget, replaced in the director, or fired after the flight had
+    /// already settled. The verdict is deliberately skipped; the line is not.
+    private func springBail(_ reason: String, generation: UUID) {
+        let line = "HERO SPRING bail \(flight.id)"
+            + " gen=\(String(generation.uuidString.prefix(8)))"
+            + " reason=\(reason)"
+        KumoneLogger.hero.notice("\(line, privacy: .public)")
+        HeroProbe.writeFile(line)
     }
 
     @ViewBuilder

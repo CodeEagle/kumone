@@ -154,6 +154,13 @@ final class HeroProbe: ObservableObject {
         active[id]?.windowScale = scale
     }
 
+    /// The last frame the flying stand-in itself measured, for a settle that
+    /// cannot read the view's `@State` — the director's settle watch lands a
+    /// flight from this when its spring's completion never fired.
+    func lastSampleFrame(for id: String) -> CGRect? {
+        active[id]?.samples.last?.frame
+    }
+
     /// Records the frame of the surface hosting the flight — the area the user
     /// can see — so the judgement can reject a transition whose target was
     /// measured off-screen.
@@ -299,11 +306,14 @@ final class HeroProbe: ObservableObject {
 
     /// Appends one line to the probe file on a background priority. The system
     /// log is authoritative; this file is for tooling that tails a file, and a
-    /// sandbox that forbids it only loses the copy, not the verdict.
+    /// sandbox that forbids it only loses the copy, not the verdict. Every
+    /// write runs on one serial queue: concurrent writers that each seek to
+    /// the end and write leave overlapping tails in the file — a corrupted
+    /// audit trail that is indistinguishable from lost verdicts.
     static func writeFile(_ line: String) {
         let url = URL(fileURLWithPath: logFilePath)
         let payload = (line + "\n").data(using: .utf8) ?? Data()
-        Task.detached(priority: .utility) {
+        writeQueue.async {
             do {
                 if let handle = try? FileHandle(forWritingTo: url) {
                     try handle.seekToEnd()
@@ -319,4 +329,10 @@ final class HeroProbe: ObservableObject {
             }
         }
     }
+
+    /// One writer at a time, in call order, so a flight's phases and verdict
+    /// stay whole lines even when ten flights report in the same frame.
+    private static let writeQueue = DispatchQueue(
+        label: "im.missuo.Kumone.hero-probe-log", qos: .utility
+    )
 }
