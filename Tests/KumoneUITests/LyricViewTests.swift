@@ -60,6 +60,8 @@ final class LyricViewTests: XCTestCase {
         }
         let cases: [[String: Prop]] = [
             ["name": .string("play.fill"), "size": .number(22)],
+            ["name": .string("pause.fill"), "size": .number(20),
+             "background": .string("#F2F2F5"), "circle": .flag(true), "padding": .number(14)],
             [:],
         ]
         for props in cases {
@@ -68,6 +70,21 @@ final class LyricViewTests: XCTestCase {
                 style: props, children: [], resolver: nil) { _ in AnyView(EmptyView()) }
             XCTAssertNotNil(builder(node, context))
         }
+    }
+
+    func testBackdropArtworkRegistered() {
+        // The cover-as-window component is part of the table.
+        BuiltinComponents.register()
+        XCTAssertNotNil(ComponentRegistry.resolve("BackdropArtwork"))
+    }
+
+    func testAlphaHexParses() {
+        // 8-digit hex carries alpha: the glass panels over the backdrop
+        // depend on it. Both lengths parse; garbage does not.
+        XCTAssertNotNil(StyleColor.parse("#F2F2F5"))
+        XCTAssertNotNil(StyleColor.parse("#06080DB0"))
+        XCTAssertNil(StyleColor.parse("#GGGGGG"))
+        XCTAssertNil(StyleColor.parse("#F2F2"))
     }
 
     func testCursorOutOfRangeBuilds() {

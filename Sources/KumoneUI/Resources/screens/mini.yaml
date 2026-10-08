@@ -1,10 +1,6 @@
-# The mini player — same card, taller: it also carries the queue and the
-# theme switcher. Any YAML in the screens directory is a screen; this one
-# is what `app.presentScreen` opens and what a user copies as the starting
-# point for their own.
-#
-# Same grid as preview: 24 between sections, 12 inside the sleeve row, 40
-# across the transport, 10 between queue rows (a list reads tighter).
+# The mini player — the same cover-made window, carrying the queue and
+# the theme switcher underneath. The backdrop dims harder here because
+# six list rows have to stay legible over it.
 
 window:
   width: 400
@@ -14,122 +10,132 @@ window:
   title: Kumone
 
 root:
-  type: Container
-  class: [chrome]
+  type: ZStack
   children:
-    - type: VStack
-      spacing: 24
-      alignment: leading
+    - type: BackdropArtwork
+      url: ${player.artworkURL}
+      blur: 36
+      dim: 0.58
+      cornerRadius: 16
+
+    - type: Container
+      class: [glass]
       children:
-        - type: HStack
-          spacing: 12
-          alignment: center
-          children:
-            - type: Artwork
-              url: ${player.artworkURL}
-              size: 72
-              cornerRadius: 8
-            - type: VStack
-              spacing: 4
-              alignment: leading
-              children:
-                - type: Text
-                  class: [title]
-                  text: ${player.title}
-                - type: Text
-                  class: [meta]
-                  text: ${player.artist}
-
-        - type: HStack
-          spacing: 12
-          alignment: center
-          children:
-            - type: Text
-              class: [caption]
-              text: ${player.progressClock}
-            - type: ProgressSlider
-              class: [seek]
-              value: ${player.progress}
-              duration: ${player.duration}
-              action: player.seek
-            - type: Text
-              class: [caption]
-              text: ${player.durationClock}
-
-        - type: HStack
-          spacing: 40
-          alignment: center
-          children:
-            - type: Button
-              action: player.previous
-              children:
-                - type: Icon
-                  class: [transportSide]
-                  name: backward.fill
-                  size: 18
-            - type: Button
-              action: player.togglePlayPause
-              visible: ${player.isPlaying}
-              children:
-                - type: Icon
-                  class: [transportMain]
-                  name: pause.fill
-                  size: 22
-            - type: Button
-              action: player.togglePlayPause
-              visible: ${player.isPaused}
-              children:
-                - type: Icon
-                  class: [transportMain]
-                  name: play.fill
-                  size: 22
-            - type: Button
-              action: player.next
-              children:
-                - type: Icon
-                  class: [transportSide]
-                  name: forward.fill
-                  size: 18
-
-        # The queue: proximity groups the rows, a caption names the group,
-        # the rows are similar by design so they read as a list.
-        - type: Text
-          class: [caption]
-          text: Up next
-
-        - type: ForEach
-          items: ${player.upcomingTracks}
-          spacing: 10
+        - type: VStack
+          spacing: 20
+          alignment: leading
           children:
             - type: HStack
               spacing: 12
               alignment: center
               children:
                 - type: Artwork
-                  url: ${item.artworkURL}
-                  size: 36
-                  cornerRadius: 6
-                - type: Text
-                  class: [rowTitle]
-                  text: ${item.title}
+                  url: ${player.artworkURL}
+                  size: 56
+                  cornerRadius: 8
+                - type: VStack
+                  spacing: 4
+                  alignment: leading
+                  children:
+                    - type: Text
+                      class: [title]
+                      text: ${player.title}
+                    - type: Text
+                      class: [onArtMeta]
+                      text: ${player.artist}
 
-        # Theme switcher: two plain words, either one re-skins every
-        # screen live through the app.setTheme verb.
-        - type: HStack
-          spacing: 16
-          alignment: leading
-          children:
-            - type: Button
-              action: app.setTheme
-              argument: default
+            - type: HStack
+              spacing: 12
+              alignment: center
               children:
                 - type: Text
-                  class: [caption]
-                  text: Vinyl night
-            - type: Button
-              action: app.setTheme
-              argument: aurora
-              children:
+                  class: [onArtDim]
+                  text: ${player.progressClock}
+                - type: ProgressSlider
+                  class: [seek]
+                  value: ${player.progress}
+                  duration: ${player.duration}
+                  action: player.seek
                 - type: Text
-                  class: [caption]
-                  text: Deep water
+                  class: [onArtDim]
+                  text: ${player.durationClock}
+
+            - type: HStack
+              spacing: 44
+              alignment: center
+              children:
+                - type: Button
+                  action: player.previous
+                  children:
+                    - type: Icon
+                      class: [onArtDim]
+                      name: backward.fill
+                      size: 18
+                - type: Button
+                  action: player.togglePlayPause
+                  visible: ${player.isPlaying}
+                  children:
+                    - type: Icon
+                      class: [transportKey]
+                      name: pause.fill
+                      size: 20
+                      circle: true
+                      padding: 14
+                - type: Button
+                  action: player.togglePlayPause
+                  visible: ${player.isPaused}
+                  children:
+                    - type: Icon
+                      class: [transportKey]
+                      name: play.fill
+                      size: 20
+                      circle: true
+                      padding: 14
+                - type: Button
+                  action: player.next
+                  children:
+                    - type: Icon
+                      class: [onArtDim]
+                      name: forward.fill
+                      size: 18
+
+            - type: Text
+              class: [onArtDim]
+              text: Up next
+
+            - type: ForEach
+              items: ${player.upcomingTracks}
+              spacing: 10
+              children:
+                - type: HStack
+                  spacing: 12
+                  alignment: center
+                  children:
+                    - type: Artwork
+                      url: ${item.artworkURL}
+                      size: 36
+                      cornerRadius: 6
+                    - type: Text
+                      class: [rowTitle]
+                      text: ${item.title}
+
+            # Theme switcher: two plain words, either one re-skins every
+            # screen live through the app.setTheme verb.
+            - type: HStack
+              spacing: 16
+              alignment: leading
+              children:
+                - type: Button
+                  action: app.setTheme
+                  argument: default
+                  children:
+                    - type: Text
+                      class: [onArtDim]
+                      text: Vinyl night
+                - type: Button
+                  action: app.setTheme
+                  argument: aurora
+                  children:
+                    - type: Text
+                      class: [onArtDim]
+                      text: Deep water

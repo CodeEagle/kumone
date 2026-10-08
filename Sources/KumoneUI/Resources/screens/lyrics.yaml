@@ -1,7 +1,6 @@
-# The lyrics screen: one sleeve row, the whole lyric sheet, and the
-# transport at the foot. The LyricView holds the current line centred —
-# the one place centred text earns itself, because a lyric sheet reads
-# that way.
+# The lyrics screen — the sheet floats over its own cover. Of the three
+# screens this one dims the most, because a whole column of small text
+# has to read on top of imagery.
 
 window:
   width: 400
@@ -11,90 +10,102 @@ window:
   title: Lyrics
 
 root:
-  type: Container
-  class: [chrome]
+  type: ZStack
   children:
-    - type: VStack
-      spacing: 24
-      alignment: leading
+    - type: BackdropArtwork
+      url: ${player.artworkURL}
+      blur: 40
+      dim: 0.62
+      cornerRadius: 16
+
+    - type: Container
+      class: [glass]
       children:
-        - type: HStack
-          spacing: 12
-          alignment: center
+        - type: VStack
+          spacing: 20
+          alignment: leading
           children:
-            - type: Artwork
-              url: ${player.artworkURL}
-              size: 44
-              cornerRadius: 6
-            - type: VStack
-              spacing: 4
-              alignment: leading
+            - type: HStack
+              spacing: 12
+              alignment: center
+              children:
+                - type: Artwork
+                  url: ${player.artworkURL}
+                  size: 44
+                  cornerRadius: 6
+                - type: VStack
+                  spacing: 4
+                  alignment: leading
+                  children:
+                    - type: Text
+                      class: [title]
+                      text: ${player.title}
+                    - type: Text
+                      class: [onArtMeta]
+                      text: ${player.artist}
+
+            - type: HStack
+              spacing: 12
+              alignment: center
               children:
                 - type: Text
-                  class: [title]
-                  text: ${player.title}
+                  class: [onArtDim]
+                  text: ${player.progressClock}
+                - type: ProgressSlider
+                  class: [seek]
+                  value: ${player.progress}
+                  duration: ${player.duration}
+                  action: player.seek
                 - type: Text
-                  class: [meta]
-                  text: ${player.artist}
+                  class: [onArtDim]
+                  text: ${player.durationClock}
 
-        - type: HStack
-          spacing: 12
-          alignment: center
-          children:
-            - type: Text
-              class: [caption]
-              text: ${player.progressClock}
-            - type: ProgressSlider
-              class: [seek]
-              value: ${player.progress}
-              duration: ${player.duration}
-              action: player.seek
-            - type: Text
-              class: [caption]
-              text: ${player.durationClock}
+            # The sheet: every line, the current one lit. Over imagery
+            # the dimmed steps brighten a step so the contrast floor
+            # survives the backdrop.
+            - type: LyricView
+              lines: ${lyrics.lines}
+              currentIndex: ${lyrics.currentIndex}
+              activeColor: "#FFFFFF"
+              inactiveColor: "#FFFFFF80"
+              alignment: center
+              fontSize: 16
 
-        # The sheet: every line, the current one held centred and lit,
-        # others dimmed but contrast-safe. `currentIndex` is the app's
-        # truth; the component only draws the consequence.
-        - type: LyricView
-          lines: ${lyrics.lines}
-          currentIndex: ${lyrics.currentIndex}
-          activeColor: "#EDEFF2"
-          inactiveColor: "#828A98"
-          alignment: center
-          fontSize: 16
-
-        - type: HStack
-          spacing: 40
-          alignment: center
-          children:
-            - type: Button
-              action: player.previous
+            - type: HStack
+              spacing: 44
+              alignment: center
               children:
-                - type: Icon
-                  class: [transportSide]
-                  name: backward.fill
-                  size: 18
-            - type: Button
-              action: player.togglePlayPause
-              visible: ${player.isPlaying}
-              children:
-                - type: Icon
-                  class: [transportMain]
-                  name: pause.fill
-                  size: 22
-            - type: Button
-              action: player.togglePlayPause
-              visible: ${player.isPaused}
-              children:
-                - type: Icon
-                  class: [transportMain]
-                  name: play.fill
-                  size: 22
-            - type: Button
-              action: player.next
-              children:
-                - type: Icon
-                  class: [transportSide]
-                  name: forward.fill
-                  size: 18
+                - type: Button
+                  action: player.previous
+                  children:
+                    - type: Icon
+                      class: [onArtDim]
+                      name: backward.fill
+                      size: 18
+                - type: Button
+                  action: player.togglePlayPause
+                  visible: ${player.isPlaying}
+                  children:
+                    - type: Icon
+                      class: [transportKey]
+                      name: pause.fill
+                      size: 20
+                      circle: true
+                      padding: 14
+                - type: Button
+                  action: player.togglePlayPause
+                  visible: ${player.isPaused}
+                  children:
+                    - type: Icon
+                      class: [transportKey]
+                      name: play.fill
+                      size: 20
+                      circle: true
+                      padding: 14
+                - type: Button
+                  action: player.next
+                  children:
+                    - type: Icon
+                      class: [onArtDim]
+                      name: forward.fill
+                      size: 18

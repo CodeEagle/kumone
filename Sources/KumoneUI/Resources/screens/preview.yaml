@@ -1,124 +1,119 @@
-# The preview screen — a night-listening card. The cover art carries it:
-# everything else is quiet, left-aligned like an album sleeve, one accent
-# colour saved for the living parts (play glyph, seek fill).
-#
-# Spacing is the 8pt grid: 4 within a sleeve row, 12 between it and its
-# title, 24 between sections, 40 in the transport (button targets stay
-# well apart). Radii nest: chrome 16, inlaid art 8.
+# The preview screen — cover-first. The whole window is made of its own
+# music: the album art fills it blurred and darkened as the backdrop, the
+# real cover sits large above the words, and controls are quiet so the
+# image carries the page. That is what a player looks like; a plain dark
+# panel with glyphs on it is a wireframe of one.
 
 window:
   width: 400
-  height: 520
+  height: 560
   minWidth: 344
-  minHeight: 440
+  minHeight: 480
   title: Kumone
 
 root:
-  type: Container
-  class: [chrome]
+  type: ZStack
   children:
-    - type: VStack
-      spacing: 24
-      alignment: leading
+    - type: BackdropArtwork
+      url: ${player.artworkURL}
+      blur: 36
+      dim: 0.50
+      cornerRadius: 16
+
+    - type: Container
+      class: [glass]
       children:
-        # Sleeve row: the art is the subject, the words sit beside it.
-        - type: HStack
-          spacing: 12
+        - type: VStack
+          spacing: 20
           alignment: center
           children:
+            # The subject: a cover big enough to be the first thing
+            # anyone sees.
             - type: Artwork
               url: ${player.artworkURL}
-              size: 64
-              cornerRadius: 8
-            - type: VStack
-              spacing: 4
-              alignment: leading
+              size: 200
+              cornerRadius: 12
+
+            - type: Text
+              class: [title]
+              text: ${player.title}
+            - type: Text
+              class: [onArtMeta]
+              text: ${player.artist}
+
+            # Times outside the rail, the whole bar the target.
+            - type: HStack
+              spacing: 12
+              alignment: center
               children:
                 - type: Text
-                  class: [title]
-                  text: ${player.title}
+                  class: [onArtDim]
+                  text: ${player.progressClock}
+                - type: ProgressSlider
+                  class: [seek]
+                  value: ${player.progress}
+                  duration: ${player.duration}
+                  action: player.seek
                 - type: Text
-                  class: [meta]
-                  text: ${player.artist}
+                  class: [onArtDim]
+                  text: ${player.durationClock}
 
-        # Transport: a deck's worth of space between the three targets.
-        - type: HStack
-          spacing: 40
-          alignment: center
-          visible: ${player.hasTrack}
-          children:
-            - type: Button
-              action: player.previous
+            # Two quiet keys around one loud one.
+            - type: HStack
+              spacing: 44
+              alignment: center
               children:
-                - type: Icon
-                  class: [transportSide]
-                  name: backward.fill
-                  size: 18
-            - type: Button
-              action: player.togglePlayPause
-              visible: ${player.isPlaying}
-              children:
-                - type: Icon
-                  class: [transportMain]
-                  name: pause.fill
-                  size: 22
-            - type: Button
-              action: player.togglePlayPause
-              visible: ${player.isPaused}
-              children:
-                - type: Icon
-                  class: [transportMain]
-                  name: play.fill
-                  size: 22
-            - type: Button
-              action: player.next
-              children:
-                - type: Icon
-                  class: [transportSide]
-                  name: forward.fill
-                  size: 18
-
-        # The whole width is the seek target, times at both ends.
-        - type: HStack
-          spacing: 12
-          alignment: center
-          children:
-            - type: Text
-              class: [caption]
-              text: ${player.progressClock}
-            - type: ProgressSlider
-              class: [seek]
-              value: ${player.progress}
-              duration: ${player.duration}
-              action: player.seek
-            - type: Text
-              class: [caption]
-              text: ${player.durationClock}
-
-        # Live spectrum, small, under the seek: this window moves with
-        # the music without anything else on screen trying to.
-        - type: SpectrumBars
-          barWidth: 4
-          barHeight: 16
-          spacing: 6
-          color: "#2F3846"
-
-        # One navigation affordance, plain words, no arrow flourish.
-        - type: HStack
-          spacing: 6
-          alignment: leading
-          children:
-            - type: Button
-              action: app.presentScreen
-              argument: lyrics
-              children:
-                - type: HStack
-                  spacing: 6
+                - type: Button
+                  action: player.previous
                   children:
                     - type: Icon
-                      class: [nav]
-                      name: quote.bubble
-                      size: 11
-                    - type: Text
-                      class: [nav]
-                      text: Lyrics
+                      class: [onArtDim]
+                      name: backward.fill
+                      size: 18
+                - type: Button
+                  action: player.togglePlayPause
+                  visible: ${player.isPlaying}
+                  children:
+                    - type: Icon
+                      class: [transportKey]
+                      name: pause.fill
+                      size: 20
+                      circle: true
+                      padding: 14
+                - type: Button
+                  action: player.togglePlayPause
+                  visible: ${player.isPaused}
+                  children:
+                    - type: Icon
+                      class: [transportKey]
+                      name: play.fill
+                      size: 20
+                      circle: true
+                      padding: 14
+                - type: Button
+                  action: player.next
+                  children:
+                    - type: Icon
+                      class: [onArtDim]
+                      name: forward.fill
+                      size: 18
+
+            # One navigation affordance, plain words.
+            - type: HStack
+              spacing: 6
+              alignment: leading
+              children:
+                - type: Button
+                  action: app.presentScreen
+                  argument: lyrics
+                  children:
+                    - type: HStack
+                      spacing: 6
+                      children:
+                        - type: Icon
+                          class: [nav]
+                          name: quote.bubble
+                          size: 11
+                        - type: Text
+                          class: [nav]
+                          text: Lyrics

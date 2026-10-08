@@ -23,6 +23,7 @@ public enum BuiltinComponents {
         ComponentRegistry.register("LyricView", builder: leaf.lyricView)
         ComponentRegistry.register("ProgressSlider", builder: leaf.progressSlider)
         ComponentRegistry.register("Artwork", builder: leaf.artwork)
+        ComponentRegistry.register("BackdropArtwork", builder: leaf.backdrop)
     }
 }
 
@@ -34,17 +35,21 @@ extension Prop {
     public var stringValue: String? { if case .string(let v) = self { return v } else { return nil } }
 }
 
-/// `#RRGGBB` / named-colour parsing shared by every component that paints.
+/// `#RRGGBB` / `#RRGGBBAA` colour parsing shared by every component that
+/// paints. The 8-digit form carries alpha, so a screen can stack a
+/// translucent panel over imagery without a new property.
 public enum StyleColor {
-    static func parse(_ string: String) -> Color? {
+    public static func parse(_ string: String) -> Color? {
         let hex = string.trimmingCharacters(in: .whitespaces)
-        guard hex.hasPrefix("#"), hex.count == 7 else { return nil }
+        guard hex.hasPrefix("#"), hex.count == 7 || hex.count == 9 else { return nil }
         var value: UInt64 = 0
-        guard Scanner(string: String(hex.dropFirst())).scanHexInt64(&value) else { return nil }
+        let digits = String(hex.dropFirst())
+        guard Scanner(string: digits).scanHexInt64(&value) else { return nil }
         let r = Double((value >> 16) & 0xFF) / 255.0
         let g = Double((value >> 8) & 0xFF) / 255.0
         let b = Double(value & 0xFF) / 255.0
-        return Color(red: r, green: g, blue: b)
+        let a = hex.count == 9 ? Double((value >> 24) & 0xFF) / 255.0 : 1.0
+        return Color(red: r, green: g, blue: b, opacity: a)
     }
 }
 
@@ -86,7 +91,8 @@ private enum layouts {
             ForEach(Array(context.children.indices), id: \.self) { index in
                 context.child(index)
             }
-        })
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity))
     }
 
     static let spacer: ComponentBuilder = { node, context in
@@ -130,12 +136,18 @@ private enum leaf {
     static let icon: ComponentBuilder = { node, context in
         // SF Symbols by name — the one pictorial primitive. A config that
         // wants a play button writes `play.fill`, not a Unicode glyph that
-        // stands in for one.
+        // stands in for one. With a background and padding the same
+        // component becomes a transport key (a filled round button).
         let name = context.style["name"]?.stringValue ?? "music.note"
         let size = context.style["size"]?.numberValue ?? 16
         let weight = context.style["fontWeight"]?.stringValue ?? "regular"
         let colour = context.style["color"].flatMap { $0.stringValue }.flatMap(StyleColor.parse)
-        return AnyView(IconView(name: name, fontSize: size, weight: weightOf(weight), tint: colour))
+        let background = context.style["background"].flatMap { $0.stringValue }.flatMap(StyleColor.parse)
+        let circle = context.style["circle"]?.flagValue == true
+        let padding = context.style["padding"]?.numberValue ?? 0
+        return AnyView(IconView(name: name, fontSize: size, weight: weightOf(weight),
+                                tint: colour, background: background, circle: circle,
+                                inset: padding))
     }
 
     static let text: ComponentBuilder = { node, context in
@@ -238,6 +250,19 @@ private enum leaf {
         return AnyView(ArtworkView(url: urlString, side: size, cornerRadius: corner))
     }
 
+    /// The whole window becomes the album cover: the image fills it,
+    /// blurs out of focus, and dims under a controlled darkness so text
+    //  stays readable over it. This is what makes a player screen stop
+    //  looking like a wireframe of one.
+    static let backdrop: ComponentBuilder = { node, context in
+        let urlString = context.resolve(context.style["url"] ?? .string(""))?.stringValue ?? ""
+        let blur = context.style["blur"]?.numberValue ?? 40
+        let dim = context.style["dim"]?.numberValue ?? 0.45
+        let corner = context.style["cornerRadius"]?.numberValue ?? 0
+        return AnyView(BackdropArtworkView(url: urlString, blur: blur, dim: dim,
+                                           cornerRadius: corner))
+    }
+
     static let container: ComponentBuilder = { node, context in
         let corner = context.style["cornerRadius"]?.numberValue ?? 0
         let padding = context.style["padding"]?.numberValue ?? 0
@@ -335,19 +360,55 @@ struct ActionButton: View {
     }
 }
 
-/// A pictogram: one SF Symbol by name, sized and coloured like text.
-/// Configs reach for it instead of pasting a Unicode glyph that only
-/// pretends to be an icon.
+/// A pictogram: one SF Symbol by name, sized and coloured like text, and
+/// optionally a filled key (background + padding + circle) — one
+/// component, from a small marker to a transport button.
 struct IconView: View {
     let name: String
     let fontSize: Double
     let weight: Font.Weight
     let tint: Color?
+    let background: Color?
+    let circle: Bool
+    let inset: Double
 
     var body: some View {
         Image(systemName: name)
             .font(.system(size: fontSize, weight: weight))
             .foregroundStyle(tint ?? .primary)
+            .padding(background != nil ? inset : 0)
+            .background(background ?? .clear)
+            .clipShape(circle ? AnyShape(Circle()) : AnyShape(Rectangle()))
+    }
+}
+
+/// The full-bleed cover: fills whatever holds it, blurred past focus and
+/// darkened, so every player screen is made of its own music first and
+/// controls second.
+struct BackdropArtworkView: View {
+    let url: String
+    let blur: Double
+    let dim: Double
+    let cornerRadius: Double
+
+    var body: some View {
+        GeometryReader { frame in
+            AsyncImage(url: URL(string: url)) { phase in
+                switch phase {
+                case .success(let image):
+                    image
+                        .resizable()
+                        .scaledToFill()
+                        .frame(width: frame.size.width, height: frame.size.height)
+                        .blur(radius: blur)
+                        .overlay(Color.black.opacity(dim))
+                        .clipped()
+                default:
+                    Color.black
+                }
+            }
+        }
+        .clipShape(RoundedRectangle(cornerRadius: cornerRadius))
     }
 }
 

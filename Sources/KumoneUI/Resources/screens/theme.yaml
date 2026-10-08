@@ -23,6 +23,13 @@ styles:
     cornerRadius: 16
     padding: 24
 
+  # A translucent panel stacked over the backdrop cover: the material
+  # that keeps text readable on imagery. 8-digit hex carries the alpha.
+  glass:
+    background: "#06080DB0"
+    cornerRadius: 16
+    padding: 24
+
   # Type scale, minor third: 11 / 13 / 16 / 19. Contrast checked against
   # the canvas: textSub 5.9:1, the dimmed lyric 5.25:1 (4.5 is the floor
   # for body-size text; the old #6E7684 measured 4.0 and went out).
@@ -40,3 +47,12 @@ styles:
   transportMain: { color: token(accent) }
   transportSide: { color: token(textSub) }
   nav:           { color: token(accent), fontSize: 11 }
+
+  # Type on top of imagery: full values stay as-is, but the dimmed steps
+  # are translucent white so they survive the cover.
+  onArtDim:      { color: "#FFFFFFAA", fontSize: 11 }
+  onArtMeta:     { color: "#FFFFFFCC", fontSize: 13 }
+
+  # The primary transport key: a filled disc, dark glyph — the one loud
+  # object on the page after the cover itself.
+  transportKey:  { background: "#F2F2F5", color: "#141821" }

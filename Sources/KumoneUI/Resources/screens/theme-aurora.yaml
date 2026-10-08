@@ -17,6 +17,11 @@ styles:
     cornerRadius: 16
     padding: 24
 
+  glass:
+    background: "#040C14B0"
+    cornerRadius: 16
+    padding: 24
+
   title:         { color: token(text),    fontSize: 19, fontWeight: semibold }
   meta:          { color: token(textSub), fontSize: 13 }
   caption:       { color: token(textSub), fontSize: 11 }
@@ -29,3 +34,8 @@ styles:
   transportMain: { color: token(accent) }
   transportSide: { color: token(textSub) }
   nav:           { color: token(accent), fontSize: 11 }
+
+  onArtDim:      { color: "#DCE6EEAA", fontSize: 11 }
+  onArtMeta:     { color: "#E6EEF4CC", fontSize: 13 }
+
+  transportKey:  { background: "#E6EEF4", color: "#0B151F" }
