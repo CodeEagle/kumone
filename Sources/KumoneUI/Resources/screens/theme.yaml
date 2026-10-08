@@ -1,13 +1,13 @@
 # "Vinyl night" — the default theme. The brief: a night-listening player,
 # so the palette is a slate-blue black (a coloured darkness, not dead
-# #000), text in two clearly-separated steps, and one low-saturation
-# amber accent reserved for the living thing on screen (the play glyph,
-# the seek fill, the active lyric). Everything else stays quiet so the
-# cover art carries the page.
+# #000), text in two contrast-safe steps, and one low-saturation amber
+# accent reserved for the living thing on screen (the play glyph, the seek
+# fill, the active lyric). Everything else stays quiet so the cover art
+# carries the page.
 #
-# Class rules below are the components' shared wardrobe: a screen writes
-# `class: [title]` and gets the token-driven size and colour, its own
-# props still win where it needs a one-off.
+# Spacing is the 8pt grid (8 / 16 / 24), radii nest (chrome 16, inlaid art
+# 8 = outer minus its gap), and the type scale is the minor third (11, 13,
+# 16, 19) — hierarchy by weight and colour first, size second.
 
 tokens:
   canvas:    "#12151C"
@@ -20,21 +20,23 @@ tokens:
 styles:
   chrome:
     background: token(canvas)
-    cornerRadius: 14
-    padding: 22
+    cornerRadius: 16
+    padding: 24
 
-  # Type scale: three steps only (20 / 13 / 11), lyrics at reading size.
-  title:        { color: token(text),    fontSize: 20, fontWeight: semibold }
-  meta:         { color: token(textSub), fontSize: 13 }
-  caption:      { color: token(textSub), fontSize: 11 }
-  rowTitle:     { color: token(text),    fontSize: 13 }
-  rowMeta:      { color: token(textSub), fontSize: 11 }
-  lyricActive:  { color: token(text),    fontSize: 15 }
-  lyricInactive: { color: "#6E7684",      fontSize: 15 }
+  # Type scale, minor third: 11 / 13 / 16 / 19. Contrast checked against
+  # the canvas: textSub 5.9:1, the dimmed lyric 5.25:1 (4.5 is the floor
+  # for body-size text; the old #6E7684 measured 4.0 and went out).
+  title:         { color: token(text),    fontSize: 19, fontWeight: semibold }
+  meta:          { color: token(textSub), fontSize: 13 }
+  caption:       { color: token(textSub), fontSize: 11 }
+  rowTitle:      { color: token(text),    fontSize: 13 }
+  rowMeta:       { color: token(textSub), fontSize: 11 }
+  lyricActive:   { color: token(text),    fontSize: 16 }
+  lyricInactive: { color: "#828A98",      fontSize: 16 }
 
-  # Single accent, reserved: the playing glyph, the seek fill, the live
+  # One accent, reserved: the playing glyph, the seek fill, the live
   # lyric, and navigation. Nothing else is loud.
-  seek:         { color: token(accent) }
+  seek:          { color: token(accent) }
   transportMain: { color: token(accent) }
   transportSide: { color: token(textSub) }
-  nav:          { color: token(accent), fontSize: 11 }
+  nav:           { color: token(accent), fontSize: 11 }

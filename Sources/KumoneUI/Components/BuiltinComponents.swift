@@ -60,9 +60,24 @@ private enum layouts {
                 context.child(index)
             }
             let group = axis == .horizontal
-                ? AnyView(HStack(alignment: hAlignment(alignment), spacing: spacing) { content })
-                : AnyView(VStack(alignment: vAlignment(alignment), spacing: spacing) { content })
+                ? AnyView(HStack(alignment: hAlignment(alignment), spacing: spacing) { content }
+                    .frame(maxWidth: .infinity, alignment: mainAxisPosition(alignment)))
+                : AnyView(VStack(alignment: vAlignment(alignment), spacing: spacing) { content }
+                    .frame(maxHeight: .infinity, alignment: mainAxisPosition(alignment)))
             return AnyView(group.padding(padding))
+        }
+    }
+
+    /// The stack fills the space it is given; this decides where its
+    /// children sit along the *main* axis (horizontal for HStack, vertical
+    /// for VStack). The alignment prop already drives the cross axis —
+    /// a centered transport row inside a left-aligned column now actually
+    /// centres, where before it hugged the leading edge.
+    private static func mainAxisPosition(_ name: String) -> Alignment {
+        switch name {
+        case "leading", "top": return .leading
+        case "trailing", "bottom": return .trailing
+        default: return .center
         }
     }
 
@@ -298,6 +313,10 @@ struct ActionButton: View {
     var body: some View {
         Button(action: send) {
             label
+                // A fingertip-sized target matters more than a tight glyph
+                // frame: the hit area stays 12pt larger than the icon.
+                .padding(6)
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .disabled(name == nil || dispatcher == nil)

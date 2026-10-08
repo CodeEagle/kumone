@@ -6,7 +6,7 @@
 window:
   width: 400
   height: 620
-  minWidth: 340
+  minWidth: 344
   minHeight: 480
   title: Lyrics
 
@@ -15,7 +15,7 @@ root:
   class: [chrome]
   children:
     - type: VStack
-      spacing: 20
+      spacing: 24
       alignment: leading
       children:
         - type: HStack
@@ -25,9 +25,9 @@ root:
             - type: Artwork
               url: ${player.artworkURL}
               size: 44
-              cornerRadius: 8
+              cornerRadius: 6
             - type: VStack
-              spacing: 3
+              spacing: 4
               alignment: leading
               children:
                 - type: Text
@@ -38,7 +38,7 @@ root:
                   text: ${player.artist}
 
         - type: HStack
-          spacing: 10
+          spacing: 12
           alignment: center
           children:
             - type: Text
@@ -54,18 +54,18 @@ root:
               text: ${player.durationClock}
 
         # The sheet: every line, the current one held centred and lit,
-        # others two steps dimmer. `currentIndex` is the app's truth;
-        # the component only draws the consequence.
+        # others dimmed but contrast-safe. `currentIndex` is the app's
+        # truth; the component only draws the consequence.
         - type: LyricView
           lines: ${lyrics.lines}
           currentIndex: ${lyrics.currentIndex}
           activeColor: "#EDEFF2"
-          inactiveColor: "#6E7684"
+          inactiveColor: "#828A98"
           alignment: center
-          fontSize: 15
+          fontSize: 16
 
         - type: HStack
-          spacing: 34
+          spacing: 40
           alignment: center
           children:
             - type: Button

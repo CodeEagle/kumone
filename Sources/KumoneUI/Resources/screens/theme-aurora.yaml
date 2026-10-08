@@ -1,7 +1,7 @@
 # "Deep water" — the alternate theme, so switching means something
 # visible. Same design, cold side of the wheel: a teal-tinted darkness
-# with a mist-cyan accent. Mirrors the default file one rule for one
-# rule; anything else changes the design, not the palette.
+# with a mist-cyan accent. Mirrors the default file rule for rule; a theme
+# changes the palette, never the spacing or the scale.
 
 tokens:
   canvas:    "#0B151F"
@@ -14,18 +14,18 @@ tokens:
 styles:
   chrome:
     background: token(canvas)
-    cornerRadius: 14
-    padding: 22
+    cornerRadius: 16
+    padding: 24
 
-  title:        { color: token(text),    fontSize: 20, fontWeight: semibold }
-  meta:         { color: token(textSub), fontSize: 13 }
-  caption:      { color: token(textSub), fontSize: 11 }
-  rowTitle:     { color: token(text),    fontSize: 13 }
-  rowMeta:      { color: token(textSub), fontSize: 11 }
-  lyricActive:  { color: token(text),    fontSize: 15 }
-  lyricInactive: { color: "#52677A",      fontSize: 15 }
+  title:         { color: token(text),    fontSize: 19, fontWeight: semibold }
+  meta:          { color: token(textSub), fontSize: 13 }
+  caption:       { color: token(textSub), fontSize: 11 }
+  rowTitle:      { color: token(text),    fontSize: 13 }
+  rowMeta:       { color: token(textSub), fontSize: 11 }
+  lyricActive:   { color: token(text),    fontSize: 16 }
+  lyricInactive: { color: "#7A93A8",      fontSize: 16 }
 
-  seek:         { color: token(accent) }
+  seek:          { color: token(accent) }
   transportMain: { color: token(accent) }
   transportSide: { color: token(textSub) }
-  nav:          { color: token(accent), fontSize: 11 }
+  nav:           { color: token(accent), fontSize: 11 }

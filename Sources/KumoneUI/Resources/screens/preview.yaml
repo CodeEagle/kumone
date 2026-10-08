@@ -1,11 +1,15 @@
-# The preview screen — a night-listening card. Cover art carries it:
-# everything else is quiet, left-aligned like an album sleeve, with one
-# accent colour saved for the living parts (play glyph, seek fill).
+# The preview screen — a night-listening card. The cover art carries it:
+# everything else is quiet, left-aligned like an album sleeve, one accent
+# colour saved for the living parts (play glyph, seek fill).
+#
+# Spacing is the 8pt grid: 4 within a sleeve row, 12 between it and its
+# title, 24 between sections, 40 in the transport (button targets stay
+# well apart). Radii nest: chrome 16, inlaid art 8.
 
 window:
   width: 400
   height: 520
-  minWidth: 340
+  minWidth: 344
   minHeight: 440
   title: Kumone
 
@@ -14,18 +18,18 @@ root:
   class: [chrome]
   children:
     - type: VStack
-      spacing: 22
+      spacing: 24
       alignment: leading
       children:
         # Sleeve row: the art is the subject, the words sit beside it.
         - type: HStack
-          spacing: 14
+          spacing: 12
           alignment: center
           children:
             - type: Artwork
               url: ${player.artworkURL}
               size: 64
-              cornerRadius: 10
+              cornerRadius: 8
             - type: VStack
               spacing: 4
               alignment: leading
@@ -37,9 +41,9 @@ root:
                   class: [meta]
                   text: ${player.artist}
 
-        # Transport: one column of physical-deck buttons, centred.
+        # Transport: a deck's worth of space between the three targets.
         - type: HStack
-          spacing: 34
+          spacing: 40
           alignment: center
           visible: ${player.hasTrack}
           children:
@@ -76,7 +80,7 @@ root:
 
         # The whole width is the seek target, times at both ends.
         - type: HStack
-          spacing: 10
+          spacing: 12
           alignment: center
           children:
             - type: Text
@@ -95,7 +99,7 @@ root:
         # the music without anything else on screen trying to.
         - type: SpectrumBars
           barWidth: 4
-          barHeight: 18
+          barHeight: 16
           spacing: 6
           color: "#2F3846"
 

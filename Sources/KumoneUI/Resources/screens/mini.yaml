@@ -1,12 +1,15 @@
 # The mini player — same card, taller: it also carries the queue and the
 # theme switcher. Any YAML in the screens directory is a screen; this one
-# is what `app.presentScreen` opens from the preview's Lyrics button and
-# what a user copies as the starting point for their own.
+# is what `app.presentScreen` opens and what a user copies as the starting
+# point for their own.
+#
+# Same grid as preview: 24 between sections, 12 inside the sleeve row, 40
+# across the transport, 10 between queue rows (a list reads tighter).
 
 window:
   width: 400
   height: 620
-  minWidth: 340
+  minWidth: 344
   minHeight: 480
   title: Kumone
 
@@ -15,17 +18,17 @@ root:
   class: [chrome]
   children:
     - type: VStack
-      spacing: 20
+      spacing: 24
       alignment: leading
       children:
         - type: HStack
-          spacing: 14
+          spacing: 12
           alignment: center
           children:
             - type: Artwork
               url: ${player.artworkURL}
               size: 72
-              cornerRadius: 10
+              cornerRadius: 8
             - type: VStack
               spacing: 4
               alignment: leading
@@ -38,7 +41,7 @@ root:
                   text: ${player.artist}
 
         - type: HStack
-          spacing: 10
+          spacing: 12
           alignment: center
           children:
             - type: Text
@@ -54,7 +57,7 @@ root:
               text: ${player.durationClock}
 
         - type: HStack
-          spacing: 34
+          spacing: 40
           alignment: center
           children:
             - type: Button
@@ -88,16 +91,15 @@ root:
                   name: forward.fill
                   size: 18
 
+        # The queue: proximity groups the rows, a caption names the group,
+        # the rows are similar by design so they read as a list.
         - type: Text
           class: [caption]
           text: Up next
 
-        # A collection consumed, not declared: the queue comes from a
-        # binding, each row is the same stamp, and `item.` inside sees
-        # that copy's element.
         - type: ForEach
           items: ${player.upcomingTracks}
-          spacing: 12
+          spacing: 10
           children:
             - type: HStack
               spacing: 12
@@ -106,7 +108,7 @@ root:
                 - type: Artwork
                   url: ${item.artworkURL}
                   size: 36
-                  cornerRadius: 7
+                  cornerRadius: 6
                 - type: Text
                   class: [rowTitle]
                   text: ${item.title}
@@ -114,7 +116,7 @@ root:
         # Theme switcher: two plain words, either one re-skins every
         # screen live through the app.setTheme verb.
         - type: HStack
-          spacing: 18
+          spacing: 16
           alignment: leading
           children:
             - type: Button
