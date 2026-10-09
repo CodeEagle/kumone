@@ -5,20 +5,33 @@ import XCTest
 
 final class ShaderUniformsTests: XCTestCase {
 
+    func testOriginalAnimationPolicyDoesNotChangeImportedShaders() {
+        let bundled = ShaderDescriptor(id: "bundled.kumone_fragment_swirl", name: "Swirl", origin: .bundled)
+        XCTAssertTrue(bundled.usesOriginalAnimation)
+        let imported = ShaderDescriptor(id: "user.swirl.metal", name: "Swirl",
+            origin: .userFile(URL(fileURLWithPath: "/tmp/swirl.metal")))
+        XCTAssertFalse(imported.usesOriginalAnimation)
+        XCTAssertFalse(ShaderDescriptor(id: "bundled.__host__", name: "__host__", origin: .bundled).usesOriginalAnimation)
+    }
+
     /// The Swift mirror must match the MSL `Uniforms` byte-for-byte, since the
     /// host copies it straight into a Metal buffer. MSL lays the struct out at
-    /// 128 bytes: `time` at 0, `resolution` 8-aligned at 8, `bands` at 16, the
+    /// 144 bytes: `time` at 0, `resolution` 8-aligned at 8, `bands` at 16, the
     /// scalar envelope at 32, and the four 16-byte-aligned palette float4s
-    /// starting at 64 — the `_pad` field plus alignment padding covers 56..64.
+    /// starting at 64, then beat birth times at 128. The reserved scalar at 56
+    /// and its alignment padding keep the palette offsets unchanged.
     func testUniformsMatchMetalLayout() {
-        XCTAssertEqual(MemoryLayout<ShaderUniforms>.size, 128)
+        XCTAssertEqual(MemoryLayout<ShaderUniforms>.size, ShaderUniforms.expectedSize)
         XCTAssertEqual(MemoryLayout<ShaderUniforms>.alignment, 16)
+        XCTAssertEqual(MemoryLayout<ShaderUniforms>.offset(of: \._pad), 56)
+        XCTAssertEqual(MemoryLayout<ShaderUniforms>.offset(of: \.palettePrimary), 64)
+        XCTAssertEqual(MemoryLayout<ShaderUniforms>.offset(of: \.beatBirthTs), 128)
     }
 
     func testUniformsAreContiguousInBuffer() {
         // The stride matching the size means no per-element padding when packed
         // into an array; the single-buffer layout relies on that.
-        XCTAssertEqual(MemoryLayout<ShaderUniforms>.stride, 128)
+        XCTAssertEqual(MemoryLayout<ShaderUniforms>.stride, ShaderUniforms.expectedSize)
     }
 
     func testPaletteFallbackIsOpaque() {

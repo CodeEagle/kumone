@@ -1,106 +1,336 @@
+// ShipSwift original algorithm and Swift initializer defaults. MIT; see ACKNOWLEDGEMENTS.
+// Only the entry-point/coordinate adapter differs. No artwork, wander or PCM modulation.
+#include "KumoneShaderTypes.h"
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wunused-function"
+namespace OriginalAnimatedLoop {
 //
-//  AnimatedLoop.metal
+//  SWAnimatedLoop.metal
+//  ShipSwift
 //
-//  ShipSwift's `SWAnimatedLoop.metal` (github.com/signerlabs/ShipSwift, MIT —
-//  see ACKNOWLEDGEMENTS), `Shape` style fixed to its circle distance metric,
-//  adjusted in three ways:
+//  Stitchable SwiftUI color effects — `SWAnimatedLoop` family.
 //
-//   - the field turns around the screen centre, slowly and without end;
-//   - the strokes are wider (they read as upright card-shaped bands rather
-//     than hairlines) and the whole sum is dimmed so the bands stay separate
-//     instead of merging into a glare;
-//   - a beat spawns another whole copy of the pattern: each copy is stamped
-//     with the moment of its birth on the host side, appears at the centre
-//     and marches outward on the same march as the standing pattern, keeps
-//     going, never fades — several copies are alive at once, and with no
-//     track playing no copy exists at all.
+//  Four hand-tuned styles bundled in one file because they share the same
+//  per-line phase ramp / RGB-channel split / additive composite logic;
+//  they only differ in the distance metric `d` and the pattern term `m`.
+//
+//  Entry points:
+//    - `swAnimatedLoopShape`   — user-pickable shape (circle / square /
+//                                 diamond pip / hexagon / star)
+//    - `swAnimatedLoopDiamond` — L1 distance rings + multiplicative pattern
+//    - `swAnimatedLoopNeon`    — circle rings + per-channel angular wobble
+//    - `swAnimatedLoopWarp`    — stretched-ellipse rings + 1D pattern
+//
+//  All four take the same 18-parameter signature so the Swift renderer can
+//  use a single argument list and dispatch by name. Parameters that don't
+//  apply to a given style are touched with `(void)x;` to make the "unused
+//  on purpose" decision explicit.
+//
+//  Paired with: SWAnimatedLoop.swift
+//  Requires iOS 17+ / macOS 14+.
 //
 
-#include "KumoneShaderTypes.h"
+
+
 using namespace metal;
 
-fragment float4 kumone_fragment_animated_loop(Varying in [[stage_in]],
-                                              constant Uniforms& u [[buffer(0)]]) {
-    // ShipSwift `SWAnimatedLoop(style: .shape)` defaults, widened.
-    constexpr float SPEED          = 0.05;
-    constexpr float LINE_WIDTH     = 0.006;   // wider strokes -> card-shaped bands
-    constexpr int   LINES          = 5;
-    constexpr float SPACING        = 5.0;
-    constexpr float CHANNEL_OFFSET = 0.01;
-    constexpr float PATTERN_MOD    = 0.2;
-    // Endless slow turn around the centre. ~0.02 rad/s is a full revolution
-    // every five minutes: motion you feel, not motion you watch.
-    constexpr float ROTATE_SPEED   = 0.02;
-    constexpr float SCALE          = 1.0;
-    // The standing pattern's scale: the raw sum runs far past white where the
-    // channels overlap, and every band merges into a glare. Kept low, the
-    // bands read as individual cards — which is the look at rest.
-    constexpr float DIM            = 0.22;
-    // Beat-spawned copies: same pattern, born at the centre, alive for good.
-    // WEIGHT is deliberately faint, because copies accumulate — four of them
-    // may be crossing the field at once, and the picture must not end up
-    // brighter than the standing pattern alone.
-    constexpr float COPY_WEIGHT    = 0.1;
+// MARK: - Shape
 
-    float2 position = in.uv * u.resolution.y;
-    float2 size = u.resolution;
+static inline half4 swAnimatedLoopShape(float2 position,
+                                           half4  color,
+                                           float4 boundingRect,
+                                           float  time,
+                                           float  speed,
+                                           float  lineWidth,
+                                           float  lines,
+                                           float  spacing,
+                                           float  channelOffset,
+                                           float  patternMod,
+                                           float  rotation,
+                                           float  scale,
+                                           float2 center,
+                                           float  shape,
+                                           float  petals,
+                                           float  angularLobes,
+                                           float  angularAmount,
+                                           float  angularSpeed,
+                                           half4  color1,
+                                           half4  color2,
+                                           half4  color3,
+                                           half4  background) {
+    // Angular params unused by this style — see file header.
+    (void)angularLobes;
+    (void)angularAmount;
+    (void)angularSpeed;
 
-    // `uv` is already centred on the view, so this rotation is around the
-    // screen centre. It runs forever in one direction; the rings fall outward
-    // through the turning frame instead of sliding along a fixed axis.
-    float2 uv = (position * 2.0 - size) / min(size.x, size.y);
-    uv = uv / max(SCALE, 0.0001);
-    float rotation = ROTATE_SPEED * u.time;
+    float2 size = boundingRect.zw;
+    float2 uv   = (position * 2.0 - size) / min(size.x, size.y);
+
+    uv = uv / max(scale, 0.0001);
+    uv -= center;
     float c = cos(rotation);
     float s = sin(rotation);
     uv = float2(uv.x * c - uv.y * s, uv.x * s + uv.y * c);
 
-    float t     = u.time * SPEED;
-    int   count = max(1, LINES);
+    float t     = time * speed;
+    int   count = max(1, int(lines));
 
-    float d = length(uv);                     // circle
-    float pmm = max(PATTERN_MOD, 0.0001);
+    int   shapeIdx = int(shape);
+    float d;
+    if (shapeIdx == 1) {
+        d = max(abs(uv.x), abs(uv.y));                      // square
+    } else if (shapeIdx == 2) {
+        d = abs(uv.x) * 1.6 + abs(uv.y) * 0.85;             // diamond pip
+    } else if (shapeIdx == 3) {
+        float2 q = abs(uv);
+        d = max(q.x * 0.866025 + q.y * 0.5, q.y);           // hexagon
+    } else if (shapeIdx == 4) {
+        float ang = atan2(uv.y, uv.x);
+        float r   = length(uv);
+        d = r * (1.0 + 0.35 * cos(petals * ang));           // star
+    } else {
+        d = length(uv);                                     // circle
+    }
+
+    float pmm = max(patternMod, 0.0001);
     float m   = fmod(uv.x + uv.y, pmm);
 
-    float3 ch[3] = { u.palettePrimary.rgb, u.paletteSecondary.rgb, u.paletteAccent.rgb };
+    float3 ch[3] = { float3(color1.rgb), float3(color2.rgb), float3(color3.rgb) };
 
     float3 col = float3(0.0);
-
-    // The standing pattern: the original recipe, dimmed after the sum.
     for (int j = 0; j < 3; j++) {
         float acc = 0.0;
         for (int i = 0; i < count; i++) {
-            float f = fract(t - CHANNEL_OFFSET * float(j) + 0.01 * float(i)) * SPACING - d + m;
-            acc += LINE_WIDTH * float(i * i) / max(abs(f), 0.00001);
+            float f = fract(t - channelOffset * float(j) + 0.01 * float(i)) * spacing - d + m;
+            acc += lineWidth * float(i * i) / max(abs(f), 0.00001);
         }
         col += ch[j] * acc;
     }
-    col *= DIM;
 
-    // One copy per stamped beat. Its own clock starts at its birth time, so
-    // phase 0 (the centre) is where it comes into being, and it expands
-    // outward on the same march as the standing pattern — no fade, no
-    // disappearance, no speed-up of anything else. Slots never born (-1) sit
-    // the whole loop out, which is the quiet picture.
-    for (int n = 0; n < 4; n++) {
-        float born = u.time - u.beatBirthTs[n];
-        if (born < 0.0) continue;
-        float tCopy = born * SPEED;
+    float3 bg = float3(background.rgb);
+    return half4(half3(bg + col), 1.0);
+}
 
-        float3 copyCol = float3(0.0);
-        for (int j = 0; j < 3; j++) {
-            float acc = 0.0;
-            for (int i = 0; i < count; i++) {
-                float f = fract(tCopy - CHANNEL_OFFSET * float(j) + 0.01 * float(i)) * SPACING - d + m;
-                acc += LINE_WIDTH * float(i * i) / max(abs(f), 0.00001);
-            }
-            // Colour rotation offset per copy so stacked copies read as
-            // different sets, not a brighter copy of the same one.
-            copyCol += ch[(j + n) % 3] * acc;
+// MARK: - Diamond
+
+static inline half4 swAnimatedLoopDiamond(float2 position,
+                                             half4  color,
+                                             float4 boundingRect,
+                                             float  time,
+                                             float  speed,
+                                             float  lineWidth,
+                                             float  lines,
+                                             float  spacing,
+                                             float  channelOffset,
+                                             float  patternMod,
+                                             float  rotation,
+                                             float  scale,
+                                             float2 center,
+                                             float  shape,
+                                             float  petals,
+                                             float  angularLobes,
+                                             float  angularAmount,
+                                             float  angularSpeed,
+                                             half4  color1,
+                                             half4  color2,
+                                             half4  color3,
+                                             half4  background) {
+    (void)shape;
+    (void)petals;
+    (void)angularLobes;
+    (void)angularAmount;
+    (void)angularSpeed;
+
+    float2 size = boundingRect.zw;
+    float2 uv   = (position * 2.0 - size) / min(size.x, size.y);
+
+    uv = uv / max(scale, 0.0001);
+    uv -= center;
+    float c = cos(rotation);
+    float s = sin(rotation);
+    uv = float2(uv.x * c - uv.y * s, uv.x * s + uv.y * c);
+
+    float t     = time * speed;
+    int   count = max(1, int(lines));
+
+    float d   = abs(uv.x) + abs(uv.y);
+    float pmm = max(patternMod, 0.0001);
+    float m   = fmod(uv.x * uv.y, pmm);
+
+    float3 ch[3] = { float3(color1.rgb), float3(color2.rgb), float3(color3.rgb) };
+
+    float3 col = float3(0.0);
+    for (int j = 0; j < 3; j++) {
+        float acc = 0.0;
+        for (int i = 0; i < count; i++) {
+            float f = fract(t - channelOffset * float(j) + 0.012 * float(i)) * spacing - d + m;
+            acc += lineWidth * float(i * i) / max(abs(f), 0.00001);
         }
-        col += copyCol * COPY_WEIGHT;
+        col += ch[j] * acc;
     }
 
-    float3 bg = u.paletteBackground.rgb;
-    return float4(bg + col, 1.0);
+    float3 bg = float3(background.rgb);
+    return half4(half3(bg + col), 1.0);
 }
+
+// MARK: - Neon
+
+static inline half4 swAnimatedLoopNeon(float2 position,
+                                          half4  color,
+                                          float4 boundingRect,
+                                          float  time,
+                                          float  speed,
+                                          float  lineWidth,
+                                          float  lines,
+                                          float  spacing,
+                                          float  channelOffset,
+                                          float  patternMod,
+                                          float  rotation,
+                                          float  scale,
+                                          float2 center,
+                                          float  shape,
+                                          float  petals,
+                                          float  angularLobes,
+                                          float  angularAmount,
+                                          float  angularSpeed,
+                                          half4  color1,
+                                          half4  color2,
+                                          half4  color3,
+                                          half4  background) {
+    (void)shape;
+    (void)petals;
+
+    float2 size = boundingRect.zw;
+    float2 uv   = (position * 2.0 - size) / min(size.x, size.y);
+
+    uv = uv / max(scale, 0.0001);
+    uv -= center;
+    float c = cos(rotation);
+    float s = sin(rotation);
+    uv = float2(uv.x * c - uv.y * s, uv.x * s + uv.y * c);
+
+    float t     = time * speed;
+    int   count = max(1, int(lines));
+
+    float d   = length(uv);
+    float pmm = max(patternMod, 0.0001);
+    float m   = fmod(uv.x + uv.y, pmm);
+    float ang = atan2(uv.y, uv.x);
+
+    float3 ch[3] = { float3(color1.rgb), float3(color2.rgb), float3(color3.rgb) };
+
+    float3 col = float3(0.0);
+    for (int j = 0; j < 3; j++) {
+        float angularShift = sin(ang * angularLobes + time * angularSpeed + float(j)) * angularAmount;
+        float acc = 0.0;
+        for (int i = 0; i < count; i++) {
+            float f = fract(t - channelOffset * float(j) + 0.01 * float(i)) * spacing - d + angularShift + m;
+            acc += lineWidth * float(i * i) / max(abs(f), 0.00001);
+        }
+        col += ch[j] * acc;
+    }
+    // Baked-in cool/warm RGB boost — part of the Neon style identity.
+    col *= float3(1.1, 0.8, 1.2);
+
+    float3 bg = float3(background.rgb);
+    return half4(half3(bg + col), 1.0);
+}
+
+// MARK: - Warp
+
+static inline half4 swAnimatedLoopWarp(float2 position,
+                                          half4  color,
+                                          float4 boundingRect,
+                                          float  time,
+                                          float  speed,
+                                          float  lineWidth,
+                                          float  lines,
+                                          float  spacing,
+                                          float  channelOffset,
+                                          float  patternMod,
+                                          float  rotation,
+                                          float  scale,
+                                          float2 center,
+                                          float  shape,
+                                          float  petals,
+                                          float  angularLobes,
+                                          float  angularAmount,
+                                          float  angularSpeed,
+                                          half4  color1,
+                                          half4  color2,
+                                          half4  color3,
+                                          half4  background) {
+    (void)shape;
+    (void)petals;
+    (void)angularLobes;
+    (void)angularAmount;
+    (void)angularSpeed;
+
+    float2 size = boundingRect.zw;
+    float2 uv   = (position * 2.0 - size) / min(size.x, size.y);
+
+    uv = uv / max(scale, 0.0001);
+    uv -= center;
+    float c = cos(rotation);
+    float s = sin(rotation);
+    uv = float2(uv.x * c - uv.y * s, uv.x * s + uv.y * c);
+
+    float t     = time * speed;
+    int   count = max(1, int(lines));
+
+    float d   = length(uv * float2(0.4, 1.0));
+    float pmm = max(patternMod, 0.0001);
+    float m   = fmod(uv.x, pmm);
+
+    float3 ch[3] = { float3(color1.rgb), float3(color2.rgb), float3(color3.rgb) };
+
+    float3 col = float3(0.0);
+    for (int j = 0; j < 3; j++) {
+        float acc = 0.0;
+        for (int i = 0; i < count; i++) {
+            float f = fract(t - channelOffset * float(j) + 0.015 * float(i)) * spacing - d + m;
+            acc += lineWidth * float(i * i) / max(abs(f), 0.00001);
+        }
+        col += ch[j] * acc;
+    }
+
+    float3 bg = float3(background.rgb);
+    return half4(half3(bg + col), 1.0);
+}
+
+static inline half4 originalColor(float r, float g, float b) {
+    // Original SwiftUI default (.nonLinear) working space, dark appearance.
+    return half4(r, g, b, 1.0h);
+}
+}
+
+fragment float4 kumone_fragment_animated_loop(Varying in [[stage_in]], constant Uniforms& u [[buffer(0)]]) {
+    using namespace OriginalAnimatedLoop;
+    // Host UV is measured in height units. SwiftUI position has a top-left origin.
+    float2 position = float2(in.uv.x * u.resolution.y, u.resolution.y - in.uv.y * u.resolution.y);
+    half4 original = swAnimatedLoopShape(position, half4(1.0h), float4(0.0, 0.0, u.resolution), u.time,
+        0.05000000,
+        0.00200000,
+        5.00000000,
+        5.00000000,
+        0.01000000,
+        0.20000000,
+        0.00000000,
+        1.00000000,
+        float2(0.0),
+        0.00000000,
+        5.00000000,
+        3.00000000,
+        0.08000000,
+        0.50000000,
+        originalColor(1.00000000, 0.25882354, 0.27058825),
+        originalColor(0.18823528, 0.81960785, 0.34509802),
+        originalColor(0.00000000, 0.56862748, 1.00000000),
+        originalColor(0.00000000, 0.00000000, 0.00000000));
+    // Encode only once: preserve the original nonlinear math, then adapt to
+    // the host's sRGB drawable (which expects linear fragment output).
+    float3 c = saturate(float3(original.rgb));
+    float3 linear = select(pow((c + 0.055) / 1.055, float3(2.4)), c / 12.92, c <= 0.04045);
+    return float4(linear, original.a);
+}
+#pragma clang diagnostic pop

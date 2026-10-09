@@ -115,7 +115,7 @@ struct ShaderContainerView: PlatformViewRepresentable {
 
             renderer.palette = palette
             renderer.isAudioPlaying = isPlaying
-            renderer.isAudioReactive = pcmSync
+            renderer.isAudioReactive = pcmSync && shader?.usesOriginalAnimation != true
         }
 
         func tearDown(_ view: MTKView) {

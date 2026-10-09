@@ -2,14 +2,23 @@
 
 ## Bundled visualizers
 
-The bundled shaders in `Sources/KumoneShaders/Shaders/` marked *Ported from
-ShipSwift* are derived from [ShipSwift](https://github.com/signerlabs/ShipSwift)
+The bundled shaders in `Sources/KumoneShaders/Shaders/` are derived from
+[ShipSwift](https://github.com/signerlabs/ShipSwift)
 by SignerLabs, used under the MIT license below.
 
 Each port keeps the original algorithm and retargets it to kumone's fragment
-stage: the original SwiftUI `stitchable` effects are driven by time alone, and
-these add an audio dimension (low/mid/high bands, the beat envelope, and
-loudness) plus the per-artwork palette.
+stage. Algorithms and initializer defaults are restored from the supplied
+ShipSwift SWMetal source: fixed original colors, parameters and independent
+time-driven animation, including while playback is paused. Bundled presets do
+not use PCM, artwork palettes, parameter wander or beat-spawned copies.
+Imported shaders keep the host's audio and artwork uniforms.
+Named SwiftUI colors are resolved for the app's dark appearance. Original
+nonlinear color math is preserved; only the final output is decoded to linear
+RGB for the host's sRGB drawable, avoiding double gamma conversion.
+
+Run `swift Scripts/check-original-shaders.swift /path/to/ShipSwift/SWMetal`
+to audit algorithm parity, compile all eleven presets and verify that PCM and
+artwork inputs cannot change their output.
 
 The bundled visualizers are the ShipSwift presets the project ships. ShipSwift's
 "Dot Sphere" is Canvas-rendered rather than a `.metal` file and cannot travel to

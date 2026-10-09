@@ -109,9 +109,10 @@ public final class ShaderRenderer: NSObject, MTKViewDelegate {
         pipelineDescriptor.vertexFunction = vertex
         pipelineDescriptor.fragmentFunction = fragment
         pipelineDescriptor.colorAttachments[0].pixelFormat = .bgra8Unorm_srgb
-        // Additive: shaders emit glow that accumulates over the background.
+        // Original presets already composite their own background. Only
+        // imported shaders retain the host's historical additive contract.
         let color = pipelineDescriptor.colorAttachments[0]!
-        color.isBlendingEnabled = true
+        color.isBlendingEnabled = !descriptor.usesOriginalAnimation
         color.rgbBlendOperation = .add
         color.alphaBlendOperation = .add
         color.sourceRGBBlendFactor = .sourceAlpha
@@ -121,6 +122,10 @@ public final class ShaderRenderer: NSObject, MTKViewDelegate {
 
         do {
             pipelineState = try device.makeRenderPipelineState(descriptor: pipelineDescriptor)
+            if descriptor.usesOriginalAnimation {
+                startTime = 0
+                lastFrameTime = 0
+            }
             lastError = nil
             return true
         } catch {

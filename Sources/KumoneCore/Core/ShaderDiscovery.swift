@@ -8,6 +8,12 @@ public struct ShaderDescriptor: Identifiable, Hashable {
     /// Where the MSL source came from.
     public let origin: Origin
 
+    /// Bundled ShipSwift presets retain their original independent animation.
+    public var usesOriginalAnimation: Bool {
+        guard case .bundled = origin else { return false }
+        return id != "bundled.__host__"
+    }
+
     public init(id: String, name: String, origin: Origin) {
         self.id = id
         self.name = name

@@ -1,40 +1,55 @@
+// ShipSwift original algorithm and Swift initializer defaults. MIT; see ACKNOWLEDGEMENTS.
+// Only the entry-point/coordinate adapter differs. No artwork, wander or PCM modulation.
+#include "KumoneShaderTypes.h"
+namespace OriginalDotOrbit {
 //
-//  DotOrbit.metal
+//  SWDotOrbit.metal
+//  ShipSwift
 //
-//  Ported from ShipSwift's `SWDotOrbit.metal` (github.com/signerlabs/ShipSwift,
-//  MIT — see ACKNOWLEDGEMENTS).
+//  Stitchable SwiftUI colorEffect that renders animated multi-color dots,
+//  each orbiting around its own Voronoi-cell center, mapped onto a 1–10
+//  color step-discretized gradient.
 //
-//  Dots that each orbit around their own Voronoi-cell centre, coloured across
-//  a step-discretized gradient. The per-cell randomizers are pure hash
-//  functions, so no auxiliary texture has to be bound.
+//  The per-cell randomizers (`randomR` / `randomGB`) use pure hash
+//  functions so no auxiliary texture has to be bound through SwiftUI's
+//  `ShaderLibrary`.
 //
-//  Self-driven wander eases grid scale, orbit width and dot size, with a
-//  positive orbit rate. The host palette spans the original ten gradient slots.
+//  Paired with: SWDotOrbit.swift
+//  Entry point: `swDotOrbit` — invoked via SwiftUI `.colorEffect(...)`.
+//  Requires iOS 17+ / macOS 14+.
 //
 
-#include "KumoneShaderTypes.h"
+
+
 using namespace metal;
 
-static float dotOrbitHash11(float2 p) {
+// =============================================================================
+// MARK: - hash helpers (avoid binding an auxiliary noise texture)
+// =============================================================================
+
+// Single-channel hash for the orbit-rotation seed (`randomR`).
+static float swDO_hash11(float2 p) {
     float3 p3 = fract(float3(p.xyx) * 0.1031);
     p3 += dot(p3, p3.yzx + 33.33);
     return fract((p3.x + p3.y) * p3.z);
 }
 
-static float2 dotOrbitHash22(float2 p) {
+// 2-channel hash for the orbit-phase + palette mixer (`randomGB`).
+static float2 swDO_hash22(float2 p) {
     float3 p3 = fract(float3(p.xyx) * float3(0.1031, 0.1030, 0.0973));
     p3 += dot(p3, p3.yzx + 33.33);
     return fract((p3.xx + p3.yz) * p3.zy);
 }
 
-static float2 dotOrbitRotate(float2 uv, float th) {
+// 2D rotation by `theta` radians.
+static float2 swDO_rotate(float2 uv, float th) {
     float c = cos(th), s = sin(th);
     return float2(c * uv.x - s * uv.y, s * uv.x + c * uv.y);
 }
 
-/// 3x3 neighbour scan for the closest orbiting cell centre.
-/// Returns (minDist, randomizer.x, randomizer.y).
-static float3 dotOrbitVoronoi(float2 uv, float time, float spreading) {
+// voronoiShape — 3×3 neighbour scan to find the closest orbiting
+// cell-center. Returns `(minDist, randomizer.x, randomizer.y)`.
+static float3 swDO_voronoi(float2 uv, float time, float spreading) {
     const float TWO_PI = 6.28318530718;
     float2 iuv = floor(uv);
     float2 fuv = fract(uv);
@@ -46,12 +61,12 @@ static float3 dotOrbitVoronoi(float2 uv, float time, float spreading) {
     for (int y = -1; y <= 1; y++) {
         for (int x = -1; x <= 1; x++) {
             float2 tileOffset = float2(float(x), float(y));
-            float2 rnd = dotOrbitHash22(iuv + tileOffset);
+            float2 rnd = swDO_hash22(iuv + tileOffset);
             float2 center = float2(0.5 + 1e-4);
             center += s * cos(time + TWO_PI * rnd);
             center -= 0.5;
-            center = dotOrbitRotate(center,
-                                    dotOrbitHash11(float2(rnd.x, rnd.y)) + 0.1 * time);
+            center = swDO_rotate(center,
+                                 swDO_hash11(float2(rnd.x, rnd.y)) + 0.1 * time);
             center += 0.5;
             float d = length(tileOffset + center - fuv);
             if (d < minDist) {
@@ -63,87 +78,121 @@ static float3 dotOrbitVoronoi(float2 uv, float time, float spreading) {
     return float3(minDist, randomizer);
 }
 
-/// The original's ten palette slots, stretched from the host's four colours.
-static void dotOrbitPalette(constant Uniforms& u, thread float3 out[10]) {
-    float3 bg  = u.paletteBackground.rgb;
-    float3 sec = u.paletteSecondary.rgb;
-    float3 pri = u.palettePrimary.rgb;
-    float3 acc = u.paletteAccent.rgb;
-    out[0] = sec;
-    out[1] = pri;
-    out[2] = mix(sec, pri, 0.5);
-    out[3] = acc;
-    out[4] = mix(pri, acc, 0.5);
-    out[5] = mix(bg, sec, 0.5);
-    out[6] = pri;
-    out[7] = mix(sec, acc, 0.5);
-    out[8] = mix(pri, bg, 0.5);
-    out[9] = acc;
-}
+// =============================================================================
+// MARK: - swDotOrbit
+// =============================================================================
 
-fragment float4 kumone_fragment_dot_orbit(Varying in [[stage_in]],
-                                          constant Uniforms& u [[buffer(0)]]) {
-    float2 position = in.uv * u.resolution.y;
-    float2 size = u.resolution;
-
-    // Independent slow wander keeps the field self-driven.
-    float scale = 2.75 + (wander(u.time * 0.04, 0.0) - 0.5) * 2.0 * 1.25;
-    // Bass opens the grid, so a heavy low end spreads the cells apart.
-    scale = audio_gain(scale, audio_band(u.bands[0]), 0.2);
-    float spreading = 0.8 + (wander(u.time * 0.04, 1.7) - 0.5) * 2.0 * 0.4;
-    // Low-mid widens each orbit; the inner saturate() keeps the radius sane.
-    spreading = audio_gain(spreading, audio_band(u.bands[1]), 0.3);
-    float dotScale = 1.3 + (wander(u.time * 0.04, 3.3) - 0.5) * 2.0 * 0.7;
-    // A beat punches the dot size, on top of the slow wander.
-    dotScale = audio_gain(dotScale, audio_pulse(u.beat), 0.1);
-
-    float minDim = max(min(size.x, size.y), 1.0);
-    float2 uv = (position - 0.5 * size) / minDim;
+static inline half4 swDotOrbit(float2 position,
+                                  half4  inColor,
+                                  float4 boundingRect,
+                                  float  time,
+                                  float  speed,
+                                  float  scale,         // 0.1..5, default 1.5
+                                  float  size,          // 0..1 dot radius
+                                  float  sizeRange,     // 0..1 random size variation
+                                  float  spreading,     // 0..1 orbit radius
+                                  float  stepsPerColor, // 1..4 palette quantization
+                                  float  colorsCount,
+                                  half4  c1, half4 c2, half4 c3, half4 c4, half4 c5,
+                                  half4  c6, half4 c7, half4 c8, half4 c9, half4 c10,
+                                  half4  colorBack) {
+    float2 sz = boundingRect.zw;
+    float minDim = max(min(sz.x, sz.y), 1.0);
+    float2 uv = (position - 0.5 * sz) / minDim;
     uv *= max(scale, 1e-4);
 
     const float firstFrameOffset = -10.0;
-    // Additive phase flow: amp = base / (0.05 * 8.0) keeps velocity positive; no reversal.
-    float t = u.time * 0.8 + wander(u.time * 0.05, 5.9) * 2.0 + firstFrameOffset;
+    float t = time * speed + firstFrameOffset;
 
-    float3 voro = dotOrbitVoronoi(uv, t, spreading) + 1e-4;
+    float3 voro = swDO_voronoi(uv, t, spreading) + 1e-4;
 
-    float radius = 0.25 * dotScale - 0.1 * voro.z;
+    float radius = 0.25 * saturate(size) - 0.5 * saturate(sizeRange) * voro.z;
     float dist = voro.x;
     float edgeWidth = fwidth(dist);
     float dots = 1.0 - smoothstep(radius - edgeWidth, radius + edgeWidth, dist);
 
-    float3 colors[10];
-    dotOrbitPalette(u, colors);
-    int countI = 5;
-    float countF = float(countI);
-    float steps = 2.0;
-
     float shape = voro.y;
+    int countI = clamp(int(colorsCount + 0.5), 1, 10);
+    float countF = float(countI);
+    float steps = max(1.0, stepsPerColor);
+
+    // Two-step mixer — the second assignment is the one that actually
+    // drives the gradient (the first is unused; kept for clarity).
+    float mixerA = shape * (countF - 1.0);
+    (void)mixerA;
     float mixer = (shape - 0.5 / countF) * countF;
 
-    float3 gradient = colors[0];
+    half4 colors[10] = { c1, c2, c3, c4, c5, c6, c7, c8, c9, c10 };
+
+    half4 gradient = colors[0];
+    half3 g_rgb = half3(gradient.rgb) * gradient.a;
+    gradient = half4(g_rgb, gradient.a);
+
     for (int i = 1; i < 10; i++) {
         if (i >= countI) break;
         float localT = clamp(mixer - float(i - 1), 0.0, 1.0);
         localT = round(localT * steps) / steps;
-        gradient = mix(gradient, colors[i], localT);
+        half4 cc = colors[i];
+        cc = half4(half3(cc.rgb) * cc.a, cc.a);
+        gradient = mix(gradient, cc, half(localT));
     }
+
+    // Wrap-around mix — handle the edge case where mixer is outside
+    // [0, count-1] by interpolating between last and first.
     if (mixer < 0.0 || mixer > (countF - 1.0)) {
         float localT = mixer + 1.0;
         if (mixer > (countF - 1.0)) {
             localT = mixer - (countF - 1.0);
         }
         localT = round(localT * steps) / steps;
-        gradient = mix(colors[countI - 1], colors[0], localT);
+        half4 cFst = colors[0];
+        cFst = half4(half3(cFst.rgb) * cFst.a, cFst.a);
+        half4 cLast = colors[countI - 1];
+        cLast = half4(half3(cLast.rgb) * cLast.a, cLast.a);
+        gradient = mix(cLast, cFst, half(localT));
     }
 
-    // Loudness swells the dots themselves, not the background, so the field
-    // brightens with the mix while silence leaves it wandering on its own.
-    float3 col = gradient * dots * audio_glow(1.0, audio_energy(u.loudness), 0.6);
-    float3 bgRGB = u.paletteBackground.rgb;
-    col = col + bgRGB * (1.0 - dots);
+    float3 col = float3(gradient.rgb) * dots;
+    float opacity = float(gradient.a) * dots;
 
-    col = audio_bands_color(col, u.low, u.mid, u.high);
-    col = audio_fire(col, u.beat, 0.5);
-    return float4(col, 1.0);
+    float3 bgRGB = float3(colorBack.rgb) * float(colorBack.a);
+    col = col + bgRGB * (1.0 - opacity);
+
+    return half4(half3(col), 1.0);
+}
+
+static inline half4 originalColor(float r, float g, float b) {
+    // Original SwiftUI default (.nonLinear) working space, dark appearance.
+    return half4(r, g, b, 1.0h);
+}
+}
+
+fragment float4 kumone_fragment_dot_orbit(Varying in [[stage_in]], constant Uniforms& u [[buffer(0)]]) {
+    using namespace OriginalDotOrbit;
+    // Host UV is measured in height units. SwiftUI position has a top-left origin.
+    float2 position = float2(in.uv.x * u.resolution.y, u.resolution.y - in.uv.y * u.resolution.y);
+    half4 original = swDotOrbit(position, half4(1.0h), float4(0.0, 0.0, u.resolution), u.time,
+        1.00000000,
+        10.00000000,
+        1.00000000,
+        0.50000000,
+        1.00000000,
+        1.00000000,
+        5.00000000,
+        originalColor(0.20000000, 0.85000000, 0.95000000),
+        originalColor(0.10000000, 0.40000000, 0.95000000),
+        originalColor(0.55000000, 0.20000000, 0.95000000),
+        originalColor(0.95000000, 0.30000000, 0.65000000),
+        originalColor(1.00000000, 0.85000000, 0.20000000),
+        originalColor(1.00000000, 0.85000000, 0.20000000),
+        originalColor(1.00000000, 0.85000000, 0.20000000),
+        originalColor(1.00000000, 0.85000000, 0.20000000),
+        originalColor(1.00000000, 0.85000000, 0.20000000),
+        originalColor(1.00000000, 0.85000000, 0.20000000),
+        originalColor(1.00000000, 1.00000000, 1.00000000));
+    // Encode only once: preserve the original nonlinear math, then adapt to
+    // the host's sRGB drawable (which expects linear fragment output).
+    float3 c = saturate(float3(original.rgb));
+    float3 linear = select(pow((c + 0.055) / 1.055, float3(2.4)), c / 12.92, c <= 0.04045);
+    return float4(linear, original.a);
 }

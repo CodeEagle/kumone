@@ -193,9 +193,7 @@ struct ShaderPickerButton: View {
         .frame(width: 320)
     }
 
-    /// Audio-reactive switch, pinned above the list: it changes every shader at
-    /// once rather than picking one, so it belongs to the list's header instead
-    /// of to any single row.
+    /// PCM is available to imported shaders; bundled presets retain ShipSwift defaults.
     private var pcmSyncRow: some View {
         Toggle(isOn: $settings.pcmSyncEnabled) {
             HStack(spacing: 8) {
@@ -206,7 +204,9 @@ struct ShaderPickerButton: View {
                 VStack(alignment: .leading, spacing: 1) {
                     Text("音频响应")
                         .font(.system(size: 13, weight: .medium))
-                    Text(settings.pcmSyncEnabled ? "实时 PCM 采样驱动渲染" : "脱机渲染 · 仅内置时序")
+                    Text(selected?.usesOriginalAnimation == true
+                         ? "ShipSwift 原版 · 独立时序，不使用 PCM"
+                         : (settings.pcmSyncEnabled ? "实时 PCM 采样驱动渲染" : "脱机渲染 · 仅内置时序"))
                         .font(.system(size: 10))
                         .foregroundStyle(.white.opacity(0.45))
                 }
@@ -215,9 +215,12 @@ struct ShaderPickerButton: View {
         .toggleStyle(.switch)
         .controlSize(.mini)
         .tint(Theme.accent)
+        .disabled(selected?.usesOriginalAnimation == true)
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
-        .help(settings.pcmSyncEnabled ? "关闭后渲染不再响应音频流" : "渲染由实时 PCM 数据驱动")
+        .help(selected?.usesOriginalAnimation == true
+              ? "内置 shader 保持 ShipSwift 原版颜色与动效"
+              : (settings.pcmSyncEnabled ? "关闭后渲染不再响应音频流" : "渲染由实时 PCM 数据驱动"))
     }
 
     private var shaderRows: some View {

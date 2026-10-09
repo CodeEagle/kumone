@@ -127,7 +127,7 @@ public final class ShaderLayerView: MTKView {
     ///   the audio uniforms read as silence.
     public func apply(shader: ShaderDescriptor?, isPlaying: Bool, palette: ShaderPalette, pcmSync: Bool = true) {
         clampDrawableSize()
-        isPaused = !isPlaying
+        isPaused = shader == nil || (!isPlaying && shader?.usesOriginalAnimation != true)
         guard let renderer else {
             ShaderLayerView.logApply("no-renderer shaderId=\(shader?.id ?? "nil") isPlaying=\(isPlaying)")
             return
@@ -150,7 +150,7 @@ public final class ShaderLayerView: MTKView {
 
         renderer.palette = palette
         renderer.isAudioPlaying = isPlaying
-        renderer.isAudioReactive = pcmSync
+        renderer.isAudioReactive = pcmSync && shader?.usesOriginalAnimation != true
     }
 
     /// Stops rendering and releases GPU resources when the host discards this view.
