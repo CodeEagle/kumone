@@ -121,6 +121,18 @@ final class HeroProbe: ObservableObject {
         active[id]?.sourceScale ?? 1
     }
 
+    /// The radius the source view clips to — used to interpolate the flying
+    /// stand-in's radius so a small source is not clipped into a circle by a
+    /// page-sized radius while it grows.
+    func sourceCornerRadius(for id: String) -> CGFloat? {
+        active[id]?.sourceCornerRadius
+    }
+
+    /// The radius the landing view clips to.
+    func targetCornerRadius(for id: String) -> CGFloat? {
+        active[id]?.targetCornerRadius
+    }
+
     func begin(_ id: String) {
         active[id] = Record(id: id)
     }

@@ -40,6 +40,12 @@ final class HeroFlightDirector: ObservableObject {
         /// recorded. Keying the view on the nonce instead makes each flight its
         /// own view, with fresh state.
         let nonce = UUID()
+        /// The clip radii of the two endpoints, so the stand-in's corner
+        /// radius interpolates with its frame instead of staying pinned to
+        /// the landing page's radius (which clips a 38pt mini artwork into a
+        /// circle while it is still small).
+        let sourceCornerRadius: CGFloat
+        let targetCornerRadius: CGFloat
         var cornerRadius: CGFloat { content.cornerRadius }
 
         static func == (lhs: Flight, rhs: Flight) -> Bool {
@@ -52,6 +58,8 @@ final class HeroFlightDirector: ObservableObject {
                 && lhs.targetAnchorID == rhs.targetAnchorID
                 && lhs.liveAnchorID == rhs.liveAnchorID
                 && lhs.cornerRadius == rhs.cornerRadius
+                && lhs.sourceCornerRadius == rhs.sourceCornerRadius
+                && lhs.targetCornerRadius == rhs.targetCornerRadius
                 && lhs.nonce == rhs.nonce
         }
     }
@@ -103,7 +111,9 @@ final class HeroFlightDirector: ObservableObject {
             targetScale: targetScale,
             sourceScale: HeroProbe.shared.sourceScale(for: id),
             targetAnchorID: targetAnchorID,
-            liveAnchorID: liveAnchorID
+            liveAnchorID: liveAnchorID,
+            sourceCornerRadius: HeroProbe.shared.sourceCornerRadius(for: id) ?? content.cornerRadius,
+            targetCornerRadius: HeroProbe.shared.targetCornerRadius(for: id) ?? content.cornerRadius
         )
         KumoneLogger.hero.info("HERO DIR start \(id, privacy: .public) count=\(self.active.count, privacy: .public)")
     }

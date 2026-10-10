@@ -23,6 +23,10 @@ struct HeroFlight: View {
     @State private var shadowProgress: CGFloat = 0
     @State private var frame: CGRect
     @State private var scale: CGFloat
+    /// Interpolates alongside `frame`: a fixed landing-page radius clips a
+    /// 38pt mini artwork into a circle while the stand-in is still small, so
+    /// the radius rides the same spring as the frame and scale.
+    @State private var cornerRadius: CGFloat
     /// A landing view's frame can flap by half a point while its page's
     /// entrance spring rings down — every flap re-armed the flight's spring,
     /// and a completion that never fires (see `watchSettle`) meant the
@@ -39,6 +43,7 @@ struct HeroFlight: View {
         self.containerFrame = containerFrame
         _frame = State(initialValue: flight.source)
         _scale = State(initialValue: flight.sourceScale)
+        _cornerRadius = State(initialValue: flight.sourceCornerRadius)
     }
 
     var body: some View {
@@ -47,7 +52,7 @@ struct HeroFlight: View {
         // artwork grows into the full Now Playing cover — so the landing
         // measurement matches the target instead of the source size.
         .frame(width: frame.width, height: frame.height)
-        .clipShape(RoundedRectangle(cornerRadius: flight.cornerRadius, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
         // The hidden endpoint views cannot supply the flying cover's shadow.
         // Keep it outside the clip and inside the resting-scale transform,
         // matching both endpoint views without changing their static styling.
@@ -133,6 +138,7 @@ struct HeroFlight: View {
             frame = target
             scale = flight.targetScale
             shadowProgress = 1
+            cornerRadius = flight.targetCornerRadius
         } completion: {
             // A resize may retarget the flight while its previous spring is
             // completing. Only the latest spring can hand back to the mini bar.
