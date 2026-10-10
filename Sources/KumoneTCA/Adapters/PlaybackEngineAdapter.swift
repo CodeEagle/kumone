@@ -37,6 +37,7 @@ public enum PlaybackEngineAdapter {
 /// resumes itself and reports the change through `isPlayingChanged`.
 fileprivate final class PlaybackEngine: @unchecked Sendable {
     private let player: APlay
+    private let artworkLoader = PlaybackArtworkLoader()
     /// The engine's last reported playing state, so buffering events arriving
     /// mid-playback can be ignored (a network stream buffers forever).
     private var isPlaying = false
@@ -51,6 +52,7 @@ fileprivate final class PlaybackEngine: @unchecked Sendable {
     private let isPlayingChangedContinuation: AsyncStream<Bool>.Continuation
 
     init() {
+        AudioCacheMaintenance.trimIfNeeded()
         let configuration = APlay.Configuration(
             maxDiskCacheSize: UInt32(AudioCacheMaintenance.limitBytes),
             // Network streams carry no ID3 tags — the reducer pushes track
@@ -60,10 +62,11 @@ fileprivate final class PlaybackEngine: @unchecked Sendable {
             gaplessPlaybackEnabled: false,
             // The reducer owns the queue; APlay's built-in command handlers
             // would advance the framework's own playlist instead.
-            enableRemoteCommandHandling: false
+            enableRemoteCommandHandling: false,
+            sessionBuilder: Self.cdnSessionBuilder,
+            streamerBuilder: { CacheAwareStreamProvider(config: $0) }
         )
         player = APlay(configuration: configuration)
-        AudioCacheMaintenance.trimIfNeeded()
         // The reducer owns the queue: it loads one URL at a time and decides what
         // follows. APlay's own list advance must stay out of it — with the
         // default `.order` pattern a single-item list wraps back to the same
@@ -100,6 +103,7 @@ fileprivate final class PlaybackEngine: @unchecked Sendable {
                 // counts as "loading" (it does only before playback starts).
                 self.bufferingChangedContinuation.yield(Double(progress))
             case .streamerEndEncountered:
+                AudioCacheMaintenance.trimIfNeeded()
                 // The streamer read to EOF: every byte of this track is
                 // loaded. The last `hasBytesAvailable` before it often
                 // reported 0.9-something, and without this fix the preload
@@ -126,6 +130,14 @@ fileprivate final class PlaybackEngine: @unchecked Sendable {
     /// never actually run after `self` is gone.
     private static let noop = NSObject()
 
+    private static var cdnSessionBuilder: SessionBuilder? {
+        #if os(macOS)
+        return { _ in NeteaseCDNRetryProtocol.makeSession() }
+        #else
+        return nil
+        #endif
+    }
+
     // MARK: - Reads
 
     /// Safe to read from any thread — a plain value off the player.
@@ -136,15 +148,22 @@ fileprivate final class PlaybackEngine: @unchecked Sendable {
     // MARK: - Commands
 
     func load(url: URL, autostart: Bool, metadata: APlay.NowPlayingMetadata? = nil) {
-        AudioCacheMaintenance.trimIfNeeded()
+        AudioCacheMaintenance.protect(url: url)
+        artworkLoader.cancel()
         // A track change starts in "preparing": the URL is still being resolved
         // and no samples have arrived, so the shaders hold still rather than
         // flashing the last track's frozen levels.
         AudioSpectrum.shared.beginPreparing()
+        let textMetadata = PlaybackArtworkLoader.textOnlyMetadata(metadata)
         if autostart {
-            player.play(url, metadata: metadata)
+            player.play(url, metadata: textMetadata)
         } else {
-            player.prepare(url, metadata: metadata)
+            player.prepare(url, metadata: textMetadata)
+        }
+        if let metadata {
+            updateMetadata(title: metadata.title ?? "", artist: metadata.artist ?? "",
+                           album: metadata.album ?? "",
+                           coverURL: metadata.artworkURL.flatMap(URL.init(string:)))
         }
     }
 
@@ -167,21 +186,21 @@ fileprivate final class PlaybackEngine: @unchecked Sendable {
     }
 
     func clear() {
+        artworkLoader.cancel()
+        player.metadataUpdate(clearArtwork: true)
         player.pause()
         AudioSpectrum.shared.markIdle()
     }
 
     func updateMetadata(title: String, artist: String, album: String, coverURL: URL?) {
-        guard let coverURL else {
-            player.metadataUpdate(title: title, album: album, artist: artist, cover: nil)
-            return
-        }
-        // The cover is fetched here rather than in the reducer: Now Playing
-        // metadata is not time-critical, and the reducer only knows the URL.
-        Task {
-            let data = try? await URLSession.shared.data(from: coverURL).0
+        artworkLoader.cancel()
+        // Clear the previous-track reference before awaiting the next cover.
+        player.metadataUpdate(title: title, album: album, artist: artist, clearArtwork: true)
+        let url = coverURL?.absoluteString.resizedImageURL(256)
+        artworkLoader.load(url) { [player] image in
             player.metadataUpdate(
-                title: title, album: album, artist: artist, cover: data.flatMap(PlatformImage.init(data:)))
+                title: title, album: album, artist: artist, cover: image,
+                clearArtwork: image == nil)
         }
     }
 }

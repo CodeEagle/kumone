@@ -8,6 +8,20 @@ public enum UpdaterAdapter {
         let bridge = SparkleUpdaterBridge()
         return UpdaterClient.live(bridge: bridge)
     }()
+
+    static func values<P: Publisher>(from publisher: P) -> AsyncStream<Bool>
+        where P.Output == Bool, P.Failure == Never {
+        AsyncStream(bufferingPolicy: .bufferingNewest(1)) { continuation in
+            let task = Task {
+                for await value in publisher.values {
+                    guard !Task.isCancelled else { break }
+                    continuation.yield(value)
+                }
+                continuation.finish()
+            }
+            continuation.onTermination = { _ in task.cancel() }
+        }
+    }
 }
 
 /// One `SPUStandardUpdaterController` held for the app's whole lifetime (by
@@ -20,21 +34,12 @@ fileprivate final class SparkleUpdaterBridge: UpdaterBridge, @unchecked Sendable
     )
 
     func start() -> AsyncStream<Bool> {
-        AsyncStream { continuation in
-            // KVO publishers do not replay the current value, so prepend it:
-            // the menu item should be disabled until Sparkle says otherwise,
-            // not until the first change.
-            let publisher = controller.updater
-                .publisher(for: \.canCheckForUpdates)
-                .prepend(controller.updater.canCheckForUpdates)
-                .removeDuplicates()
-            Task {
-                for await value in publisher.values {
-                    continuation.yield(value)
-                }
-                continuation.finish()
-            }
-        }
+        // KVO publishers do not replay the current value, so prepend it.
+        let publisher = controller.updater
+            .publisher(for: \.canCheckForUpdates)
+            .prepend(controller.updater.canCheckForUpdates)
+            .removeDuplicates()
+        return UpdaterAdapter.values(from: publisher)
     }
 
     func setAutomaticChecks(_ enabled: Bool) {
