@@ -83,28 +83,6 @@ struct SidebarView: View {
         .listStyle(.plain)
         .scrollContentBackground(.hidden)
         .background(SidebarGlassDisabler())
-        // The sidebar toggle lives here at the sidebar's top rather than in
-        // the window toolbar: the toolbar's own items render centered over
-        // the detail column, not over the sidebar. MainWindow answers the
-        // notification by flipping columnVisibility, and shows the same
-        // button at the leading edge while the column is collapsed.
-        .safeAreaInset(edge: .top, spacing: 0) {
-            HStack(spacing: 0) {
-                Button {
-                    NotificationCenter.default.post(name: .kumoneToggleSidebar, object: nil)
-                } label: {
-                    Image(systemName: "sidebar.left")
-                        .font(.system(size: 14, weight: .medium))
-                        .foregroundStyle(.secondary)
-                        .frame(width: 32, height: 26)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel(Text("边栏"))
-                Spacer()
-            }
-            .padding(.leading, 4)
-        }
         #else
         .listStyle(.sidebar)
         .scrollContentBackground(.hidden)

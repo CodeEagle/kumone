@@ -51,6 +51,9 @@ final class MainContainerViewController: NSViewController, NSToolbarDelegate {
     private static let searchItemIdentifier = NSToolbarItem.Identifier("im.missuo.Kumone.search")
     private static let backItemIdentifier = NSToolbarItem.Identifier("im.missuo.Kumone.navigate-back")
     private var searchToolbar: NSToolbar?
+    /// The sidebar toggle button in the traffic-light row (see
+    /// installSidebarToggle). Faded with the system buttons.
+    private var sidebarToggleButton: NSButton?
     private var pathSubscription: AnyCancellable?
 
     init(store: StoreOf<AppFeature>) {
@@ -67,6 +70,7 @@ final class MainContainerViewController: NSViewController, NSToolbarDelegate {
         // SwiftUI's toolbar visibility preference is not always applied to a
         // toolbar bridged into a programmatically created AppKit window.
         installSearchToolbar()
+        installSidebarToggle()
         syncToolbarVisibility()
         nowPlayingSubscription = store.publisher.isNowPlayingPresented
             .removeDuplicates()
@@ -94,6 +98,7 @@ final class MainContainerViewController: NSViewController, NSToolbarDelegate {
     }
 
     private func syncToolbarVisibility() {
+        rearmSidebarToggle()
         guard let window = view.window else {
             logToolbar("no-window")
             return
@@ -141,11 +146,21 @@ final class MainContainerViewController: NSViewController, NSToolbarDelegate {
         }
     }
 
+    /// The titlebar can rebuild its button container (style changes,
+    /// fullscreen transitions) and drop the toggle with it; re-install
+    /// wherever the synchronization points run.
+    private func rearmSidebarToggle() {
+        if sidebarToggleButton?.superview == nil {
+            installSidebarToggle()
+        }
+    }
+
     private func fadeTrafficLights(on window: NSWindow, presented: Bool) {
         guard trafficLightsPresented != presented else { return }
         trafficLightsPresented = presented
         let buttons = [NSWindow.ButtonType.closeButton, .miniaturizeButton, .zoomButton]
             .compactMap { window.standardWindowButton($0) }
+            + (sidebarToggleButton.map { [$0] } ?? [])
         for button in buttons {
             if presented {
                 trafficLightsEnabled[ObjectIdentifier(button)] = button.isEnabled
@@ -210,6 +225,52 @@ final class MainContainerViewController: NSViewController, NSToolbarDelegate {
         let line = "TOOLBAR SYNC \(message)"
         KumoneLogger.hero.notice("\(line, privacy: .public)")
         BoundedLogFile.append(line, to: URL(fileURLWithPath: "/tmp/kumone-toolbar.log"))
+    }
+
+    /// Installs the sidebar toggle among the window's standard titlebar
+    /// buttons: on the traffic lights' row, to their right, above the
+    /// sidebar — the slot the system NavigationSplitView toggle used to fill
+    /// before d1bcd89 dropped the bridged toolbar. The toolbar's own items
+    /// land centered over the detail column, and the titlebar-accessory API
+    /// is unusable on macOS 27 (the property's setter no longer exists — an
+    // ObjC exception swallowed by the run loop that silently kills the rest
+    /// of viewDidAppear — and `addTitlebarAccessoryViewController:` breaks
+    /// the window's accessibility surface), so the buttons' container is the
+    /// one deterministic slot left. Window-level: the button survives the
+    /// sidebar's own collapse and can bring the column back.
+    private func installSidebarToggle() {
+        if let existing = sidebarToggleButton, existing.superview != nil { return }
+        guard let window = view.window,
+              let closeButton = window.standardWindowButton(.closeButton),
+              let container = closeButton.superview else { return }
+        let symbol = NSImage(systemSymbolName: "sidebar.left", accessibilityDescription: "边栏")?
+            .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 13, weight: .regular))
+        let button = NSButton(image: symbol ?? NSImage(),
+                              target: self, action: #selector(toggleSidebar))
+        button.isBordered = false
+        button.imagePosition = .imageOnly
+        button.toolTip = "边栏"
+        // The container shares the system buttons' bottom-left origin, so
+        // aligning on the close button keeps the glyph on their row whatever
+        // the titlebar height; the leading offset parks it one gap past the
+        // last of the three.
+        let last = [window.standardWindowButton(.closeButton),
+                    window.standardWindowButton(.miniaturizeButton),
+                    window.standardWindowButton(.zoomButton)]
+            .compactMap({ $0 })
+            .max(by: { $0.frame.maxX < $1.frame.maxX })
+        button.frame = NSRect(
+            x: (last ?? closeButton).frame.maxX + 14,
+            y: closeButton.frame.minY - 2,
+            width: 22,
+            height: 18
+        )
+        container.addSubview(button)
+        sidebarToggleButton = button
+        BoundedLogFile.append(
+            "SIDEBAR TOGGLE installed container=\(String(describing: type(of: container))) close=\(closeButton.frame) last=\((last ?? closeButton).frame) button=\(button.frame)",
+            to: URL(fileURLWithPath: "/tmp/kumone-titlebar.log")
+        )
     }
 
     /// The main window's toolbar is assembled here, not bridged from SwiftUI:
@@ -297,6 +358,16 @@ final class MainContainerViewController: NSViewController, NSToolbarDelegate {
         store.send(.path(.popFrom(id: id)))
     }
 
+    /// The sidebar toggle: the window toolbar's own items render centered
+    /// over the detail column (d1bcd89 removed the bridged `.toolbars`
+    /// option whose system toggle sat at the leading edge), so the toggle
+    /// is a `.left` titlebar accessory instead — beside the traffic lights,
+    /// on the same row, above the sidebar. Window-level, so it survives the
+    /// sidebar's own collapse and can bring the column back.
+    @objc private func toggleSidebar() {
+        NotificationCenter.default.post(name: .kumoneToggleSidebar, object: nil)
+    }
+
     /// Inserts the back button at the leading edge while the stack has a page
     /// to pop, and removes it when the stack empties. The sidebar toggle no
     /// longer lives in the toolbar (it moved to the top of the sidebar), so
@@ -325,14 +396,13 @@ final class MainContainerViewController: NSViewController, NSToolbarDelegate {
     }
 
     func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
-        // The sidebar toggle moved out of the toolbar: it lives at the top of
-        // the sidebar itself (SidebarView posts the toggle notification the
-        // main window answers), because the toolbar's leading cluster renders
-        // centered over the detail column, not over the sidebar. The default
-        // chrome is therefore just the search field pinned right. The back
-        // button is *not* in the defaults: it is inserted only while the
-        // navigation stack holds a pushed page, like the system back button
-        // it replaces.
+        // The sidebar toggle moved out of the toolbar: it renders as a
+        // `.left` titlebar accessory (installSidebarToggle) because the
+        // toolbar's leading cluster lands over the detail column, not over
+        // the sidebar. The default chrome is therefore just the search field
+        // pinned right. The back button is *not* in the defaults: it is
+        // inserted only while the navigation stack holds a pushed page, like
+        // the system back button it replaces.
         [.flexibleSpace, Self.searchItemIdentifier]
     }
 

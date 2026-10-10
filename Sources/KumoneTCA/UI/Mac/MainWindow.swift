@@ -61,30 +61,6 @@ public struct MainWindow: View {
                 #endif
             }()
         )
-        #if os(macOS)
-        // The sidebar toggle's collapsed half: once the column collapses the
-        // button in the sidebar goes with it, so the same affordance floats at
-        // the leading edge to bring the sidebar back — the slot the system
-        // toolbar toggle used to fill before the shell took the toolbar.
-        // Above the top-fade blur band, inside the immersive fade.
-        .overlay(alignment: .topLeading) {
-            if columnVisibility == .detailOnly && !store.isNowPlayingPresented {
-                Button {
-                    NotificationCenter.default.post(name: .kumoneToggleSidebar, object: nil)
-                } label: {
-                    Image(systemName: "sidebar.left")
-                        .font(.system(size: 14, weight: .medium))
-                        .foregroundStyle(.secondary)
-                        .frame(width: 32, height: 26)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .padding(.leading, 6)
-                .padding(.top, 5)
-                .accessibilityLabel(Text("显示边栏"))
-            }
-        }
-        #endif
         // The immersive page is the only visible surface while it is up: the
         // underlying navigation content fades out (layout and frames survive,
         // so the hero anchors on the mini player keep measuring) and the
@@ -136,9 +112,8 @@ public struct MainWindow: View {
             DesktopLyricsController.shared.sync(with: store.settings.showDesktopLyrics, store: store)
         }
         #if os(macOS)
-        // The sidebar toggle: the button itself lives at the sidebar's top
-        // (SidebarView); while the column is collapsed the floating overlay
-        // below keeps the same affordance at the leading edge.
+        // The sidebar toggle: the shell installs it as a borderless
+        // button in the traffic-light row (MainContainerViewController).
         .onReceive(NotificationCenter.default.publisher(for: .kumoneToggleSidebar)) { _ in
             withAnimation(AppAnimation.smooth) {
                 columnVisibility = columnVisibility == .detailOnly ? .all : .detailOnly
