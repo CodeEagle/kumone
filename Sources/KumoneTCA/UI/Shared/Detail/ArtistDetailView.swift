@@ -147,7 +147,6 @@ struct ArtistDetailView: View {
                     .frame(width: 100, height: 100)
                     .clipShape(Circle())
                     .shadow(color: .black.opacity(0.2), radius: 10, y: 4)
-                    .heroAnchor(heroID)
                     .heroTarget(
                         id: heroID,
                         artworkURL: artist.picUrl?.resizedImageURL(512),
@@ -213,7 +212,6 @@ struct ArtistDetailView: View {
                 .frame(width: 180, height: 180)
                 .clipShape(Circle())
                 .shadow(color: .black.opacity(0.25), radius: 16, y: 8)
-                .heroAnchor(heroID)
                 .heroTarget(
                     id: heroID,
                     artworkURL: artist.picUrl?.resizedImageURL(512),

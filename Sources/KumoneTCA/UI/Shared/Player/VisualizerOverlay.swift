@@ -8,7 +8,9 @@ import SwiftUI
 /// any `.metal` file the user has imported, and a toggle decides whether the
 /// same shader also runs behind the now-playing page.
 struct VisualizerOverlay: View {
-    private static let focusVeilOpacity: Double = 0.12
+    // Start fully transparent so the shader is not darkened by a second
+    // black layer. This can be raised later if the controls need more contrast.
+    private static let focusVeilOpacity: Double = 0.0
 
     @Binding var isPresented: Bool
     let palette: ShaderPalette

@@ -1,5 +1,6 @@
 import AppKit
 import KumoneUI
+import KumoneTCA
 
 /// Turns key presses into named actions by way of the user's keymap.
 ///
@@ -46,11 +47,24 @@ final class AppKeymapMonitor {
     }
 
     private func handleKeyDown(_ event: NSEvent) -> NSEvent? {
+        let shortcuts = ShortcutManager.shared
+        if shortcuts.isRecording {
+            // Returning the event lets NSMenu steal Command chords before the
+            // recorder's keyDown. Deliver once and consume before menu routing.
+            Self.routeRecordingEvent(event, to: NSApp.keyWindow?.firstResponder)
+            return nil
+        }
+        if let action = shortcuts.overriddenAction(matching: event, editingText: isEditingText) {
+            return dispatch(action.actionName)
+        }
         guard let key = keyName(event) else { return event }
         let pressed = pressedModifiers(event)
-        guard let action = store.keymap.action(for: pressed, key: key) else {
+        guard let action = Self.configuredAction(in: store.keymap, modifiers: pressed, key: key) else {
             return event
         }
+        // Rebinding/clearing an action must disable its old YAML aliases too.
+        // Media keys deliberately remain independent physical controls.
+        if shortcuts.hasOverride(for: action) { return event }
         // A bare-key binding (like space) while a text field has focus would
         // type instead of toggle, so plain-key bindings stay inert then;
         // modified ones (cmd+l) work anywhere — the editor never eats those.
@@ -58,6 +72,15 @@ final class AppKeymapMonitor {
             return event
         }
         return dispatch(action)
+    }
+
+    static func configuredAction(in keymap: Keymap, modifiers: Set<KeyBinding.Modifier>, key: String) -> String? {
+        // A plain cmd+l must never win over cmd+shift+l by dictionary order.
+        keymap.bindings[KeyBinding(modifiers: modifiers, key: key)] ?? keymap.action(for: modifiers, key: key)
+    }
+
+    static func routeRecordingEvent(_ event: NSEvent, to responder: NSResponder?) {
+        (responder as? any ShortcutRecordingResponder)?.recordShortcut(event: event)
     }
 
     /// Media keys: their `.systemDefined` events are decoded by

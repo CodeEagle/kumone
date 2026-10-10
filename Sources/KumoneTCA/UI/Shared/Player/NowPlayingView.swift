@@ -50,7 +50,7 @@ struct NowPlayingView: View {
     @State private var hasStartedArtistFlight = false
     @State private var hasStartedHeroFlight = false
     @ObservedObject private var heroFlight = HeroFlightDirector.shared
-    @State private var isZenMode = false
+    @AppStorage("nowPlaying.zenModeEnabled") private var isZenMode = false
     @State private var lyricsColumnWasVisible = false
     @State private var isWindowHovered = true
     @State private var isZenActive = false
@@ -130,9 +130,7 @@ struct NowPlayingView: View {
                     #endif
                     if isCompact, showsClassicChrome(isCompact: isCompact) {
                         Button {
-                            withAnimation(AppAnimation.smooth) {
-                                appStore?.send(.player(.togglePanel(.lyrics)))
-                            }
+                            appStore?.send(.player(.togglePanel(.lyrics)))
                         } label: {
                             Image(systemName: "quote.bubble")
                                 .font(.system(size: 14, weight: .semibold))
@@ -144,8 +142,13 @@ struct NowPlayingView: View {
                         .help("歌词")
                     }
                 }
+                #if os(macOS)
+                .padding(.top, 52)
+                #else
                 .padding(.top, 20)
+                #endif
                 .padding(.trailing, 20)
+                .zIndex(100)
             }
             #if os(iOS)
             .overlay {
@@ -181,7 +184,11 @@ struct NowPlayingView: View {
         .onChange(of: isShaderPickerOpen) {
             scheduleZenHoverChange()
         }
+        .onAppear {
+            scheduleZenHoverChange()
+        }
         .onDisappear {
+            ArtworkLifetimeDiagnostics.snapshot(reason: "detail-disappeared")
             hasStartedHeroFlight = false
             hasStartedPlayPauseFlight = false
             hasStartedPreviousFlight = false
@@ -203,6 +210,9 @@ struct NowPlayingView: View {
         #if os(iOS)
         .task(id: player.currentTrack?.id) {
             await loadArtwork()
+        }
+        .onDisappear {
+            loadedArtworkImage = nil
         }
         #endif
         #if os(iOS)
@@ -261,16 +271,18 @@ struct NowPlayingView: View {
     /// rides the top-trailing corner: the window traffic lights sit top-leading
     /// and the two overlapped while the window toolbar is hidden for this page.
     private var closeButton: some View {
-        Button {
+        return Button {
             close()
         } label: {
             Image(systemName: "chevron.down")
                 .font(.system(size: 14, weight: .semibold))
                 .foregroundStyle(.white.opacity(0.85))
-                .frame(width: 36, height: 36)
+                .frame(width: 44, height: 44)
                 .background(.white.opacity(0.12), in: Circle())
         }
         .buttonStyle(.pressable)
+        .contentShape(Circle())
+        .zIndex(101)
         #if os(macOS)
         .opacity(isZenActive ? 0 : 1)
         .allowsHitTesting(!isZenActive)
@@ -385,17 +397,21 @@ struct NowPlayingView: View {
         }
         .ignoresSafeArea()
         .animation(.easeInOut(duration: 0.8), value: colors)
+        .allowsHitTesting(false)
     }
 
     #if os(iOS)
     private func loadArtwork() async {
+        guard !Task.isCancelled else { return }
+        loadedArtworkImage = nil
         guard let urlString = player.currentTrack?.album.picUrl,
               let url = urlString.resizedImageURL(768) else {
             loadedArtworkImage = nil
             loadedArtworkColors = .fallback
             return
         }
-        if let image = await ImageCache.shared.image(for: url) {
+        if let image = await ImageCache.shared.image(for: url, rendition: .playback) {
+            guard !Task.isCancelled else { return }
             loadedArtworkImage = image
             loadedArtworkColors = ArtworkPalette.extract(from: image, cacheKey: urlString)
         }
@@ -989,7 +1005,8 @@ struct NowPlayingView: View {
     }
 
     private func leftColumn(artworkSize: CGFloat) -> some View {
-        Group {
+        let zenActive = isZenActive
+        return Group {
             #if os(macOS)
             // Zen mode slides the artwork and metadata to the viewport's
             // vertical centre. The offset is applied through `visualEffect`
@@ -1004,7 +1021,7 @@ struct NowPlayingView: View {
                         .fixedSize(horizontal: false, vertical: true)
                         .visualEffect { content, geometry in
                             content.offset(
-                                y: isZenActive
+                                y: zenActive
                                     ? viewport.size.height / 2
                                         - geometry.frame(in: .named("nowPlayingColumn")).midY
                                     : 0
@@ -1104,6 +1121,7 @@ struct NowPlayingView: View {
                 library: shaderLibrary,
                 palette: ShaderPaletteBuilder.make(from: colors)
             ) { shader in
+                KumoneLogger.app.notice("SHADER PICK id=\(shader?.id ?? "nil", privacy: .public) hasStore=\(appStore != nil)")
                 if let shader {
                     shaderSettings.pickedShaderName = shader.name
                     shaderSettings.shaderPickingDisabled = false
@@ -1111,6 +1129,7 @@ struct NowPlayingView: View {
                     // storage left it on a different shader than the one the
                     // page picks.
                     appStore?.send(.setShader(shader.id))
+                    appStore?.send(.settings(.setShowMainWindowAmbientBackground(true)))
                 } else {
                     shaderSettings.shaderPickingDisabled = true
                     appStore?.send(.setShader(nil))
@@ -1132,7 +1151,7 @@ struct NowPlayingView: View {
             // transaction the buttons snap to their new spot while everything
             // else is still sliding.
             withAnimation(AppAnimation.smooth) {
-                appStore?.send(.player(.togglePanel(.lyrics)))
+                _ = appStore?.send(.player(.togglePanel(.lyrics)))
             }
         } label: {
             Image(systemName: "quote.bubble")
@@ -1351,7 +1370,12 @@ struct NowPlayingView: View {
     }
 
     private var playPauseButton: some View {
-        Button {
+        #if os(macOS)
+        let isFlying = heroFlight.active[HeroID.nowPlayingPlayPause] != nil
+        #else
+        let isFlying = false
+        #endif
+        return Button {
             appStore?.send(.player(.togglePlayPause))
         } label: {
             ZStack {
@@ -1367,8 +1391,8 @@ struct NowPlayingView: View {
         }
         .buttonStyle(.pressable)
         #if os(macOS)
-        .opacity(heroFlight.active[HeroID.nowPlayingPlayPause] != nil ? 0 : 1)
-        .animation(nil, value: heroFlight.active[HeroID.nowPlayingPlayPause] != nil)
+        .opacity(isFlying ? 0 : 1)
+        .animation(nil, value: isFlying)
         .heroAnchor(HeroID.nowPlayingPlayPauseTarget)
         .nowPlayingHeroTarget(
             id: HeroID.nowPlayingPlayPause,
@@ -1384,17 +1408,25 @@ struct NowPlayingView: View {
     private func circleButton(icon: String, size: CGFloat,
                               tint: Color? = nil, heroID: String? = nil,
                               action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Image(systemName: icon)
-                .font(.system(size: size, weight: .medium))
-                .foregroundStyle(tint ?? .white.opacity(0.8))
-                .frame(width: 40, height: 40)
-                .background(.white.opacity(0.1), in: Circle())
+        #if os(macOS)
+        let isFlying = heroID.map { heroFlight.active[$0] != nil } ?? false
+        #else
+        let isFlying = false
+        #endif
+        return Button(action: action) {
+            ZStack {
+                Circle()
+                    .fill(.white.opacity(0.1))
+                    .frame(width: 40, height: 40)
+                Image(systemName: icon)
+                    .font(.system(size: size, weight: .medium))
+                    .foregroundStyle(tint ?? .white.opacity(0.8))
+            }
         }
         .buttonStyle(.pressable)
         #if os(macOS)
-        .opacity(heroID.map { heroFlight.active[$0] == nil ? 1 : 0 } ?? 1)
-        .animation(nil, value: heroID.map { heroFlight.active[$0] != nil } ?? false)
+        .opacity(isFlying ? 0 : 1)
+        .animation(nil, value: isFlying)
         #endif
     }
 
@@ -1495,17 +1527,21 @@ struct NowPlayingView: View {
             VStack(alignment: .leading, spacing: 5) {
                 if settings.lyricsAnnotation == .romaji, let romaji = line.romaji {
                     Text(romaji)
-                        .font(.system(size: isActive ? 15 : 13, weight: .medium))
+                        // Keep the reading's measured height stable while the
+                        // active line changes. Furigana/ruby uses the same
+                        // rule below; changing the measured box is what makes
+                        // automatic cursor advances visibly jump.
+                        .font(.system(size: 14, weight: .medium))
                         .foregroundStyle(.white.opacity(isActive ? 0.7 : 0.35))
                 }
                 LyricMainText(
                     line: line, isActive: isActive,
-                    size: isActive ? 26 : 20, weight: isActive ? .bold : .semibold,
+                    size: 22, weight: .semibold,
                     verbatim: settings.verbatimLyrics
                 )
                 if settings.showLyricsTranslation, let translation = line.translation {
                     Text(translation)
-                        .font(.system(size: isActive ? 16 : 14, weight: .medium))
+                        .font(.system(size: 15, weight: .medium))
                         .foregroundStyle(.white.opacity(isActive ? 0.7 : 0.35))
                 }
             }
@@ -1892,6 +1928,7 @@ private struct CompactTrackHeader: View {
                             .font(.system(size: 21, weight: .medium))
                             .foregroundStyle(liked ? Theme.accent : .white.opacity(0.88))
                             .frame(width: 44, height: 44)
+                            .background(.white.opacity(0.12), in: Circle())
                     }
                     .buttonStyle(.pressable)
                     .accessibilityLabel(liked ? "取消收藏" : "收藏")
@@ -1933,6 +1970,7 @@ private struct CompactTrackHeader: View {
                             .font(.system(size: 21, weight: .medium))
                             .foregroundStyle(.white.opacity(0.88))
                             .frame(width: 44, height: 44)
+                            .background(.white.opacity(0.12), in: Circle())
                             .contentShape(Rectangle())
                     }
                     .buttonStyle(.pressable)

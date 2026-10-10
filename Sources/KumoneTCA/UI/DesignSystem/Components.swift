@@ -43,9 +43,11 @@ struct SkeletonShelf: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             SkeletonView(cornerRadius: 4).frame(width: 120, height: 20)
-            HStack(spacing: 16) {
-                ForEach(0..<6, id: \.self) { _ in
-                    SkeletonCardView()
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 16) {
+                    ForEach(0..<6, id: \.self) { _ in
+                        SkeletonCardView()
+                    }
                 }
             }
         }

@@ -29,61 +29,39 @@ struct ShaderContainerView: PlatformViewRepresentable {
     // MARK: - Platform plumbing
 
     #if os(macOS)
-    func makeNSView(context: Context) -> MTKView {
-        makeMetalView(context: context)
+    func makeNSView(context: Context) -> ShaderLayerView {
+        makeMetalView()
     }
 
-    func updateNSView(_ nsView: MTKView, context: Context) {
-        updateMetalView(nsView, context: context)
+    func updateNSView(_ nsView: ShaderLayerView, context: Context) {
+        updateMetalView(nsView)
     }
 
-    static func dismantleNSView(_ nsView: MTKView, coordinator: Coordinator) {
-        coordinator.tearDown(nsView)
+    static func dismantleNSView(_ nsView: ShaderLayerView, coordinator: Coordinator) {
+        nsView.tearDown()
     }
     #else
-    func makeUIView(context: Context) -> MTKView {
-        makeMetalView(context: context)
+    func makeUIView(context: Context) -> ShaderLayerView {
+        makeMetalView()
     }
 
-    func updateUIView(_ uiView: MTKView, context: Context) {
-        updateMetalView(uiView, context: context)
+    func updateUIView(_ uiView: ShaderLayerView, context: Context) {
+        updateMetalView(uiView)
     }
 
-    static func dismantleUIView(_ uiView: MTKView, coordinator: Coordinator) {
-        coordinator.tearDown(uiView)
+    static func dismantleUIView(_ uiView: ShaderLayerView, coordinator: Coordinator) {
+        uiView.tearDown()
     }
     #endif
 
-    private func makeMetalView(context: Context) -> MTKView {
-        let view = MTKView()
-        view.device = MTLCreateSystemDefaultDevice()
-        view.colorPixelFormat = .bgra8Unorm_srgb
-        view.preferredFramesPerSecond = 60
-        view.isPaused = false
-        view.enableSetNeedsDisplay = false
-        view.framebufferOnly = true
-        // Shaders draw glow over the app's own backdrop; let it show through.
-        #if os(macOS)
-        view.layer?.isOpaque = false
-        view.layer?.backgroundColor = .clear
-        #else
-        view.layer.isOpaque = false
-        view.layer.backgroundColor = UIColor.clear.cgColor
-        #endif
-        view.clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 0)
-
-        let coordinator = context.coordinator
-        coordinator.renderer = ShaderRenderer(device: view.device)
-        coordinator.renderer?.prepareUniformBuffer()
-        view.delegate = coordinator.renderer
-
-        context.coordinator.apply(shader: shader, isPlaying: isPlaying,
-                                  palette: palette, pcmSync: pcmSync)
+    private func makeMetalView() -> ShaderLayerView {
+        let view = ShaderLayerView()
+        updateMetalView(view)
         return view
     }
 
-    private func updateMetalView(_ view: MTKView, context: Context) {
-        context.coordinator.apply(
+    private func updateMetalView(_ view: ShaderLayerView) {
+        view.apply(
             shader: shader,
             isPlaying: isPlaying,
             palette: palette,
@@ -93,34 +71,9 @@ struct ShaderContainerView: PlatformViewRepresentable {
 
     // MARK: - Coordinator
 
-    /// Bridges SwiftUI updates to the renderer without recreating the Metal view.
+    /// Both the native window and SwiftUI use ShaderLayerView's lifecycle.
+    /// Keep a coordinator for representable dismantling, not a second renderer.
     @MainActor
     final class Coordinator {
-        var renderer: ShaderRenderer?
-        private var currentShaderID: String?
-
-        func apply(shader: ShaderDescriptor?, isPlaying: Bool, palette: ShaderPalette, pcmSync: Bool) {
-            guard let renderer else { return }
-
-            // Reload the pipeline only when the shader actually changes;
-            // rebuilding it every frame would stall the render loop.
-            if shader?.id != currentShaderID {
-                currentShaderID = shader?.id
-                if let shader {
-                    renderer.load(shader)
-                } else {
-                    renderer.unload()
-                }
-            }
-
-            renderer.palette = palette
-            renderer.isAudioPlaying = isPlaying
-            renderer.isAudioReactive = pcmSync && shader?.usesOriginalAnimation != true
-        }
-
-        func tearDown(_ view: MTKView) {
-            view.delegate = nil
-            renderer = nil
-        }
     }
 }

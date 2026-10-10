@@ -29,9 +29,12 @@ public struct SettingsFeature {
         public var recentFilterDays = 30
         public var autoCheckUpdates = true
         public var showDesktopLyrics = false
+        public var showMenuBarPlayer = false
         public var desktopLyricsCentered = false
         public var showMainWindowAmbientBackground = true
         public var mainWindowAmbientBackgroundIntensity = 1.0
+        /// Diagnostic only; deliberately not persisted across app launches.
+        public var disableImageLoading = false
         /// Flips once `onAppear` has rehydrated from disk.
         public var isLoaded = false
     }
@@ -49,10 +52,12 @@ public struct SettingsFeature {
         case setRecentFilterDays(Int)
         case setAutoCheckUpdates(Bool)
         case setShowDesktopLyrics(Bool)
+        case setShowMenuBarPlayer(Bool)
         case setDesktopLyricsCentered(Bool)
         case setShowMainWindowAmbientBackground(Bool)
         case setEnableAudioSourceFallback(Bool)
         case setMainWindowAmbientBackgroundIntensity(Double)
+        case setDisableImageLoading(Bool)
         /// The app menu / Settings "检查更新…" button.
         case checkForUpdates
     }
@@ -86,6 +91,7 @@ public struct SettingsFeature {
                 state.recentFilterDays = [7, 14, 30, 90].first { Double($0) == recentFilterDays } ?? 30
                 state.autoCheckUpdates = p.boolForKey(Keys.autoCheckUpdates)
                 state.showDesktopLyrics = p.boolForKey(Keys.desktopLyrics)
+                state.showMenuBarPlayer = p.boolForKey(Keys.menuBarPlayer)
                 state.desktopLyricsCentered = p.boolForKey(Keys.desktopLyricsCentered)
                 // Stored as a presence check rather than a plain boolForKey:
                 // a missing key must read as the default-on state, not as an
@@ -158,6 +164,11 @@ public struct SettingsFeature {
                 persistence.setBool(value, Keys.desktopLyrics)
                 return .none
 
+            case let .setShowMenuBarPlayer(value):
+                state.showMenuBarPlayer = value
+                persistence.setBool(value, Keys.menuBarPlayer)
+                return .none
+
             case let .setDesktopLyricsCentered(value):
                 state.desktopLyricsCentered = value
                 persistence.setBool(value, Keys.desktopLyricsCentered)
@@ -173,6 +184,10 @@ public struct SettingsFeature {
             case let .setShowMainWindowAmbientBackground(value):
                 state.showMainWindowAmbientBackground = value
                 persistence.setBool(value, Keys.mainWindowAmbientBackground)
+                return .none
+
+            case let .setDisableImageLoading(value):
+                state.disableImageLoading = value
                 return .none
 
             case let .setMainWindowAmbientBackgroundIntensity(value):
@@ -205,6 +220,7 @@ extension SettingsFeature {
         public static let recentFilterDays = "fm.recentFilterDays"
         public static let autoCheckUpdates = "settings.autoCheckUpdates"
         public static let desktopLyrics = "settings.showDesktopLyrics"
+        public static let menuBarPlayer = "settings.showMenuBarPlayer"
         public static let desktopLyricsCentered = "settings.desktopLyricsCentered"
         public static let mainWindowAmbientBackground = "settings.showMainWindowAmbientBackground"
         public static let mainWindowAmbientBackgroundIntensity = "settings.mainWindowAmbientBackgroundIntensity"

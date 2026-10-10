@@ -1,3 +1,4 @@
+import AppKit
 import ComposableArchitecture
 import KumoneCore
 import KumoneTCA
@@ -24,9 +25,22 @@ enum AppActions {
         registry.register("player.cycleRepeatMode") { store.send(.player(.cycleRepeatMode)) }
         registry.register("player.toggleLyricsPanel") { store.send(.player(.togglePanel(.lyrics))) }
         registry.register("player.toggleQueuePanel") { store.send(.player(.togglePanel(.queue))) }
+        registry.register("account.toggleLike") {
+            guard let trackID = store.player.currentTrack?.id else { return }
+            store.send(.account(.toggleLike(trackID)))
+        }
 
         registry.register("app.presentNowPlaying") { store.send(.presentNowPlaying) }
         registry.register("app.dismissNowPlaying") { store.send(.dismissNowPlaying) }
+        registry.register("app.closeWindow") {
+            (NSApp.keyWindow ?? NSApp.mainWindow)?.performClose(nil)
+        }
+        registry.register("app.minimizeWindow") {
+            (NSApp.keyWindow ?? NSApp.mainWindow)?.performMiniaturize(nil)
+        }
+        registry.register("app.hide") { NSApp.hide(nil) }
+        registry.register("app.hideOthers") { NSApp.hideOtherApplications(nil) }
+        registry.register("app.quit") { NSApp.terminate(nil) }
 
         // Volume steps: media keys give relative intent (volumeup), the
         // store only knows absolute levels, so the step lands here.

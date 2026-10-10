@@ -28,6 +28,7 @@ final class SettingsFeatureTests: XCTestCase {
                 case SettingsFeature.Keys.unblock: return true
                 case SettingsFeature.Keys.autoCheckUpdates: return true
                 case SettingsFeature.Keys.desktopLyrics: return true
+                case SettingsFeature.Keys.menuBarPlayer: return true
                 case SettingsFeature.Keys.desktopLyricsCentered: return true
                 case SettingsFeature.Keys.mainWindowAmbientBackground: return true
                 default: return false
@@ -46,6 +47,7 @@ final class SettingsFeatureTests: XCTestCase {
             $0.enableUnblock = true
             $0.autoCheckUpdates = true
             $0.showDesktopLyrics = true
+            $0.showMenuBarPlayer = true
             $0.desktopLyricsCentered = true
             $0.showMainWindowAmbientBackground = true
             $0.mainWindowAmbientBackgroundIntensity = 1.25
@@ -125,6 +127,8 @@ final class SettingsFeatureTests: XCTestCase {
         await store.send(.setLyricsAnnotation(.furigana)) { $0.lyricsAnnotation = .furigana }
         await store.send(.setVerbatimLyrics(false)) { $0.verbatimLyrics = false }
         await store.send(.setShowDesktopLyrics(true)) { $0.showDesktopLyrics = true }
+        await store.send(.setShowMenuBarPlayer(true)) { $0.showMenuBarPlayer = true }
+        await store.send(.setShowMenuBarPlayer(false)) { $0.showMenuBarPlayer = false }
         await store.send(.setDesktopLyricsCentered(true)) { $0.desktopLyricsCentered = true }
         await store.send(.setShowMainWindowAmbientBackground(false)) {
             $0.showMainWindowAmbientBackground = false
@@ -138,6 +142,7 @@ final class SettingsFeatureTests: XCTestCase {
             SettingsFeature.Keys.showTranslation: false,
             SettingsFeature.Keys.verbatimLyrics: false,
             SettingsFeature.Keys.desktopLyrics: true,
+            SettingsFeature.Keys.menuBarPlayer: false,
             SettingsFeature.Keys.desktopLyricsCentered: true,
             SettingsFeature.Keys.mainWindowAmbientBackground: false,
         ])

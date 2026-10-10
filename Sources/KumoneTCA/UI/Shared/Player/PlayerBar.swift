@@ -110,9 +110,9 @@ struct PlayerBar: View {
                 _ = appStore.send(.presentNowPlaying)
             }
         } label: {
-            // Share one cached resolution with the page and stand-in, so a
-            // cold presentation cannot swap a loaded thumbnail for a new URL.
-            CachedAsyncImage(url: player.currentTrack?.album.picUrl?.resizedImageURL(768), animated: false)
+            // Keep the hero's URL stable, but do not decode a page-sized bitmap
+            // for the 38pt minibar. The flight uses its own page rendition.
+            CachedAsyncImage(url: player.currentTrack?.album.picUrl?.resizedImageURL(768), animated: false, rendition: .thumbnail)
                 .frame(width: 38, height: 38)
                 .heroAnchor(HeroID.nowPlayingArtwork)
                 .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.small, style: .continuous))

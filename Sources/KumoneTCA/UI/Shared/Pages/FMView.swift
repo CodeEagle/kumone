@@ -54,7 +54,7 @@ struct FMView: View {
             #else
             Platform.windowBackgroundColor
             if let cover = track?.album.picUrl?.resizedImageURL(384) {
-                CachedAsyncImage(url: cover)
+                CachedAsyncImage(url: cover, rendition: .init(maxPixelSize: 384, transient: true))
                     .scaledToFill()
                     .blur(radius: 80)
                     .opacity(colorScheme == .dark ? 0.45 : 0.3)
@@ -83,7 +83,7 @@ struct FMView: View {
 
                 ZStack {
                     if let cover = track?.album.picUrl?.resizedImageURL(768) {
-                        CachedAsyncImage(url: cover)
+                        CachedAsyncImage(url: cover, rendition: .playback)
                             .frame(width: coverDimension, height: coverDimension)
                             .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
                             .shadow(color: .black.opacity(0.35), radius: 28, y: 14)

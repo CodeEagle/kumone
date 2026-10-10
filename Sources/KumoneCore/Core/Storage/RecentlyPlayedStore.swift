@@ -44,7 +44,7 @@ public actor RecentlyPlayedStore {
         clock = { Date() }
         injectedDays = nil
         injectedEnabled = nil
-        load()
+        Task { await load() }
     }
 
     /// Test-only: inject retention/enable state and a controllable clock.
@@ -61,7 +61,7 @@ public actor RecentlyPlayedStore {
         self.storeURL = storeURL
         self.defaults = defaults
         self.clock = clock
-        load()
+        Task { await load() }
     }
 
     // MARK: - Configuration

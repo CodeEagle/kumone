@@ -48,6 +48,7 @@ public struct AppFeature {
     }
 
     public enum Action: Equatable {
+        case imageLoadingDiagnosticApplied(Bool)
         case toasts(ToastsFeature.Action)
         case settings(SettingsFeature.Action)
         case account(AccountFeature.Action)
@@ -112,6 +113,7 @@ public struct AppFeature {
     }
 
     @Dependency(\.nowPlaying) public var nowPlaying
+    @Dependency(\.playback) public var playback
     @Dependency(\.intelligence) public var intelligence
 
     public var body: some ReducerOf<Self> {
@@ -216,6 +218,34 @@ public struct AppFeature {
             case .setShader(let id):
                 state.shaderID = id
                 return .none
+
+            case let .settings(.setDisableImageLoading(disabled)):
+                return .run { send in
+                    guard !Task.isCancelled else { return }
+                    await ImageLoadingControl.shared.setDisabled(disabled)
+                    guard !Task.isCancelled else { return }
+                    await send(.imageLoadingDiagnosticApplied(disabled))
+                }
+                .cancellable(id: "image-loading-diagnostic", cancelInFlight: true)
+
+            case let .imageLoadingDiagnosticApplied(disabled):
+                guard state.settings.disableImageLoading == disabled,
+                      let track = state.player.currentTrack else { return .none }
+                return .run { [playback] _ in
+                    playback.updateMetadata(title: track.name, artist: track.artistNames,
+                        album: track.album.name,
+                        coverURL: disabled ? nil : track.album.picUrl.flatMap(URL.init(string:)))
+                }
+
+            case .settings(.setShowMainWindowAmbientBackground(true)):
+                let currentID = state.shaderID
+                return .run { send in
+                    let id = await MainActor.run {
+                        ShaderSettings.shared.enableBackdropSelection(
+                            from: ShaderDiscovery.shared.availableDescriptors, currentID: currentID)
+                    }
+                    await send(.setShader(id))
+                }
 
             case .clearPath:
                 state.path = StackState()

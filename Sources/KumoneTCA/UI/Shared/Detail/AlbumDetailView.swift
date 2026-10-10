@@ -111,7 +111,6 @@ struct AlbumDetailView: View {
                     .frame(width: 120, height: 120)
                     .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.standard, style: .continuous))
                     .shadow(color: .black.opacity(0.2), radius: 10, y: 4)
-                    .heroAnchor(heroID)
                     .heroTarget(
                         id: heroID,
                         artworkURL: album.picUrl?.resizedImageURL(512),
@@ -219,7 +218,6 @@ struct AlbumDetailView: View {
                 .frame(width: 200, height: 200)
                 .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.large, style: .continuous))
                 .shadow(color: .black.opacity(0.25), radius: 16, y: 8)
-                .heroAnchor(heroID)
                 .heroTarget(
                     id: heroID,
                     artworkURL: album.picUrl?.resizedImageURL(512),

@@ -24,16 +24,21 @@ struct HomeView: View {
         }
         .navigationTitle("推荐")
         .task(id: account.isLoggedIn) {
+            KumoneLogger.api.notice(
+                "HOME view task isLoggedIn=\(account.isLoggedIn, privacy: .public)"
+            )
             store.send(.onAppear)
         }
     }
 
     private var loadingBody: some View {
         VStack(alignment: .leading, spacing: 32) {
-            HStack(spacing: 16) {
-                ForEach(0..<3, id: \.self) { _ in
-                    SkeletonView(cornerRadius: Theme.Radius.large)
-                        .frame(width: 230, height: 132)
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 16) {
+                    ForEach(0..<3, id: \.self) { _ in
+                        SkeletonView(cornerRadius: Theme.Radius.large)
+                            .frame(width: 230, height: 132)
+                    }
                 }
             }
             SkeletonShelf()

@@ -1,5 +1,6 @@
 import Combine
 import Foundation
+import KumoneCore
 
 /// The switches that shape how every shader surface behaves.
 ///
@@ -40,6 +41,16 @@ public final class ShaderSettings: ObservableObject {
     }
 
     private let defaults: UserDefaults
+
+    /// Explicitly enabling the backdrop undoes a previous "none" pick.
+    /// Startup restoration does not use this: a saved "none" stays off at launch.
+    func enableBackdropSelection(from descriptors: [ShaderDescriptor], currentID: String?) -> String? {
+        shaderPickingDisabled = false
+        if let currentID, descriptors.contains(where: { $0.id == currentID }) {
+            return currentID
+        }
+        return descriptors.first(where: { $0.name == pickedShaderName })?.id ?? descriptors.first?.id
+    }
 
     public init(defaults: UserDefaults = .standard) {
         self.defaults = defaults

@@ -497,7 +497,8 @@ struct IOSMiniPlayerBar: View {
 
     private var trackSummary: some View {
         HStack(alignment: .top, spacing: 8) {
-            CachedAsyncImage(url: player.currentTrack?.album.picUrl?.resizedImageURL(128))
+            CachedAsyncImage(url: player.currentTrack?.album.picUrl?.resizedImageURL(128),
+                             rendition: .init(maxPixelSize: 128, transient: true))
                 .frame(
                     width: artworkSize,
                     height: artworkSize

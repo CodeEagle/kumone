@@ -1,4 +1,3 @@
-import APlay
 import ComposableArchitecture
 import KumoneCore
 import SwiftUI
@@ -21,6 +20,8 @@ public struct SettingsView: View {
     @State private var cacheSize: String = String(localized: "计算中…")
     @State private var audioCacheUsage: String = String(localized: "计算中…")
     @State private var imageCacheUsage: String = String(localized: "计算中…")
+    @AppStorage(AudioCacheMaintenance.limitKey) private var audioCacheLimitMB = 256
+    @State private var audioCacheLimitDraft = 256.0
 
     public var body: some View {
         Form {
@@ -114,31 +115,27 @@ public struct SettingsView: View {
                     set: { store.send(.setShowMainWindowAmbientBackground($0)) }
                 ))
                 if store.showMainWindowAmbientBackground {
-                    VStack(alignment: .leading, spacing: 6) {
-                        HStack {
-                            Text("背景色强度")
-                            Spacer()
-                            Text("\(Int(store.mainWindowAmbientBackgroundIntensity * 100))%")
-                                .foregroundStyle(.secondary)
-                        }
-                        Slider(
-                            value: Binding(
-                                get: { store.mainWindowAmbientBackgroundIntensity },
-                                set: { store.send(.setMainWindowAmbientBackgroundIntensity($0)) }
-                            ),
-                            in: SettingsFeature.intensityRange,
-                            step: 0.1
-                        )
-                        HStack {
-                            Text("50%")
-                            Spacer()
-                            Text("150%")
-                        }
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    }
+                    SettingsValueSlider(
+                        title: "背景色强度",
+                        value: Binding(
+                            get: { store.mainWindowAmbientBackgroundIntensity },
+                            set: { store.send(.setMainWindowAmbientBackgroundIntensity($0)) }
+                        ),
+                        range: SettingsFeature.intensityRange,
+                        step: 0.1,
+                        valueLabel: "\(Int(store.mainWindowAmbientBackgroundIntensity * 100))%",
+                        minimumLabel: "50%",
+                        maximumLabel: "150%"
+                    )
                 }
                 #if os(macOS)
+                Toggle("菜单栏播放控制", isOn: Binding(
+                    get: { store.showMenuBarPlayer },
+                    set: { store.send(.setShowMenuBarPlayer($0)) }
+                ))
+                Text("显示播放/暂停、切歌、收藏和歌曲信息；个人 FM 隐藏上一曲")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
                 Toggle("桌面歌词", isOn: Binding(
                     get: { store.showDesktopLyrics },
                     set: { store.send(.setShowDesktopLyrics($0)) }
@@ -154,6 +151,10 @@ public struct SettingsView: View {
                     .foregroundStyle(.secondary)
                 #endif
             }
+
+            #if os(macOS)
+            ShortcutSettingsSection()
+            #endif
 
             Section("LX 自部署解析源") {
                 TextField("服务地址", text: $lxBaseURL)
@@ -171,14 +172,32 @@ public struct SettingsView: View {
             }
 
             Section("存储") {
-                // APlay's bounded stream cache (256MB by default, see
-                // PlaybackEngineAdapter's Configuration) lands here; the level
-                // and the clear button mirror the upstream storage controls
-                // (e0ad871) adapted to the engine-owned cache.
+                // Apply the same budget at startup and throughout playback.
                 LabeledContent("歌曲缓存") {
                     Text(audioCacheUsage)
                         .foregroundStyle(.secondary)
                 }
+                SettingsValueSlider(
+                    title: "缓存上限",
+                    value: Binding(
+                        get: { Double(AudioCacheLimitStops.index(nearestTo: audioCacheLimitDraft)) },
+                        set: { audioCacheLimitDraft = Double(AudioCacheLimitStops.megabytes(at: Int($0.rounded()))) }
+                    ),
+                    range: 0...10,
+                    step: 1,
+                    valueLabel: "\(Int(audioCacheLimitDraft)) MB",
+                    minimumLabel: "64 MB",
+                    maximumLabel: "4095 MB",
+                    onEditingChanged: { editing in
+                        if !editing { applyAudioCacheLimit() }
+                    }
+                )
+                Text("自动上限 \(ByteCountFormatter.string(fromByteCount: AudioCacheMaintenance.limitBytes, countStyle: .file))，超出后按最旧文件清理")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Text("正在播放的歌曲保留；单曲超过上限时可暂时超出，切歌后自动清理。")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
                 Button("清除歌曲缓存") {
                     clearAudioCache()
                 }
@@ -222,6 +241,18 @@ public struct SettingsView: View {
                     .foregroundStyle(.secondary)
             }
 
+            #if os(macOS)
+            Section("诊断") {
+                Toggle("不加载图片（内存诊断）", isOn: Binding(
+                    get: { store.disableImageLoading },
+                    set: { store.send(.setDisableImageLoading($0)) }
+                ))
+                Text("暂停封面加载、清空图片内存缓存并显示占位图，用于对比切歌内存；仅本次运行生效。")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            #endif
+
             Section("关于") {
                 LabeledContent(appDisplayName, value: appVersion)
                 LabeledContent("构建") {
@@ -252,8 +283,9 @@ public struct SettingsView: View {
         .frame(width: 440, height: 480)
         #endif
         .task {
+            audioCacheLimitDraft = Double(audioCacheLimitMB)
             updateCacheSize()
-            updateAudioCacheUsage()
+            AudioCacheMaintenance.trimIfNeeded { updateAudioCacheUsage() }
         }
     }
 
@@ -300,8 +332,13 @@ public struct SettingsView: View {
     }
 
     private var audioCacheDirectory: URL {
-        // The engine's bounded stream cache root (APlay Configuration).
-        URL(fileURLWithPath: APlay.Configuration.defaultCachedDirectory)
+        AudioCacheMaintenance.directory
+    }
+
+    private func applyAudioCacheLimit() {
+        // Don't evict on every intermediate value while dragging.
+        audioCacheLimitMB = Int(audioCacheLimitDraft.rounded())
+        AudioCacheMaintenance.trimIfNeeded { updateAudioCacheUsage() }
     }
 
     private func updateAudioCacheUsage() {
@@ -329,17 +366,10 @@ public struct SettingsView: View {
     }
 
     private func clearAudioCache() {
-        let dir = audioCacheDirectory
-        DispatchQueue.global(qos: .utility).async {
-            // The engine may hold open handles to files it is currently
-            // streaming; dropping the contents and recreating the root frees
-            // whatever it has released, as the image cache clear does.
-            try? FileManager.default.removeItem(at: dir)
-            try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-            DispatchQueue.main.async {
-                audioCacheUsage = ByteCountFormatter.string(fromByteCount: 0, countStyle: .file)
-                appStore.send(.toasts(.presented(String(localized: "缓存已清除"))))
-            }
+        AudioCacheMaintenance.clear()
+        DispatchQueue.main.async {
+            audioCacheUsage = ByteCountFormatter.string(fromByteCount: 0, countStyle: .file)
+            appStore.send(.toasts(.presented(String(localized: "缓存已清除"))))
         }
     }
 
@@ -370,5 +400,54 @@ public struct SettingsView: View {
                 appStore.send(.toasts(.presented(String(localized: "缓存已清除"))))
             }
         }
+    }
+}
+
+/// Shared settings row: title/current value, native slider, then range labels.
+private struct SettingsValueSlider: View {
+    let title: LocalizedStringKey
+    @Binding var value: Double
+    let range: ClosedRange<Double>
+    let step: Double
+    let valueLabel: String
+    let minimumLabel: String
+    let maximumLabel: String
+    var onEditingChanged: (Bool) -> Void = { _ in }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text(title)
+                Spacer()
+                Text(valueLabel)
+                    .foregroundStyle(.secondary)
+            }
+            Slider(value: $value, in: range, step: step, onEditingChanged: onEditingChanged)
+                .accessibilityLabel(Text(title))
+                .accessibilityValue(Text(valueLabel))
+            HStack {
+                Text(minimumLabel)
+                Spacer()
+                Text(maximumLabel)
+            }
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        }
+    }
+}
+
+/// Eleven capacity choices match the background-intensity slider's tick count.
+/// Keep existing saved limits until the user selects a new stop.
+enum AudioCacheLimitStops {
+    static let valuesMB = [64, 128, 256, 512, 1024, 1536, 2048, 2560, 3072, 3584, 4095]
+
+    static func index(nearestTo value: Double) -> Int {
+        valuesMB.indices.min {
+            abs(Double(valuesMB[$0]) - value) < abs(Double(valuesMB[$1]) - value)
+        } ?? 0
+    }
+
+    static func megabytes(at index: Int) -> Int {
+        valuesMB[min(max(index, 0), valuesMB.count - 1)]
     }
 }

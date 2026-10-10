@@ -6,9 +6,15 @@
 
 space: player.togglePlayPause
 escape: app.dismissNowPlaying
+cmd+rightarrow: player.next
+cmd+leftarrow: player.previous
 rightarrow: player.next
 leftarrow: player.previous
+cmd+shift+s: player.toggleShuffle
+cmd+shift+r: player.cycleRepeatMode
+cmd+shift+l: account.toggleLike
 cmd+l: player.toggleLyricsPanel
+cmd+u: player.toggleQueuePanel
 cmd+shift+q: player.toggleQueuePanel
 
 # The physical media keys. They arrive as systemDefined events and are
@@ -20,3 +26,10 @@ media-next: player.next
 media-previous: player.previous
 cmd+shift+uparrow: player.volumeUp
 cmd+shift+downarrow: player.volumeDown
+
+# Standard macOS application/window actions.
+cmd+w: app.closeWindow
+cmd+m: app.minimizeWindow
+cmd+h: app.hide
+cmd+option+h: app.hideOthers
+cmd+q: app.quit

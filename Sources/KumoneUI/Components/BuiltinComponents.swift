@@ -540,7 +540,7 @@ struct LyricView: View {
                     .padding(.vertical, 120)  // room so the active line centers
                 }
                 .onAppear { scrollToCursor(proxy) }
-                .onChange(of: cursor) { _ in scrollToCursor(proxy) }
+                .onChange(of: cursor) { scrollToCursor(proxy) }
             }
         }
     }

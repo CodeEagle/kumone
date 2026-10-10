@@ -166,7 +166,7 @@ public enum ConfigParser {
             return value > 0 ? value : nil
         }
         func title() -> String? {
-            guard case .string(let text) = prop(from: mapping["title"]) else { return nil }
+            guard case .string(let text) = prop(from: mapping["title"] as Any) else { return nil }
             return text.isEmpty ? nil : text
         }
         return ScreenWindow(

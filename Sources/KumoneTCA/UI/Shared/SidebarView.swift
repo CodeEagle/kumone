@@ -2,6 +2,10 @@ import ComposableArchitecture
 import KumoneCore
 import SwiftUI
 
+#if os(macOS)
+import AppKit
+#endif
+
 struct SidebarView: View {
     let store: StoreOf<AppFeature>
 
@@ -457,8 +461,27 @@ private struct SidebarPlaylistRow: View {
 /// the pane is torn down and rebuilt every time the immersive page collapses
 /// and restores the column.
 private struct SidebarGlassDisabler: NSViewRepresentable {
+    final class ProbeView: NSView {
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            scheduleApply()
+        }
+
+        override func layout() {
+            super.layout()
+            scheduleApply()
+        }
+
+        private func scheduleApply() {
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                SidebarGlassDisabler.apply(from: self)
+            }
+        }
+    }
+
     func makeNSView(context: Context) -> NSView {
-        let view = NSView(frame: .zero)
+        let view = ProbeView(frame: .zero)
         DispatchQueue.main.async { Self.apply(from: view) }
         return view
     }
@@ -468,29 +491,43 @@ private struct SidebarGlassDisabler: NSViewRepresentable {
     }
 
     private static func apply(from view: NSView) {
-        guard let glass = nearestGlass(above: view) else { return }
-        if !glass.isHidden { glass.isHidden = true }
-        hideSplitShadow(inside: enclosingSplitView(of: glass))
+        guard let split = enclosingSplitView(above: view),
+              // SwiftUI/AppKit can reorder panes: the first child may be the
+              // detail column. Follow the probe's ancestry, not array order.
+              let sidebar = split.subviews.first(where: { view.isDescendant(of: $0) }) else { return }
+        neutralizeBackgrounds(in: sidebar)
+        hideSplitShadow(inside: split)
     }
 
-    /// Walks the superview chain to the pane's glass container, if any.
-    private static func nearestGlass(above view: NSView) -> NSView? {
-        guard let glassClass = NSClassFromString("NSGlassEffectView") else { return nil }
+    /// Walks the superview chain to the split view that owns this pane.
+    private static func enclosingSplitView(above view: NSView) -> NSSplitView? {
         var current: NSView? = view
-        while let v = current {
-            if v.isKind(of: glassClass) { return v }
-            current = v.superview
-        }
-        return nil
-    }
-
-    private static func enclosingSplitView(of view: NSView) -> NSSplitView? {
-        var current: NSView? = view.superview
         while let v = current {
             if let split = v as? NSSplitView { return split }
             current = v.superview
         }
         return nil
+    }
+
+    /// Neutralize both the public scroll-view background and the private
+    /// Glass view used by NavigationSplitView on newer macOS releases.
+    private static func neutralizeBackgrounds(in view: NSView) {
+        if let effect = view as? NSVisualEffectView {
+            effect.material = .underWindowBackground
+            effect.blendingMode = .withinWindow
+            effect.state = .active
+        }
+        if let scroll = view as? NSScrollView {
+            scroll.drawsBackground = false
+            scroll.backgroundColor = .clear
+            scroll.contentView.drawsBackground = false
+            scroll.contentView.backgroundColor = .clear
+        }
+        // Don't erase SwiftUI Shape/Circle layers: those are button fills,
+        // not navigation glass. Scroll backgrounds are handled above.
+        for child in view.subviews {
+            neutralizeBackgrounds(in: child)
+        }
     }
 
     private static func hideSplitShadow(inside split: NSSplitView?) {
