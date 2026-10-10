@@ -107,6 +107,8 @@ struct AlbumDetailView: View {
         }
         #if os(macOS)
         .navigationTitle(store.album?.name ?? String(localized: "专辑"))
+        // See PlaylistDetailView: transparent while the cover flies.
+        .scrollContentBackground(isFlying ? .hidden : .automatic)
         #else
         .navigationBarTitleDisplayMode(.inline)
         #endif

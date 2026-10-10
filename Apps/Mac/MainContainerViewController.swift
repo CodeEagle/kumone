@@ -45,6 +45,14 @@ final class MainContainerViewController: NSViewController, NSToolbarDelegate {
     private let toolbarAnimationDuration: TimeInterval = 0.22
     private var trafficLightsPresented = false
     private var trafficLightsEnabled: [ObjectIdentifier: Bool] = [:]
+    /// Mirrors the main window's `columnVisibility` for the one decision the
+    /// toolbar cares about: with the sidebar collapsed the toolbar's leading
+    /// slot slides onto the traffic-light-row toggle and the back button's
+    /// glyph needs its margin; with the sidebar open the slot already sits
+    /// past the sidebar — the main window's side — and the margin only pushes
+    /// the button right of where it belongs.
+    private var sidebarCollapsed = false
+    private var sidebarToggleObserver: NSObjectProtocol?
 
     // The shell-owned toolbar that pins the search field top-right:
     // [back?, flexibleSpace, search]. See installSearchToolbar().
@@ -72,6 +80,15 @@ final class MainContainerViewController: NSViewController, NSToolbarDelegate {
         installSearchToolbar()
         installSidebarToggle()
         syncToolbarVisibility()
+        sidebarToggleObserver = NotificationCenter.default.addObserver(
+            forName: .kumoneToggleSidebar, object: nil, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                self.sidebarCollapsed.toggle()
+                self.applyBackButtonLayout(animating: true)
+            }
+        }
         nowPlayingSubscription = store.publisher.isNowPlayingPresented
             .removeDuplicates()
             .sink { [weak self] _ in
@@ -92,6 +109,10 @@ final class MainContainerViewController: NSViewController, NSToolbarDelegate {
 
     override func viewDidDisappear() {
         super.viewDidDisappear()
+        if let sidebarToggleObserver {
+            NotificationCenter.default.removeObserver(sidebarToggleObserver)
+            self.sidebarToggleObserver = nil
+        }
         nowPlayingSubscription = nil
         toolbarObservation = nil
         pathSubscription = nil
@@ -280,17 +301,50 @@ final class MainContainerViewController: NSViewController, NSToolbarDelegate {
     private func makeBackItem() -> NSToolbarItem {
         let item = NSToolbarItem(itemIdentifier: Self.backItemIdentifier)
         item.label = "返回"
-        let container = NSView(frame: NSRect(x: 0, y: 0, width: 62, height: 28))
+        let container = NSView(frame: NSRect(x: 0, y: 0, width: 62, height: 38))
         let button = NSButton(
             image: NSImage(systemSymbolName: "chevron.backward", accessibilityDescription: "返回")!,
             target: self, action: #selector(navigateBack)
         )
         button.isBordered = false
         button.imagePosition = .imageOnly
-        button.frame = NSRect(x: 40, y: 0, width: 22, height: 28)
         container.addSubview(button)
         item.view = container
+        // The item is not in the toolbar yet (the delegate is asked to build
+        // it during insertion), so the lookup in applyBackButtonLayout cannot
+        // find it — set the glyph's frame directly.
+        button.frame = NSRect(
+            x: sidebarCollapsed ? 40 : 8,
+            y: (container.bounds.height - 26) / 2,
+            width: 22,
+            height: 26
+        )
         return item
+    }
+
+    /// Positions the back button's glyph inside its item view: vertically
+    /// centered in the toolbar's row, and leading-offset per the sidebar
+    /// state (see `sidebarCollapsed`). Animated when the sidebar flips so the
+    /// button rides into place instead of jumping.
+    private func applyBackButtonLayout(animating: Bool) {
+        guard let container = searchToolbar?.items
+            .first(where: { $0.itemIdentifier == Self.backItemIdentifier })?.view,
+            let button = container.subviews.first else { return }
+        let frame = NSRect(
+            x: sidebarCollapsed ? 40 : 8,
+            y: (container.bounds.height - 26) / 2,
+            width: 22,
+            height: 26
+        )
+        if animating {
+            NSAnimationContext.runAnimationGroup { context in
+                context.duration = toolbarAnimationDuration
+                context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+                button.animator().frame = frame
+            }
+        } else {
+            button.frame = frame
+        }
     }
 
     /// The main window's toolbar is assembled here, not bridged from SwiftUI:
@@ -363,17 +417,37 @@ final class MainContainerViewController: NSViewController, NSToolbarDelegate {
     }
 
     /// Inserts the back button at the leading edge while the stack has a page
-    /// to pop, and removes it when the stack empties. The button view's own
-    /// leading margin keeps it clear of the titlebar-row sidebar toggle when
-    /// the sidebar collapses and the toolbar's leading slot slides left.
+    /// to pop, and removes it when the stack empties — both as fades, like
+    /// the system back button, and positioned per the sidebar state.
     private func updateBackItem(present: Bool) {
         guard let toolbar = searchToolbar else { return }
         let existing = toolbar.items
             .firstIndex { $0.itemIdentifier == Self.backItemIdentifier }
         if present, existing == nil {
             toolbar.insertItem(withItemIdentifier: Self.backItemIdentifier, at: 0)
+            guard let view = toolbar.items
+                .first(where: { $0.itemIdentifier == Self.backItemIdentifier })?.view else { return }
+            applyBackButtonLayout(animating: false)
+            view.alphaValue = 0
+            NSAnimationContext.runAnimationGroup { context in
+                context.duration = toolbarAnimationDuration
+                context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+                view.animator().alphaValue = 1
+            }
         } else if !present, let existing {
-            toolbar.removeItem(at: existing)
+            guard let view = toolbar.items[existing].view else {
+                toolbar.removeItem(at: existing)
+                return
+            }
+            NSAnimationContext.runAnimationGroup { context in
+                context.duration = toolbarAnimationDuration
+                context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+                view.animator().alphaValue = 0
+            } completionHandler: {
+                let index = toolbar.items
+                    .firstIndex { $0.itemIdentifier == Self.backItemIdentifier } ?? existing
+                toolbar.removeItem(at: index)
+            }
         }
     }
 

@@ -104,6 +104,11 @@ struct PlaylistDetailView: View {
         }
         #if os(macOS)
         .navigationTitle(store.detail?.name ?? String(localized: "歌单"))
+        // The pushed page's scroll view otherwise paints an opaque sheet over
+        // the feed while the cover is still flying — the "black background,
+        // image covered" break in continuity. Transparent during the flight,
+        // restored when the content fades in after the landing.
+        .scrollContentBackground(isFlying ? .hidden : .automatic)
         #else
         .navigationBarTitleDisplayMode(.inline)
         #endif

@@ -143,6 +143,8 @@ struct ArtistDetailView: View {
         }
         #if os(macOS)
         .navigationTitle(store.artist?.name ?? String(localized: "歌手"))
+        // See PlaylistDetailView: transparent while the cover flies.
+        .scrollContentBackground(isFlying ? .hidden : .automatic)
         #else
         .navigationBarTitleDisplayMode(.inline)
         #endif
