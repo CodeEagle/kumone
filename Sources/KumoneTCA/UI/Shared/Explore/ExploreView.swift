@@ -19,7 +19,8 @@ struct ExploreView: View {
                     CardGrid {
                         ForEach(Array(store.playlists.enumerated()), id: \.element.id) { index, playlist in
                             Button {
-                                HeroTrigger.arm(HeroID.playlist(playlist.id))
+                                HeroTrigger.arm(HeroID.playlist(playlist.id),
+                                                sourceImageURL: playlist.coverURL?.resizedImageURL(384))
                                 appStore.send(.openDestination(.playlist(playlist.id)))
                             } label: {
                                 CoverCardBody(

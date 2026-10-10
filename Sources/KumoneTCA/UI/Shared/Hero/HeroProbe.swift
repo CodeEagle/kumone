@@ -53,6 +53,12 @@ final class HeroProbe: ObservableObject {
         var sourceScale: CGFloat = 1
         var targetScale: CGFloat = 1
         var landedScale: CGFloat = 1
+        /// The URL the card's image actually displayed — the flight's stand-in
+        /// reuses it so the flying artwork is the bitmap the user was looking
+        /// at, cached, instead of the detail page's own (differently-derived)
+        /// URL that has not loaded yet and would paint the stand-in gray for
+        /// the whole flight.
+        var sourceImageURL: URL?
         var verdict: Verdict?
     }
 
@@ -128,6 +134,12 @@ final class HeroProbe: ObservableObject {
         active[id]?.sourceCornerRadius
     }
 
+    /// The URL the source card displayed, if the arm carried it. The flight
+    /// preferentially renders this over the landing page's own artwork URL.
+    func sourceImageURL(for id: String) -> URL? {
+        active[id]?.sourceImageURL
+    }
+
     /// The radius the landing view clips to.
     func targetCornerRadius(for id: String) -> CGFloat? {
         active[id]?.targetCornerRadius
@@ -137,11 +149,12 @@ final class HeroProbe: ObservableObject {
         active[id] = Record(id: id)
     }
 
-    func recordSource(id: String, frame: CGRect, scale: CGFloat = 1, cornerRadius: CGFloat? = nil, hidden: Bool = false) {
+    func recordSource(id: String, frame: CGRect, scale: CGFloat = 1, cornerRadius: CGFloat? = nil, hidden: Bool = false, imageURL: URL? = nil) {
         active[id]?.sourceFrame = frame
         active[id]?.sourceScale = scale
         active[id]?.sourceCornerRadius = cornerRadius
         active[id]?.sourceHidden = hidden
+        active[id]?.sourceImageURL = imageURL
     }
 
     func recordTarget(id: String, frame: CGRect, scale: CGFloat = 1, cornerRadius: CGFloat? = nil) {

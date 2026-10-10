@@ -40,7 +40,15 @@ struct HeroTargetModifier: ViewModifier {
                 HeroProbe.shared.recordTarget(id: id, frame: target, scale: 1, cornerRadius: cornerRadius)
                 HeroFlightDirector.shared.start(
                     id: id,
-                    content: .artwork(url: artworkURL, cornerRadius: cornerRadius),
+                    // The source card's URL, when the arm carried it, is the
+                    // bitmap the user was looking at and the cache already
+                    // holds; the detail page's own URL can be a different URL
+                    // for the same cover and would load too late for the
+                    // flight, painting the stand-in gray for its whole run.
+                    content: .artwork(
+                        url: HeroProbe.shared.sourceImageURL(for: id) ?? artworkURL,
+                        cornerRadius: cornerRadius
+                    ),
                     targetFrame: target,
                     targetScale: 1,
                     liveAnchorID: anchorID

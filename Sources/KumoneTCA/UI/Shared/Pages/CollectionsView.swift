@@ -41,7 +41,8 @@ struct CollectionsView: View {
                         CardGrid {
                             ForEach(account.likedAlbums) { album in
                                 Button {
-                                    HeroTrigger.arm(HeroID.album(album.id))
+                                    HeroTrigger.arm(HeroID.album(album.id),
+                                                    sourceImageURL: album.picUrl?.resizedImageURL(384))
                                     appStore.send(.openDestination(.album(album.id)))
                                 } label: {
                                     CoverCardBody(

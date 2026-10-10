@@ -95,7 +95,8 @@ struct TrackRow: View {
             if style == .full && !isCompact {
                 if track.album.id > 0, !track.album.name.isEmpty {
                     Button {
-                        HeroTrigger.arm(HeroID.album(track.album.id))
+                        HeroTrigger.arm(HeroID.album(track.album.id),
+                                        sourceImageURL: track.album.picUrl?.resizedImageURL(isCompact ? 160 : 96))
                         openDestination(.album(track.album.id))
                     } label: {
                         Text(track.album.name)
@@ -175,7 +176,8 @@ struct TrackRow: View {
         #else
         if track.album.id > 0, !track.album.name.isEmpty {
             Button {
-                HeroTrigger.arm(HeroID.album(track.album.id))
+                HeroTrigger.arm(HeroID.album(track.album.id),
+                                sourceImageURL: track.album.picUrl?.resizedImageURL(isCompact ? 160 : 96))
                 openDestination(.album(track.album.id))
             } label: {
                 artworkImage

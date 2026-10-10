@@ -193,7 +193,8 @@ struct SearchView: View {
     private func albumCards(_ items: some Collection<AlbumSummary>) -> some View {
         ForEach(Array(items)) { album in
             Button {
-                HeroTrigger.arm(HeroID.album(album.id))
+                HeroTrigger.arm(HeroID.album(album.id),
+                                sourceImageURL: album.picUrl?.resizedImageURL(384))
                 appStore.send(.openDestination(.album(album.id)))
             } label: {
                 CoverCardBody(
@@ -210,7 +211,8 @@ struct SearchView: View {
     private func playlistCards(_ items: some Collection<PlaylistSummary>) -> some View {
         ForEach(Array(items)) { playlist in
             Button {
-                HeroTrigger.arm(HeroID.playlist(playlist.id))
+                HeroTrigger.arm(HeroID.playlist(playlist.id),
+                                sourceImageURL: playlist.coverURL?.resizedImageURL(384))
                 appStore.send(.openDestination(.playlist(playlist.id)))
             } label: {
                 CoverCardBody(

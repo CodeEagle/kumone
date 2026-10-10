@@ -70,7 +70,8 @@ struct HomeView: View {
                 Shelf(title: "雷达歌单", rowHeight: Theme.Layout.coverShelfHeight) {
                     ForEach(store.radarPlaylists) { radar in
                         Button {
-                            HeroTrigger.arm(HeroID.playlist(radar.id))
+                            HeroTrigger.arm(HeroID.playlist(radar.id),
+                                            sourceImageURL: radar.coverURL?.resizedImageURL(384))
                             appStore.send(.openDestination(.radarPlaylist(radar.id)))
                         } label: {
                             CoverCardBody(
@@ -91,7 +92,8 @@ struct HomeView: View {
                 Shelf(title: "排行榜", seeAll: nil, rowHeight: Theme.Layout.coverShelfHeight) {
                     ForEach(store.toplists) { toplist in
                         Button {
-                            HeroTrigger.arm(HeroID.playlist(toplist.id))
+                            HeroTrigger.arm(HeroID.playlist(toplist.id),
+                                            sourceImageURL: toplist.coverImgUrl?.resizedImageURL(384))
                             appStore.send(.openDestination(.playlist(toplist.id)))
                         } label: {
                             toplistCard(toplist)
@@ -180,7 +182,8 @@ struct HomeView: View {
 
     private func playlistCard(_ playlist: PlaylistSummary) -> some View {
         Button {
-            HeroTrigger.arm(HeroID.playlist(playlist.id))
+            HeroTrigger.arm(HeroID.playlist(playlist.id),
+                            sourceImageURL: playlist.coverURL?.resizedImageURL(384))
             appStore.send(.openDestination(.playlist(playlist.id)))
         } label: {
             CoverCardBody(
@@ -198,7 +201,8 @@ struct HomeView: View {
 
     private func albumCard(_ album: AlbumSummary) -> some View {
         Button {
-            HeroTrigger.arm(HeroID.album(album.id))
+            HeroTrigger.arm(HeroID.album(album.id),
+                            sourceImageURL: album.picUrl?.resizedImageURL(384))
             appStore.send(.openDestination(.album(album.id)))
         } label: {
             CoverCardBody(
@@ -215,7 +219,8 @@ struct HomeView: View {
 
     private func artistCard(_ artist: ArtistSummary) -> some View {
         Button {
-            HeroTrigger.arm(HeroID.artist(artist.id))
+            HeroTrigger.arm(HeroID.artist(artist.id),
+                            sourceImageURL: artist.picUrl?.resizedImageURL(256))
             appStore.send(.openDestination(.artist(artist.id)))
         } label: {
             VStack(spacing: 10) {
