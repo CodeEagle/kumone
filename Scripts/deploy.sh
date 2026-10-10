@@ -61,12 +61,8 @@ remote_script() {
 set -euo pipefail
 STEP=preflight
 TEMP_DIR=
-BACKUP_PATH="$REMOTE_APP_PATH.bak"
 remote_error() {
   printf 'ERROR: Remote %s failed.\n' "$STEP" >&2
-  if [ -e "$BACKUP_PATH" ] || [ -L "$BACKUP_PATH" ]; then
-    printf 'Backup remains at %s; restore it manually if needed.\n' "$BACKUP_PATH" >&2
-  fi
 }
 trap remote_error ERR
 trap 'if [ -n "$TEMP_DIR" ]; then rm -rf -- "$TEMP_DIR"; fi' EXIT
@@ -79,6 +75,12 @@ APP_PARENT="$(dirname "$REMOTE_APP_PATH")"
 test -d "$APP_PARENT"
 test -w "$APP_PARENT"
 TEMP_DIR="$(mktemp -d "$APP_PARENT/.Kumone-deploy.XXXXXX")"
+
+# Validate the new bundle before stopping or removing the installed app.
+STEP='archive extraction'
+tar -xzf "$ARCHIVE" -C "$TEMP_DIR"
+test -f "$TEMP_DIR/$APP_NAME.app/Contents/Info.plist"
+test -x "$TEMP_DIR/$APP_NAME.app/Contents/MacOS/$APP_NAME"
 
 STEP='application shutdown'
 # Only the app being replaced is touched: the path-keyed and name-keyed
@@ -96,16 +98,8 @@ if pgrep -x "$APP_NAME" >/dev/null; then
   exit 1
 fi
 
-STEP='backup of previous application'
-if [ -e "$REMOTE_APP_PATH" ] || [ -L "$REMOTE_APP_PATH" ]; then
-  rm -rf -- "$BACKUP_PATH"
-  mv -- "$REMOTE_APP_PATH" "$BACKUP_PATH"
-fi
-STEP='archive extraction (previous application is retained in .bak when present)'
-tar -xzf "$ARCHIVE" -C "$TEMP_DIR"
-test -f "$TEMP_DIR/$APP_NAME.app/Contents/Info.plist"
-test -x "$TEMP_DIR/$APP_NAME.app/Contents/MacOS/$APP_NAME"
 STEP='application replacement'
+rm -rf -- "$REMOTE_APP_PATH"
 mv -- "$TEMP_DIR/$APP_NAME.app" "$REMOTE_APP_PATH"
 STEP='quarantine removal'
 xattr -cr "$REMOTE_APP_PATH"

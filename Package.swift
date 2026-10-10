@@ -35,7 +35,13 @@ let package = Package(
         // flag). Unbounded waits let a writer miss the single teardown signal,
         // park its thread forever, and pin the whole Composer set on its live
         // stack frame — the rapid-track-switching leak.
-        .package(url: "https://github.com/CodeEagle/APlay.git", from: "2.1.9"),
+        // 2.2.0 resumes partial remote downloads using sparse cache containers,
+        // validates HTTP ranges and sweeps disk cache by allocated size.
+        // 2.2.2 retires native decoder/session resources in Release, drains
+        // local-read chunks per callback and supports explicit artwork clearing.
+        // 2.2.3 lets block-aligned resume streams reach EOF instead of waiting
+        // for a nonexistent cache block; holes before EOF still await refill.
+        .package(url: "https://github.com/CodeEagle/APlay.git", exact: "2.2.3"),
         // YAML for the config-driven UI: screens and themes are user-editable
         // files, so the markup has to be friendly to humans first.
         .package(url: "https://github.com/jpsim/Yams", from: "5.0.0"),
