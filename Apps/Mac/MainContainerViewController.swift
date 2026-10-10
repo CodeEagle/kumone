@@ -6,14 +6,50 @@ import ComposableArchitecture
 import KumoneTCA
 
 @MainActor
-final class MainContainerViewController: NSViewController {
+final class MainContainerViewController: NSViewController, NSToolbarDelegate {
     let shaderLayer = ShaderLayerView()
+    private var lastShaderStackID: String?
+
+    func logShaderStack(shaderID: String?) {
+        let key = shaderID ?? "disabled"
+        guard lastShaderStackID != key else { return }
+        lastShaderStackID = key
+        let metal = shaderLayer.layer
+        let drawableLayer = shaderID == nil ? nil : shaderLayer.currentDrawable?.layer
+        let layerLine = "SHADER LAYER viewLayer=\(metal.map { NSStringFromClass(type(of: $0)) } ?? "nil") drawableMatches=\(metal === drawableLayer) attached=\(metal?.superlayer != nil) drawableAttached=\(drawableLayer?.superlayer != nil) siblingLayers=\(view.layer?.sublayers?.map { NSStringFromClass(type(of: $0)) }.joined(separator: ",") ?? "nil")"
+        KumoneLogger.app.notice("\(layerLine, privacy: .public)")
+        func inspect(_ candidate: NSView, depth: Int) {
+            guard depth <= 8 else { return }
+            let background = candidate.layer?.backgroundColor?.components?.map { String(format: "%.2f", $0) }.joined(separator: ",") ?? "nil"
+            let effect = (candidate as? NSVisualEffectView).map { " blend=\($0.blendingMode.rawValue) material=\($0.material.rawValue)" } ?? ""
+            let line = "SHADER STACK depth=\(depth) type=\(NSStringFromClass(type(of: candidate))) frame=\(candidate.frame) hidden=\(candidate.isHidden) alpha=\(candidate.alphaValue) opaque=\(candidate.isOpaque) bg=\(background) children=\(candidate.subviews.count)\(effect)"
+            KumoneLogger.app.notice("\(line, privacy: .public)")
+            for child in candidate.subviews { inspect(child, depth: depth + 1) }
+        }
+        inspect(view, depth: 0)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in
+            guard let self else { return }
+            let layers = self.view.layer?.sublayers?.map { layer in
+                let name = self.view.subviews.first(where: { $0.layer === layer }).map { NSStringFromClass(type(of: $0)) } ?? NSStringFromClass(type(of: layer))
+                return "\(name):z=\(layer.zPosition):hidden=\(layer.isHidden):frame=\(layer.frame)"
+            }.joined(separator: ";") ?? "nil"
+            let line = "SHADER ATTACH settled rootWantsLayer=\(self.view.wantsLayer) rootLayer=\(self.view.layer != nil) rootWindow=\(self.view.window != nil) metalWindow=\(self.shaderLayer.window != nil) metalParent=\(self.shaderLayer.layer?.superlayer != nil) metalWantsLayer=\(self.shaderLayer.wantsLayer) layers=\(layers)"
+            KumoneLogger.app.notice("\(line, privacy: .public)")
+        }
+    }
     private let store: StoreOf<AppFeature>
     private var nowPlayingSubscription: AnyCancellable?
     private var toolbarObservation: NSKeyValueObservation?
     private var toolbarToRestore: NSToolbar?
     private var titlebarAccessoriesToRestore: [NSTitlebarAccessoryViewController] = []
     private let toolbarAnimationDuration: TimeInterval = 0.22
+    private var trafficLightsPresented = false
+    private var trafficLightsEnabled: [ObjectIdentifier: Bool] = [:]
+
+    // The shell-owned toolbar that pins the search field top-right:
+    // [flexibleSpace, search]. See installSearchToolbar().
+    private static let searchItemIdentifier = NSToolbarItem.Identifier("im.missuo.Kumone.search")
+    private var searchToolbar: NSToolbar?
 
     init(store: StoreOf<AppFeature>) {
         self.store = store
@@ -28,6 +64,7 @@ final class MainContainerViewController: NSViewController {
         super.viewDidAppear()
         // SwiftUI's toolbar visibility preference is not always applied to a
         // toolbar bridged into a programmatically created AppKit window.
+        installSearchToolbar()
         syncToolbarVisibility()
         nowPlayingSubscription = store.publisher.isNowPlayingPresented
             .removeDuplicates()
@@ -41,7 +78,9 @@ final class MainContainerViewController: NSViewController {
         // re-sync in place (no async hop) so a freshly installed toolbar can
         // never land visible while the immersive page is up.
         toolbarObservation = view.window?.observe(\.toolbar, options: [.new]) { [weak self] _, _ in
-            self?.syncToolbarVisibility()
+            Task { @MainActor [weak self] in
+                self?.syncToolbarVisibility()
+            }
         }
     }
 
@@ -57,6 +96,7 @@ final class MainContainerViewController: NSViewController {
             return
         }
         let isVisible = !store.isNowPlayingPresented
+        fadeTrafficLights(on: window, presented: !isVisible)
         if isVisible {
             restoreTitlebarAccessories(on: window)
             if window.toolbar == nil, let toolbarToRestore {
@@ -70,7 +110,15 @@ final class MainContainerViewController: NSViewController {
             }
             toolbarToRestore = nil
             logToolbar("hasToolbar=true presented=false target=true current=\(toolbar.isVisible)")
-            if !toolbar.isVisible { toolbar.isVisible = true }
+            let hasHiddenItems = toolbar.items.contains { item in
+                guard let view = item.view else { return false }
+                return view.isHidden || view.alphaValue < 0.99
+            }
+            if !toolbar.isVisible || hasHiddenItems {
+                animateToolbarItems(toolbar, visible: true)
+            } else {
+                toolbar.isVisible = true
+            }
             return
         }
 
@@ -83,9 +131,33 @@ final class MainContainerViewController: NSViewController {
             // every now-playing target during the flight, which reads as a
             // visible jitter. Its item views are enough to hide the chrome.
             animateToolbarItems(toolbar, visible: false)
+            // Keep its height reserved through both directions of the flight.
+            // The immersive controls sit below the native titlebar hit region.
         } else {
             logToolbar("hasToolbar=false presented=true target=false")
         }
+    }
+
+    private func fadeTrafficLights(on window: NSWindow, presented: Bool) {
+        guard trafficLightsPresented != presented else { return }
+        trafficLightsPresented = presented
+        let buttons = [NSWindow.ButtonType.closeButton, .miniaturizeButton, .zoomButton]
+            .compactMap { window.standardWindowButton($0) }
+        for button in buttons {
+            if presented {
+                trafficLightsEnabled[ObjectIdentifier(button)] = button.isEnabled
+                button.isEnabled = false
+            } else {
+                button.isEnabled = trafficLightsEnabled[ObjectIdentifier(button)] ?? true
+            }
+        }
+        // Alpha only: retain the titlebar slots and Hero coordinate space.
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = toolbarAnimationDuration
+            context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            buttons.forEach { $0.animator().alphaValue = presented ? 0 : 1 }
+        }
+        KumoneLogger.hero.notice("TRAFFIC LIGHTS presented=\(presented) targetAlpha=\(presented ? 0 : 1) buttons=\(buttons.count)")
     }
 
     private func animateToolbarItems(
@@ -123,6 +195,7 @@ final class MainContainerViewController: NSViewController {
         guard !titlebarAccessoriesToRestore.isEmpty else { return }
         let accessories = titlebarAccessoriesToRestore
         titlebarAccessoriesToRestore = []
+        accessories.forEach { $0.view.isHidden = false }
         NSAnimationContext.runAnimationGroup { context in
             context.duration = toolbarAnimationDuration
             context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
@@ -133,15 +206,72 @@ final class MainContainerViewController: NSViewController {
     private func logToolbar(_ message: String) {
         let line = "TOOLBAR SYNC \(message)"
         KumoneLogger.hero.notice("\(line, privacy: .public)")
-        let url = URL(fileURLWithPath: "/tmp/kumone-toolbar.log")
-        if let data = (line + "\n").data(using: .utf8),
-           let handle = try? FileHandle(forWritingTo: url) {
-            _ = try? handle.seekToEnd()
-            try? handle.write(contentsOf: data)
-            try? handle.close()
-        } else {
-            try? (line + "\n").data(using: .utf8)?.write(to: url, options: [.atomic])
+        BoundedLogFile.append(line, to: URL(fileURLWithPath: "/tmp/kumone-toolbar.log"))
+    }
+
+    /// The main window's toolbar is assembled here, not bridged from SwiftUI:
+    /// macOS exposes no trailing `ToolbarItemPlacement`, and the split-view
+    /// bridge silently dropped the flexible spacer, so a SwiftUI-side search
+    /// item could never be parked top-right. Owning the `NSToolbar` directly
+    /// makes the item order literal: `[flexibleSpace, search]` pins the field
+    /// to the toolbar's right edge regardless of window width or pushed pages.
+    private func installSearchToolbar() {
+        guard searchToolbar == nil, view.window?.toolbar == nil else { return }
+        let toolbar = NSToolbar(identifier: "im.missuo.Kumone.main")
+        toolbar.allowsUserCustomization = false
+        toolbar.showsBaselineSeparator = false
+        // Setting the delegate first: NSToolbar populates its items from
+        // toolbarDefaultItemIdentifiers on attach, which is the documented
+        // path. Manual insertItem(withItemIdentifier:at:) tripped an AppKit
+        // assertion (NSToolbar.m:1708).
+        toolbar.delegate = self
+        view.window?.toolbar = toolbar
+        searchToolbar = toolbar
+        // Self-verifying: the item order is what parks the field right.
+        KumoneLogger.app.notice(
+            "SEARCH toolbar items=\(toolbar.items.map { $0.itemIdentifier.rawValue }.joined(separator: ","), privacy: .public)"
+        )
+        // The frame lands only after the toolbar lays out; sample it once.
+        // A run-loop timer, not GCD: this machine's main dispatch queue
+        // never fires its asyncAfter (SF-0111).
+        Timer.scheduledTimer(withTimeInterval: 1.0, repeats: false) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self,
+                      let toolbar = self.view.window?.toolbar,
+                      let searchView = toolbar.items.last?.view, toolbar.items.count == 2 else { return }
+                let frameInWindow = searchView.convert(searchView.bounds, to: nil)
+                KumoneLogger.app.notice(
+                    "SEARCH settled windowFrame=\(String(format: "x=%.0f y=%.0f w=%.0f h=%.0f", frameInWindow.origin.x, frameInWindow.origin.y, frameInWindow.size.width, frameInWindow.size.height), privacy: .public) windowWidth=\(self.view.window?.frame.width ?? 0, privacy: .public)"
+                )
+            }
         }
+    }
+
+    /// One `NSToolbarItem` hosting `SearchFieldView`, fixed-size so the
+    /// toolbar cannot stretch the capsule.
+    private func makeSearchItem() -> NSToolbarItem {
+        let item = NSToolbarItem(itemIdentifier: Self.searchItemIdentifier)
+        item.label = "搜索"
+        let hosting = NSHostingView(rootView: SearchFieldView { [weak self] query in
+            self?.store.send(.openDestination(.search(query)))
+        })
+        // Let the system measure the item from constraints (minSize/maxSize
+        // are deprecated and triggered an insertion assertion).
+        item.view = hosting
+        return item
+    }
+
+    func toolbar(_ toolbar: NSToolbar, itemForItemIdentifier itemIdentifier: NSToolbarItem.Identifier, willBeInsertedIntoToolbar flag: Bool) -> NSToolbarItem? {
+        guard itemIdentifier == Self.searchItemIdentifier else { return nil }
+        return makeSearchItem()
+    }
+
+    func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
+        [.flexibleSpace, Self.searchItemIdentifier]
+    }
+
+    func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
+        [.flexibleSpace, Self.searchItemIdentifier]
     }
 
     override func loadView() {
@@ -167,12 +297,12 @@ final class MainContainerViewController: NSViewController {
         }
 
         let hosting = NSHostingController(rootView: MainWindow(store: store))
-        // The hosting controller is nested inside this container instead of
-        // being the window's own content view, so SwiftUI does *not*
-        // automatically bridge `.toolbar` items into the window's NSToolbar —
-        // the window was left with an empty titlebar strip and no search field.
-        // Bridging explicitly installs the toolbar (and titles) again.
-        hosting.sceneBridgingOptions = [.title, .toolbars]
+        // The SwiftUI bridge installs its own toolbar items when `.toolbars`
+        // is bridged, and on macOS there is no trailing placement to park
+        // the search field right — the split-view bridge dropped the flexible
+        // spacer and the item drifted left. The shell owns the toolbar now:
+        // [flexibleSpace, search] pins the field to the top-right edge.
+        hosting.sceneBridgingOptions = [.title]
         addChild(hosting)
         hosting.view.translatesAutoresizingMaskIntoConstraints = false
         hosting.view.wantsLayer = true
