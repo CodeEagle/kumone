@@ -265,6 +265,7 @@ struct PlayerBar: View {
                 appStore.send(.player(.togglePanel(.lyrics)))
             }
             .help("歌词")
+            .heroAnchor(HeroID.nowPlayingLyrics)
             PlayerIconButton(
                 icon: "inset.filled.bottomthird.square", size: 13,
                 isActive: appStore.settings.showDesktopLyrics
@@ -283,6 +284,7 @@ struct PlayerBar: View {
             #if os(macOS)
             RoutePickerButton(diameter: 26, glyphSize: 13,
                               tint: .secondary, background: .clear)
+                .heroAnchor(HeroID.nowPlayingAirPlay)
             #endif
             VolumeControl(appStore: appStore)
         }

@@ -308,6 +308,18 @@ public struct MainWindow: View {
                     store.player.currentTrack?.artistNames ?? "miumiu",
                     color: .secondary, fontSize: 11
                 )
+            case HeroID.nowPlayingLyrics:
+                content = .icon(
+                    name: "quote.bubble",
+                    tint: store.player.activePanel == .lyrics ? Theme.accent : .primary,
+                    background: .none, diameter: 26, fontSize: 13, weight: .medium
+                )
+            case HeroID.nowPlayingAirPlay:
+                content = .icon(
+                    name: "airplayvideo",
+                    tint: .secondary, background: .none,
+                    diameter: 26, fontSize: 13, weight: .medium
+                )
             default:
                 continue
             }

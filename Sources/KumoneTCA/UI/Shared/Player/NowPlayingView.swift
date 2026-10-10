@@ -48,6 +48,8 @@ struct NowPlayingView: View {
     @State private var hasStartedVIPFlight = false
     @State private var hasStartedTitleFlight = false
     @State private var hasStartedArtistFlight = false
+    @State private var hasStartedLyricsFlight = false
+    @State private var hasStartedAirPlayFlight = false
     @State private var hasStartedHeroFlight = false
     @ObservedObject private var heroFlight = HeroFlightDirector.shared
     @AppStorage("nowPlaying.zenModeEnabled") private var isZenMode = false
@@ -1140,12 +1142,32 @@ struct NowPlayingView: View {
                 fmRoamingBadge
             }
             RoutePickerButton(diameter: 36, glyphSize: 14)
+                #if os(macOS)
+                .opacity(heroFlight.active[HeroID.nowPlayingAirPlay] != nil ? 0 : 1)
+                .animation(nil, value: heroFlight.active[HeroID.nowPlayingAirPlay] != nil)
+                .heroAnchor(HeroID.nowPlayingAirPlayTarget)
+                .nowPlayingHeroTarget(
+                    id: HeroID.nowPlayingAirPlay,
+                    content: .icon(name: "airplayvideo",
+                                   tint: .white.opacity(0.85),
+                                   background: .translucentWhite,
+                                   diameter: 36, fontSize: 14, weight: .medium),
+                    anchorID: HeroID.nowPlayingAirPlayTarget,
+                    isPresented: appStore?.isNowPlayingPresented == true,
+                    hasStarted: $hasStartedAirPlayFlight
+                )
+                #endif
         }
         .frame(maxWidth: 380)
     }
 
     private var lyricsToggleButton: some View {
-        Button {
+        #if os(macOS)
+        let isFlying = heroFlight.active[HeroID.nowPlayingLyrics] != nil
+        #else
+        let isFlying = false
+        #endif
+        return Button {
             // Ride the same spring the columns take: the left column shifts
             // when the lyrics column opens, and without an explicit animation
             // transaction the buttons snap to their new spot while everything
@@ -1162,6 +1184,21 @@ struct NowPlayingView: View {
         }
         .buttonStyle(.pressable)
         .help("歌词")
+        #if os(macOS)
+        .opacity(isFlying ? 0 : 1)
+        .animation(nil, value: isFlying)
+        .heroAnchor(HeroID.nowPlayingLyricsTarget)
+        .nowPlayingHeroTarget(
+            id: HeroID.nowPlayingLyrics,
+            content: .icon(name: "quote.bubble",
+                           tint: player.activePanel == .lyrics ? Theme.accent : .white.opacity(0.85),
+                           background: .translucentWhite,
+                           diameter: 36, fontSize: 14, weight: .semibold),
+            anchorID: HeroID.nowPlayingLyricsTarget,
+            isPresented: appStore?.isNowPlayingPresented == true,
+            hasStarted: $hasStartedLyricsFlight
+        )
+        #endif
     }
 
     /// Every hover-driven chrome change uses the same cancellable delay,

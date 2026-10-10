@@ -30,6 +30,11 @@ enum HeroID {
     static let nowPlayingFMTrash = "now-playing-fm-trash"
     static let nowPlayingFMTrashTarget = "now-playing-fm-trash-target"
 
+    static let nowPlayingLyrics = "now-playing-lyrics"
+    static let nowPlayingLyricsTarget = "now-playing-lyrics-target"
+    static let nowPlayingAirPlay = "now-playing-airplay"
+    static let nowPlayingAirPlayTarget = "now-playing-airplay-target"
+
     /// Song title and artist: shared pure-text elements between the mini bar
     /// and the Now Playing page. The stand-in carries the destination end's
     /// string and styling (see `HeroContent.text`), so a present flight grows
@@ -53,6 +58,8 @@ enum HeroID {
         (nowPlayingShuffle, nowPlayingShuffleTarget),
         (nowPlayingRepeat, nowPlayingRepeatTarget),
         (nowPlayingFMTrash, nowPlayingFMTrashTarget),
+        (nowPlayingLyrics, nowPlayingLyricsTarget),
+        (nowPlayingAirPlay, nowPlayingAirPlayTarget),
         (nowPlayingTitle, nowPlayingTitleTarget),
         (nowPlayingVIP, nowPlayingVIPTarget),
         (nowPlayingArtist, nowPlayingArtistTarget),
