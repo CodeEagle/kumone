@@ -2,7 +2,7 @@ import KumoneCore
 import SwiftUI
 
 /// The landing end of a card→detail hero flight. Attach it to a detail
-/// header's artwork, right after `.heroAnchor(_:)`: once the source a card
+/// header's artwork: it owns a separate destination anchor. Once the source a card
 /// armed belongs to this view's hero id it records the target geometry and
 /// hands the pair to `HeroFlightDirector`, which mounts the flying stand-in.
 /// A detail page reached without an armed card sees a source id that does not
@@ -12,88 +12,49 @@ struct HeroTargetModifier: ViewModifier {
     let artworkURL: URL?
     let cornerRadius: CGFloat
     @Binding var hasStarted: Bool
+    @State private var measuredTarget: CGRect?
+
+    private var anchorID: String { HeroID.detailTarget(id) }
 
     @ViewBuilder
     func body(content: Content) -> some View {
         #if os(macOS)
-        content.onGeometryChange(for: CGRect.self) { proxy in
-            proxy.frame(in: .global)
-        } action: { targetFrame in
-            guard !hasStarted,
-                  HeroProbe.shared.sourceID(for: id) == id
-            else { return }
-            startFlight(
-                id: id, artworkURL: artworkURL, cornerRadius: cornerRadius,
-                targetFrame: targetFrame, hasStarted: $hasStarted
-            )
-        }
-        .onDisappear {
-            HeroFrameStore.shared.clearTarget(id)
-        }
+        content
+            .heroAnchor(anchorID)
+            .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { frame in
+                measuredTarget = frame
+            }
+            // Owned by the destination's lifetime: leaving or retargeting
+            // cancels the pending wait, so an old page cannot launch later.
+            .task(id: measuredTarget) {
+                guard let target = measuredTarget, !hasStarted,
+                      HeroProbe.shared.isArmed(id) else { return }
+                let deadline = Date().addingTimeInterval(HeroTrigger.sourceWait)
+                while HeroProbe.shared.sourceFrame(for: id) == nil {
+                    guard !Task.isCancelled, Date() < deadline else { return }
+                    do { try await Task.sleep(nanoseconds: 16_000_000) }
+                    catch { return }
+                }
+                guard !Task.isCancelled, !hasStarted else { return }
+                HeroFrameStore.shared.markTarget(anchorID)
+                HeroProbe.shared.recordTarget(id: id, frame: target, scale: 1, cornerRadius: cornerRadius)
+                HeroFlightDirector.shared.start(
+                    id: id,
+                    content: .artwork(url: artworkURL, cornerRadius: cornerRadius),
+                    targetFrame: target,
+                    targetScale: 1,
+                    liveAnchorID: anchorID
+                )
+                hasStarted = true
+                KumoneLogger.hero.notice("HERO TARGET launched \(id, privacy: .public)")
+            }
+            .onDisappear {
+                HeroFrameStore.shared.clearTarget(anchorID)
+                HeroProbe.shared.cancel(id)
+            }
         #else
         content
         #endif
-    }
-
-    /// The source can arrive after the header's first measurement — the card
-    /// was tapped while its anchor was still being measured. The guard above
-    /// would have missed it and the page would open without a flight, so the
-    /// same window `HeroTrigger.arm` waits for is waited here: poll for the
-    /// source, and start the moment it appears.
-    ///
-    /// The flight is handed `liveAnchorID` so it follows this header while the
-    /// page's own push transition is still moving it: without that the stand-in
-    /// flies to a frame the landing view has already left behind, and the two
-    /// animations land at different places — the "cover doesn't line up with
-    /// the page" symptom.
-    private func startFlight(
-        id: String,
-        artworkURL: URL?,
-        cornerRadius: CGFloat,
-        targetFrame: CGRect,
-        hasStarted: Binding<Bool>
-    ) {
-        // Mark before recording: a trigger still polling for its source must
-        // not read the target's frame as its own.
-        HeroFrameStore.shared.markTarget(id)
-        HeroProbe.shared.recordTarget(id: id, frame: targetFrame, scale: 1, cornerRadius: cornerRadius)
-        KumoneLogger.hero.notice("HERO TARGET measured \(id, privacy: .public)")
-        if HeroProbe.shared.sourceFrame(for: id) != nil {
-            launch(id: id, artworkURL: artworkURL, cornerRadius: cornerRadius,
-                   targetFrame: targetFrame, hasStarted: hasStarted)
-            return
-        }
-        KumoneLogger.hero.notice("HERO TARGET pending-source \(id, privacy: .public)")
-        Task { @MainActor in
-            let limit = Date().addingTimeInterval(HeroTrigger.sourceWait)
-            while Date() < limit {
-                try? await Task.sleep(nanoseconds: 16_000_000)
-                guard !hasStarted.wrappedValue else { return }
-                if HeroProbe.shared.sourceFrame(for: id) != nil {
-                    launch(id: id, artworkURL: artworkURL, cornerRadius: cornerRadius,
-                           targetFrame: targetFrame, hasStarted: hasStarted)
-                    return
-                }
-            }
-        }
-    }
-
-    private func launch(
-        id: String,
-        artworkURL: URL?,
-        cornerRadius: CGFloat,
-        targetFrame: CGRect,
-        hasStarted: Binding<Bool>
-    ) {
-        guard !hasStarted.wrappedValue else { return }
-        HeroFlightDirector.shared.start(
-            id: id,
-            content: .artwork(url: artworkURL, cornerRadius: cornerRadius),
-            targetFrame: targetFrame,
-            targetScale: 1,
-            liveAnchorID: id
-        )
-        hasStarted.wrappedValue = true
     }
 }
 

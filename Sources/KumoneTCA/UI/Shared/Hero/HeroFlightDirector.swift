@@ -164,7 +164,9 @@ final class HeroFlightDirector: ObservableObject {
         let timer = Timer.scheduledTimer(
             withTimeInterval: Self.settleDeadline, repeats: false
         ) { [weak self] _ in
-            self?.settle(id)
+            Task { @MainActor [weak self] in
+                self?.settle(id)
+            }
         }
         settleWatchers[id] = timer
         KumoneLogger.hero.notice("HERO WATCH arm \(id, privacy: .public)")

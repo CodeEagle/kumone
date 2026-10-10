@@ -25,6 +25,14 @@ public enum HeroSelfTest {
     @MainActor
     public static func run(appStore: StoreOf<AppFeature>) async {
         guard isEnabled else { return }
+        // The card and album round trips need the home feed, whose load chain
+        // begins with a MainActor hop of its own. Every other wait in this
+        // file holds the main thread with runLoopTick polling, and that hold
+        // starves those hops: the feed's effect never even starts, and the
+        // card round trip is skipped for lack of a playlist. Waiting here
+        // returns the thread to AppKit's event loop between timer ticks, so
+        // the app's async machinery runs while the test waits.
+        await waitForHomeFeed(appStore: appStore, deadline: 35)
         let didPlay = await driveRoundTrip(appStore: appStore)
         let didCard = await driveCardRoundTrip(appStore: appStore)
         let didAlbum = await driveAlbumRoundTrip(appStore: appStore)
@@ -46,6 +54,53 @@ public enum HeroSelfTest {
                 + " | album-judged:\(albumJudged)"
         )
         await flushAndTerminate()
+    }
+
+    /// Waits for the home feed without holding the main thread. A repeating
+    /// run-loop timer ticks between checks; between ticks the main thread
+    /// sits in AppKit's event loop, which is what services the MainActor hops
+    /// the feed's load chain depends on. Polling here with runLoopTick
+    /// instead would keep the feed from ever starting.
+    @MainActor
+    private static func waitForHomeFeed(appStore: StoreOf<AppFeature>, deadline: TimeInterval) async {
+        let store = appStore
+        _ = await poll(deadline: deadline) { () -> Bool? in
+            if !store.home.recommendPlaylists.isEmpty || !store.home.newAlbums.isEmpty {
+                return true
+            }
+            if case .error = store.home.loadState { return true }
+            return nil
+        }
+    }
+
+    /// Polls a condition without holding the main thread. Every other wait in
+    /// this file runs the run loop itself to stay awake; the waits serving the
+    /// card and album round trips must not. Those round trips wait for detail
+    /// pages whose load chains start with MainActor hops of their own, and
+    /// holding the main thread with run-loop polling starves those hops — the
+    /// page loads nothing, its hero target never measures, and the round trip
+    /// times out on a transition that never ran. A repeating timer returns the
+    /// thread to AppKit's event loop between ticks, so the app's async
+    /// machinery proceeds while the test waits.
+    @MainActor
+    private static func poll<T>(
+        every interval: TimeInterval = 0.1, deadline: TimeInterval,
+        _ condition: @escaping @Sendable @MainActor () -> T?
+    ) async -> T? {
+        let limit = Date().addingTimeInterval(deadline)
+        return await withCheckedContinuation { (continuation: CheckedContinuation<T?, Never>) in
+            Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { timer in
+                Task { @MainActor in
+                    if let value = condition() {
+                        timer.invalidate()
+                        continuation.resume(returning: value)
+                    } else if Date() >= limit {
+                        timer.invalidate()
+                        continuation.resume(returning: nil)
+                    }
+                }
+            }
+        }
     }
 
     /// One now-playing hero round trip: waits for the mini player's anchor
@@ -164,10 +219,10 @@ public enum HeroSelfTest {
     private static func waitForVisibleRecommendedPlaylistID(
         appStore: StoreOf<AppFeature>, deadline: TimeInterval
     ) async -> Int? {
-        let limit = Date().addingTimeInterval(deadline)
+        let store = appStore
         let margin = HeroProbe.viewportMargin
-        while true {
-            let playlists = appStore.home.recommendPlaylists
+        return await poll(deadline: deadline) {
+            let playlists = store.home.recommendPlaylists
             if let viewport = currentViewport() {
                 if let id = playlists.first(where: { playlist in
                     guard let frame = HeroFrameStore.shared.frame(for: HeroID.playlist(playlist.id))
@@ -180,8 +235,7 @@ public enum HeroSelfTest {
             } else if let id = playlists.first?.id {
                 return id
             }
-            if Task.isCancelled || Date() >= limit { return nil }
-            try? await Task.sleep(nanoseconds: 200_000_000)
+            return nil
         }
     }
 
@@ -200,27 +254,37 @@ public enum HeroSelfTest {
     private static func waitForDetailLoad(
         appStore: StoreOf<AppFeature>, deadline: TimeInterval, expecting: Destination = .playlist
     ) async {
-        let limit = Date().addingTimeInterval(deadline)
-        while true {
-            if appStore.path.count > 0 {
-                let last = appStore.path[appStore.path.count - 1]
-                switch (last, expecting) {
-                case let (.playlist(detailState), .playlist):
-                    if case .loaded = detailState.loadState { return }
-                case let (.album(detailState), .album):
-                    if case .loaded = detailState.loadState { return }
-                default:
-                    break
-                }
+        let store = appStore
+        _ = await poll(deadline: deadline) { () -> Bool? in
+            guard store.path.count > 0 else { return nil }
+            let last = store.path[store.path.count - 1]
+            switch (last, expecting) {
+            case let (.playlist(detailState), .playlist):
+                if case .loaded = detailState.loadState { return true }
+            case let (.album(detailState), .album):
+                if case .loaded = detailState.loadState { return true }
+            default:
+                break
             }
-            if Task.isCancelled || Date() >= limit { return }
-            try? await Task.sleep(nanoseconds: 100_000_000)
+            return nil
         }
     }
 
     /// Which detail page a round trip is driving, so the wait above only
     /// succeeds on the one it armed.
     private enum Destination { case playlist, album }
+
+    /// Serves the main run loop for `seconds` instead of `Task.sleep`. On this
+    /// machine the Swift task executor can leave a MainActor task's
+    /// continuation undispatched while the main thread sits idle in
+    /// `nextEventMatchingMask`, so an `await Task.sleep` in this file can wait
+    /// forever. `RunLoop.run(until:)` keeps the actor queue serviced itself —
+    /// the same route the app's own UI uses — and a polling loop built on it
+    /// behaves the same under it.
+    @MainActor
+    private static func runLoopTick(_ seconds: TimeInterval) {
+        RunLoop.current.run(until: Date().addingTimeInterval(seconds))
+    }
 
     // MARK: - Polling
 
@@ -282,10 +346,10 @@ public enum HeroSelfTest {
     private static func waitForVisibleAlbumID(
         appStore: StoreOf<AppFeature>, deadline: TimeInterval
     ) async -> Int? {
-        let limit = Date().addingTimeInterval(deadline)
+        let store = appStore
         let margin = HeroProbe.viewportMargin
-        while true {
-            let albums = appStore.home.newAlbums
+        return await poll(deadline: deadline) {
+            let albums = store.home.newAlbums
             if let viewport = currentViewport() {
                 if let id = albums.first(where: { album in
                     guard let frame = HeroFrameStore.shared.frame(for: HeroID.album(album.id))
@@ -298,8 +362,7 @@ public enum HeroSelfTest {
             } else if let id = albums.first?.id {
                 return id
             }
-            if Task.isCancelled || Date() >= limit { return nil }
-            try? await Task.sleep(nanoseconds: 200_000_000)
+            return nil
         }
     }
 
@@ -325,7 +388,7 @@ public enum HeroSelfTest {
             if now.timeIntervalSince(lastGrowth) >= settleInterval { return }
             if now.timeIntervalSince(start) >= deadline { return }
             if Task.isCancelled { return }
-            try? await Task.sleep(nanoseconds: 50_000_000)
+            runLoopTick(0.05)
         }
     }
 
@@ -336,12 +399,8 @@ public enum HeroSelfTest {
     /// wait for the dismiss flight's separately.
     @MainActor
     private static func waitForVerdict(for id: String, timeout: TimeInterval, skipping: Int = 0) async -> HeroProbe.Verdict? {
-        let deadline = Date().addingTimeInterval(timeout)
-        while true {
-            if let verdict = judgedRecord(for: id, skipping: skipping)?.verdict { return verdict }
-            if Task.isCancelled { return nil }
-            guard Date() < deadline else { return judgedRecord(for: id, skipping: skipping)?.verdict }
-            try? await Task.sleep(nanoseconds: 50_000_000)
+        await poll(every: 0.05, deadline: timeout) {
+            judgedRecord(for: id, skipping: skipping)?.verdict
         }
     }
 
@@ -370,8 +429,9 @@ public enum HeroSelfTest {
     /// `HeroProbe.writeFile` hands the write to a detached task, so give it a
     /// beat before quitting or the summary line could be cut off by the
     /// terminate that follows it.
+    @MainActor
     private static func flushAndTerminate() async {
-        try? await Task.sleep(nanoseconds: 200_000_000)
+        runLoopTick(0.2)
         NSApp.terminate(nil)
     }
 }

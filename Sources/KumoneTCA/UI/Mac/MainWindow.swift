@@ -15,12 +15,18 @@ public struct MainWindow: View {
 
     #if os(macOS)
     @StateObject private var artworkStore = NowPlayingArtworkStore()
+    @ObservedObject private var imageLoading = ImageLoadingControl.shared
+    @ObservedObject private var shaderSettings = ShaderSettings.shared
+    @ObservedObject private var shaderLibrary = ShaderLibrary.shared
     #else
     @EnvironmentObject private var artworkStore: NowPlayingArtworkStore
     #endif
     @State private var detailWidth: CGFloat = 0
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
     @State private var visibilityBeforeNowPlaying: NavigationSplitViewVisibility?
+    #if os(macOS)
+    @StateObject private var topScrollProgress = TopScrollProgress()
+    #endif
 
     public var body: some View {
         NavigationSplitView(columnVisibility: $columnVisibility) {
@@ -40,12 +46,21 @@ public struct MainWindow: View {
         // AppKit window level, so leave the SwiftUI surfaces transparent and
         // keep the AppKit backdrop underneath as the fallback background.
         .background(WindowGlassDisabler())
+        .background(TopScrollProgressProbe(progress: topScrollProgress))
         #endif
         .navigationSplitViewStyle(.balanced)
         // Blurred top fade: content softens out before it reaches the window
         // titlebar instead of colliding with the Liquid Glass toolbar. Fades
         // out with the rest of the navigation chrome while now-playing is up.
-        .topFadeBlur()
+        .topFadeBlur(
+            progress: {
+                #if os(macOS)
+                topScrollProgress.value
+                #else
+                0
+                #endif
+            }()
+        )
         // The immersive page is the only visible surface while it is up: the
         // underlying navigation content fades out (layout and frames survive,
         // so the hero anchors on the mini player keep measuring) and the
@@ -55,37 +70,25 @@ public struct MainWindow: View {
         .opacity(store.isNowPlayingPresented ? 0 : 1)
         .animation(AppAnimation.quick, value: store.isNowPlayingPresented)
         .toolbar {
-            // Keep the item structurally present while the immersive page is
-            // shown. Removing it changes the titlebar/content geometry during
-            // the Hero flight and makes the target frame jump. The AppKit
-            // container fades the bridged item out without removing its slot.
-            if #available(macOS 26.0, iOS 26.0, *) {
-                ToolbarItem(placement: .primaryAction) {
-                    SearchFieldView { query in
-                        store.send(.openDestination(.search(query)))
-                    }
-                    .opacity(store.isNowPlayingPresented ? 0 : 1)
-                    .allowsHitTesting(!store.isNowPlayingPresented)
-                    .transaction { transaction in
-                        transaction.animation = nil
-                    }
+            // macOS: the search field is owned by the AppKit shell
+            // (MainContainerViewController's own NSToolbar item), NOT by
+            // SwiftUI. macOS has no trailing toolbar placement and the
+            // bridged spacer was dropped by the split-view bridge, so the
+            // SwiftUI item drifted to the left edge and could not be parked
+            // top-right. iOS keeps the SwiftUI item: `.primaryAction` is the
+            // trailing edge there.
+            #if os(iOS)
+            ToolbarItem(placement: searchToolbarPlacement) {
+                SearchFieldView { query in
+                    store.send(.openDestination(.search(query)))
                 }
-                // Hide the Liquid Glass shared toolbar background behind
-                // the custom capsule search field, else it double-
-                // backgrounds on macOS 26.
-                .sharedBackgroundVisibility(.hidden)
-            } else {
-                ToolbarItem(placement: .primaryAction) {
-                    SearchFieldView { query in
-                        store.send(.openDestination(.search(query)))
-                    }
-                    .opacity(store.isNowPlayingPresented ? 0 : 1)
-                    .allowsHitTesting(!store.isNowPlayingPresented)
-                    .transaction { transaction in
-                        transaction.animation = nil
-                    }
+                .opacity(store.isNowPlayingPresented ? 0 : 1)
+                .allowsHitTesting(!store.isNowPlayingPresented)
+                .transaction { transaction in
+                    transaction.animation = nil
                 }
             }
+            #endif
         }
         #if os(macOS)
         // Keep the single main window alive on Cmd+W / red button so the Dock
@@ -115,6 +118,21 @@ public struct MainWindow: View {
         .onChange(of: store.settings.showMainWindowAmbientBackground) { _, _ in
             artworkStore.setArtworkNeeded(needsCurrentArtwork)
         }
+        // The immersive page is the bigger artwork consumer: dismissing it
+        // without this lets the store keep the last decoded 768pt cover
+        // alive forever (memory never drops after closing the page).
+        .onChange(of: store.isNowPlayingPresented) { _, _ in
+            artworkStore.setArtworkNeeded(needsCurrentArtwork)
+        }
+        .onChange(of: store.shaderID) { _, _ in
+            artworkStore.setArtworkNeeded(needsCurrentArtwork)
+        }
+        .onChange(of: store.settings.disableImageLoading) { _, _ in
+            artworkStore.setArtworkNeeded(needsCurrentArtwork)
+        }
+        .onChange(of: imageLoading.isDisabled) { _, _ in
+            artworkStore.setArtworkNeeded(needsCurrentArtwork)
+        }
         #endif
         // Collapse the sidebar while the immersive page is open: the split
         // view's divider keeps its resize-cursor rect active even underneath
@@ -123,14 +141,25 @@ public struct MainWindow: View {
             #if os(macOS)
             artworkStore.setArtworkNeeded(needsCurrentArtwork)
             #endif
-            if isPresented {
-                visibilityBeforeNowPlaying = columnVisibility
-                columnVisibility = .detailOnly
-            } else {
-                columnVisibility = visibilityBeforeNowPlaying ?? .all
-                visibilityBeforeNowPlaying = nil
+            // Capture the outgoing page before restoring the split layout.
+            if !isPresented {
                 flyBackToMiniPlayer()
             }
+            var layoutTransaction = Transaction()
+            layoutTransaction.disablesAnimations = true
+            withTransaction(layoutTransaction) {
+                if isPresented {
+                    visibilityBeforeNowPlaying = columnVisibility
+                    columnVisibility = .detailOnly
+                } else {
+                    columnVisibility = visibilityBeforeNowPlaying ?? .all
+                    visibilityBeforeNowPlaying = nil
+                }
+            }
+        }
+        .task(id: store.isNowPlayingPresented) {
+            await ArtworkLifetimeDiagnostics.sampleAfterTransition(
+                reason: store.isNowPlayingPresented ? "detail-open" : "detail-closed")
         }
         .onChange(of: store.player.currentTrack) { _, track in
             artworkStore.update(trackID: track?.id, artworkURL: track?.album.picUrl)
@@ -177,6 +206,23 @@ public struct MainWindow: View {
         .animation(AppAnimation.smooth, value: store.isNowPlayingPresented)
         .animation(.spring(duration: 0.3), value: store.toasts.current)
         .heroFlightOverlay()
+        #if os(macOS)
+        // Keep Metal in the same composition tree as the immersive overlay.
+        // An external MTKView can draw successfully beneath an opaque SwiftUI
+        // hosting surface without any of its pixels reaching the window.
+        .background {
+            ShaderContainerView(
+                shader: store.settings.showMainWindowAmbientBackground
+                    ? shaderLibrary.available.first(where: { $0.id == store.shaderID }) : nil,
+                isPlaying: store.player.isPlaying,
+                palette: ShaderPaletteBuilder.make(from: artworkStore.colors),
+                pcmSync: shaderSettings.pcmSyncEnabled
+            )
+            .opacity(min(max(store.settings.mainWindowAmbientBackgroundIntensity, 0), 1))
+            .ignoresSafeArea()
+            .allowsHitTesting(false)
+        }
+        #endif
     }
 
     private var loginBinding: Binding<Bool> {
@@ -184,6 +230,12 @@ public struct MainWindow: View {
             get: { store.isLoginPresented },
             set: { store.send($0 ? .presentLogin : .dismissLogin) }
         )
+    }
+
+    private var searchToolbarPlacement: ToolbarItemPlacement {
+        // iOS only: macOS routes the search field through the AppKit shell
+        // (see the toolbar above and MainContainerViewController).
+        .primaryAction
     }
 
     private var detailStack: some View {
@@ -378,7 +430,10 @@ public struct MainWindow: View {
 
     #if os(macOS)
     private var needsCurrentArtwork: Bool {
-        store.settings.showMainWindowAmbientBackground || store.isNowPlayingPresented
+        !store.settings.disableImageLoading && !imageLoading.isDisabled && NowPlayingArtworkStore.needsArtwork(
+            backgroundEnabled: store.settings.showMainWindowAmbientBackground,
+            shaderID: store.shaderID,
+            isNowPlayingPresented: store.isNowPlayingPresented)
     }
     #endif
 }
@@ -416,6 +471,7 @@ private struct WindowGlassDisabler: NSViewRepresentable {
 
     private static func apply(from view: NSView) {
         guard let host = hostingView(above: view) else { return }
+        host.layer?.backgroundColor = NSColor.clear.cgColor
         clearSurfaces(in: host)
     }
 
@@ -435,7 +491,11 @@ private struct WindowGlassDisabler: NSViewRepresentable {
     private static func clearSurfaces(in view: NSView) {
         if let effect = view as? NSVisualEffectView {
             effect.material = .underWindowBackground
-            effect.blendingMode = .behindWindow
+            // These effects sit ABOVE the native Metal layer. Behind-window
+            // sampling ignores that layer and replaces it with desktop glass
+            // when SwiftUI recreates a surface; sample our window instead.
+            // Keep the view and its children alive (hiding it loses sidebar UI).
+            effect.blendingMode = .withinWindow
             effect.state = .active
         }
         if let scroll = view as? NSScrollView {
@@ -444,7 +504,9 @@ private struct WindowGlassDisabler: NSViewRepresentable {
             scroll.contentView.drawsBackground = false
             scroll.contentView.backgroundColor = .clear
         }
-        view.layer?.backgroundColor = NSColor.clear.cgColor
+        // SwiftUI also uses backing layers for Circle/Shape fills. Clearing
+        // every descendant layer erases button backgrounds until SwiftUI
+        // redraws them, including controls outside the Hero transition.
         for child in view.subviews {
             clearSurfaces(in: child)
         }
@@ -529,14 +591,18 @@ struct MainWindowConfigurator: NSViewRepresentable {
 
 // MARK: - Search field
 
-struct SearchFieldView: View {
-    let onSubmit: (String) -> Void
+public struct SearchFieldView: View {
+    public let onSubmit: (String) -> Void
 
     @State private var text = ""
     @State private var placeholder = "搜索音乐、歌手、专辑"
     @FocusState private var focused: Bool
 
-    var body: some View {
+    public init(onSubmit: @escaping (String) -> Void) {
+        self.onSubmit = onSubmit
+    }
+
+    public var body: some View {
         HStack(spacing: 6) {
             Image(systemName: "magnifyingglass")
                 .font(.system(size: 12, weight: .medium))
@@ -559,8 +625,12 @@ struct SearchFieldView: View {
         .background(.primary.opacity(0.05), in: Capsule())
         .overlay(Capsule().strokeBorder(.primary.opacity(focused ? 0.18 : 0.08), lineWidth: 1))
         #if os(macOS)
-        // Keep the capsule off the window's rounded top-right corner (#88).
-        .padding(.trailing, 8)
+        // Keep the capsule off the window's rounded top-right corner (#88)
+        // while keeping the visible gaps square: the toolbar adds a 4pt
+        // inset on both axes, so trailing 7 + top 10 puts the capsule 11pt
+        // from the window's right edge and 11pt from the top.
+        .padding(.trailing, 7)
+        .padding(.top, 10)
         #endif
         .animation(AppAnimation.quick, value: focused)
         .task {

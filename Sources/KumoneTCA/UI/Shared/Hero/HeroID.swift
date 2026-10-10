@@ -1,8 +1,7 @@
 import Foundation
 
-/// Stable identifiers for hero transitions. One id is shared by the source
-/// anchor and the target anchor of a single transition, which is how the
-/// flight pairs them up.
+/// Stable transition ids. Source and destination anchors use separate keys so
+/// a retained navigation destination cannot overwrite its source card's frame.
 enum HeroID {
     /// PlayerBar artwork -> NowPlaying artwork. Two ids: the mini artwork and
     /// the page artwork each report to the frame store under their own key, so
@@ -64,4 +63,6 @@ enum HeroID {
     static func album(_ id: Int) -> String { "hero-album-\(id)" }
     static func playlist(_ id: Int) -> String { "hero-playlist-\(id)" }
     static func artist(_ id: Int) -> String { "hero-artist-\(id)" }
+
+    static func detailTarget(_ sourceID: String) -> String { "\(sourceID)-target" }
 }

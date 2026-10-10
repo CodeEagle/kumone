@@ -180,7 +180,8 @@ struct HeroFlight: View {
     private var flightContent: some View {
         switch flight.content {
         case let .artwork(url, cornerRadius):
-            CachedAsyncImage(url: url, animated: false) {
+            CachedAsyncImage(url: url, animated: false,
+                             rendition: flight.id == HeroID.nowPlayingArtwork ? .playback : nil) {
                 RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                     // Opaque while the artwork loads, as in the original flight.
                     .fill(.secondary)
@@ -205,18 +206,64 @@ struct HeroFlight: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity,
                        alignment: flight.targetAnchorID == HeroID.nowPlayingTitle ? .leading : .center)
         case let .icon(name, tint, background, diameter, fontSize, weight):
-            GeometryReader { proxy in
-                ZStack {
-                    Circle().fill(background.style)
-                    Image(systemName: name)
-                        .font(.system(
-                            size: fontSize * min(proxy.size.width, proxy.size.height) / diameter,
-                            weight: weight
-                        ))
-                        .foregroundStyle(tint)
-                }
-                .frame(width: proxy.size.width, height: proxy.size.height)
+            HeroIconStandIn(
+                name: name, tint: tint, background: background,
+                diameter: diameter, fontSize: fontSize, weight: weight,
+                isNowPlaying: HeroID.nowPlayingPairs.contains { $0.source == flight.id },
+                isPlayPause: flight.id == HeroID.nowPlayingPlayPause,
+                isReturning: flight.targetAnchorID != nil,
+                progress: shadowProgress
+            )
+        }
+    }
+}
+
+/// The moving button carries its own background for the entire flight. Both
+/// endpoints hide together, so there is no second stationary circle or blank
+/// hand-off frame. The endpoint fills crossfade at the same spatial progress.
+private struct HeroIconStandIn: View, Animatable {
+    let name: String
+    let tint: Color
+    let background: HeroFill
+    let diameter: CGFloat
+    let fontSize: CGFloat
+    let weight: Font.Weight
+    let isNowPlaying: Bool
+    let isPlayPause: Bool
+    let isReturning: Bool
+    var progress: CGFloat
+
+    var animatableData: CGFloat {
+        get { progress }
+        set { progress = newValue }
+    }
+
+    var body: some View {
+        let amount = min(max(progress, 0), 1)
+        let sourceFill: HeroFill = isNowPlaying
+            ? (isReturning
+                ? (isPlayPause ? .white : .translucentWhite)
+                : (isPlayPause ? .accent : .none))
+            : background
+        let sourceTint: Color = isNowPlaying && isPlayPause
+            ? (isReturning ? .black.opacity(0.85) : .white)
+            : tint
+        GeometryReader { proxy in
+            ZStack {
+                Circle().fill(sourceFill.style).opacity(1 - Double(amount))
+                Circle().fill(background.style).opacity(Double(amount))
+                Image(systemName: name)
+                    .foregroundStyle(sourceTint)
+                    .opacity(1 - Double(amount))
+                Image(systemName: name)
+                    .foregroundStyle(tint)
+                    .opacity(Double(amount))
             }
+            .font(.system(
+                size: fontSize * min(proxy.size.width, proxy.size.height) / diameter,
+                weight: weight
+            ))
+            .frame(width: proxy.size.width, height: proxy.size.height)
         }
     }
 }
@@ -261,6 +308,10 @@ extension View {
     func heroFlightOverlay() -> some View {
         overlay(alignment: .topLeading) {
             HeroFlightHost()
+                // Flights are visual stand-ins only. They must never sit in
+                // front of the now-playing chrome and steal clicks from the
+                // dismiss button while a flight is settling.
+                .allowsHitTesting(false)
         }
     }
 }
