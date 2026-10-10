@@ -103,6 +103,11 @@ final class HeroProbe: ObservableObject {
 
     @Published private(set) var records: [Record] = []
     private var active: [String: Record] = [:]
+    /// The ids an arm has recorded but not yet landed (or given up). Views
+    /// gate their reveal on this so the pushed page's content stays hidden
+    /// from the tap until the flying artwork lands — the detail target's
+    /// own flight-entry only covers launch-to-land, not the pre-launch push.
+    @Published private(set) var armedIDs: Set<String> = []
 
     /// Read the armed source rather than the anchor store, whose entry may
     /// already have been overwritten by the target sharing this id.
@@ -120,7 +125,10 @@ final class HeroProbe: ObservableObject {
 
     /// A destination that leaves before landing must not keep an old source
     /// armed for a later presentation of the same item.
-    func cancel(_ id: String) { active.removeValue(forKey: id) }
+    func cancel(_ id: String) {
+        active.removeValue(forKey: id)
+        armedIDs.remove(id)
+    }
 
 
     func sourceScale(for id: String) -> CGFloat {
@@ -147,6 +155,7 @@ final class HeroProbe: ObservableObject {
 
     func begin(_ id: String) {
         active[id] = Record(id: id)
+        armedIDs.insert(id)
     }
 
     func recordSource(id: String, frame: CGRect, scale: CGFloat = 1, cornerRadius: CGFloat? = nil, hidden: Bool = false, imageURL: URL? = nil) {
@@ -212,6 +221,7 @@ final class HeroProbe: ObservableObject {
         guard var current = active.removeValue(forKey: id) else {
             return .fail("no active record for \(id)")
         }
+        armedIDs.remove(id)
         current.landedFrame = frame
         current.landedScale = scale
         current.landedCornerRadius = cornerRadius

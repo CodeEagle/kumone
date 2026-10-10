@@ -8,6 +8,21 @@ struct AlbumDetailView: View {
 
     @State private var showFullDescription = false
     @State private var hasStartedHeroFlight = false
+
+    #if os(macOS)
+    @ObservedObject private var heroFlight = HeroFlightDirector.shared
+    @ObservedObject private var heroProbe = HeroProbe.shared
+    #endif
+
+    /// The cover flies in first; the rest of the page reveals only after it
+    /// lands (see PlaylistDetailView.isFlying).
+    private var isFlying: Bool {
+        #if os(macOS)
+        heroProbe.armedIDs.contains(heroID) || heroFlight.active[heroID] != nil
+        #else
+        false
+        #endif
+    }
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 
     private var heroID: String { HeroID.album(store.albumID) }
@@ -48,6 +63,8 @@ struct AlbumDetailView: View {
                         },
                         appStore: appStore
                     )
+                    .opacity(isFlying ? 0 : 1)
+                    .animation(AppAnimation.smooth, value: isFlying)
                     .padding(.horizontal, isCompact ? 6 : Theme.Layout.contentInset - 10)
 
                     if !store.otherAlbums.isEmpty {
@@ -218,6 +235,8 @@ struct AlbumDetailView: View {
                 .frame(width: 200, height: 200)
                 .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.large, style: .continuous))
                 .shadow(color: .black.opacity(0.25), radius: 16, y: 8)
+                .opacity(isFlying ? 0 : 1)
+                .animation(nil, value: isFlying)
                 .heroTarget(
                     id: heroID,
                     artworkURL: album.picUrl?.resizedImageURL(384),
@@ -303,6 +322,8 @@ struct AlbumDetailView: View {
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
+            .opacity(isFlying ? 0 : 1)
+            .animation(AppAnimation.smooth, value: isFlying)
         }
         .frame(height: 210)
     }

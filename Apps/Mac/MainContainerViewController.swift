@@ -49,12 +49,11 @@ final class MainContainerViewController: NSViewController, NSToolbarDelegate {
     // The shell-owned toolbar that pins the search field top-right:
     // [back?, flexibleSpace, search]. See installSearchToolbar().
     private static let searchItemIdentifier = NSToolbarItem.Identifier("im.missuo.Kumone.search")
+    private static let backItemIdentifier = NSToolbarItem.Identifier("im.missuo.Kumone.navigate-back")
     private var searchToolbar: NSToolbar?
-    /// The sidebar toggle and back buttons in the traffic-light row (see
-    /// installSidebarToggle / installBackButton). Faded with the system
-    /// buttons while the immersive page is up.
+    /// The sidebar toggle button in the traffic-light row (see
+    /// installSidebarToggle). Faded with the system buttons.
     private var sidebarToggleButton: NSButton?
-    private var backButton: NSButton?
     private var pathSubscription: AnyCancellable?
 
     init(store: StoreOf<AppFeature>) {
@@ -72,7 +71,6 @@ final class MainContainerViewController: NSViewController, NSToolbarDelegate {
         // toolbar bridged into a programmatically created AppKit window.
         installSearchToolbar()
         installSidebarToggle()
-        installBackButton()
         syncToolbarVisibility()
         nowPlayingSubscription = store.publisher.isNowPlayingPresented
             .removeDuplicates()
@@ -149,14 +147,11 @@ final class MainContainerViewController: NSViewController, NSToolbarDelegate {
     }
 
     /// The titlebar can rebuild its button container (style changes,
-    /// fullscreen transitions) and drop both buttons with it; re-install
+    /// fullscreen transitions) and drop the toggle with it; re-install it
     /// wherever the synchronization points run.
     private func rearmTitlebarButtons() {
         if sidebarToggleButton?.superview == nil {
             installSidebarToggle()
-        }
-        if backButton?.superview == nil {
-            installBackButton()
         }
     }
 
@@ -165,7 +160,7 @@ final class MainContainerViewController: NSViewController, NSToolbarDelegate {
         trafficLightsPresented = presented
         let buttons = [NSWindow.ButtonType.closeButton, .miniaturizeButton, .zoomButton]
             .compactMap { window.standardWindowButton($0) }
-            + [sidebarToggleButton, backButton].compactMap { $0 }
+            + (sidebarToggleButton.map { [$0] } ?? [])
         for button in buttons {
             if presented {
                 trafficLightsEnabled[ObjectIdentifier(button)] = button.isEnabled
@@ -274,57 +269,28 @@ final class MainContainerViewController: NSViewController, NSToolbarDelegate {
         sidebarToggleButton = button
     }
 
-    /// The back button beside the sidebar toggle in the traffic-light row:
-    /// with the sidebar collapsed the toolbar's own leading item slid left
-    /// under the titlebar buttons and overlapped the toggle, while the open
-    /// state insets the toolbar past the sidebar — two different positions
-    /// for one control. The titlebar row, where the toggle already lives, is
-    /// the one slot where the back button's position is stable in both
-    /// column states, right after the toggle. Hidden while the navigation
-    /// stack is at its root, like the system back button it replaces.
-    private func installBackButton() {
-        if backButton?.superview != nil { return }
-        guard let toggle = sidebarToggleButton, toggle.superview != nil,
-              let closeButton = view.window?.standardWindowButton(.closeButton) else { return }
+    /// Detail pages push onto the navigation stack; a back button belongs on
+    /// the main window's side. SwiftUI's own back button lived in the bridged
+    /// toolbar which the shell no longer bridges (there is no trailing
+    /// placement to park the search field in), so the shell provides it
+    /// directly. The item's view carries a deliberate leading margin: with
+    /// the sidebar collapsed the toolbar's leading slot lands on the
+    /// titlebar-row sidebar toggle, and the margin parks the glyph clear of
+    /// it in both column states.
+    private func makeBackItem() -> NSToolbarItem {
+        let item = NSToolbarItem(itemIdentifier: Self.backItemIdentifier)
+        item.label = "返回"
+        let container = NSView(frame: NSRect(x: 0, y: 0, width: 62, height: 28))
         let button = NSButton(
             image: NSImage(systemSymbolName: "chevron.backward", accessibilityDescription: "返回")!,
             target: self, action: #selector(navigateBack)
         )
         button.isBordered = false
         button.imagePosition = .imageOnly
-        button.toolTip = "返回"
-        button.frame = NSRect(
-            x: toggle.frame.maxX + 8,
-            y: toggle.frame.minY,
-            width: 22,
-            height: 18
-        )
-        closeButton.superview?.addSubview(button)
-        backButton = button
-        updateBackButton(visible: !store.path.isEmpty)
-    }
-
-    /// Fades the back button in only while the navigation stack holds a page
-    /// to pop, and out again when the stack empties.
-    private func updateBackButton(visible: Bool) {
-        guard let button = backButton else { return }
-        button.isEnabled = visible
-        if visible {
-            button.isHidden = false
-            NSAnimationContext.runAnimationGroup { context in
-                context.duration = toolbarAnimationDuration / 2
-                context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-                button.animator().alphaValue = 1
-            }
-        } else {
-            NSAnimationContext.runAnimationGroup { context in
-                context.duration = toolbarAnimationDuration / 2
-                context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-                button.animator().alphaValue = 0
-            } completionHandler: {
-                button.isHidden = true
-            }
-        }
+        button.frame = NSRect(x: 40, y: 0, width: 22, height: 28)
+        container.addSubview(button)
+        item.view = container
+        return item
     }
 
     /// The main window's toolbar is assembled here, not bridged from SwiftUI:
@@ -339,7 +305,7 @@ final class MainContainerViewController: NSViewController, NSToolbarDelegate {
         // item order per identifier, so a reorder needs a fresh one to escape
         // the previously persisted order (v4 drops the back item, which sits
         // in the traffic-light row now).
-        let toolbar = NSToolbar(identifier: "im.missuo.Kumone.main.v4")
+        let toolbar = NSToolbar(identifier: "im.missuo.Kumone.main.v5")
         toolbar.allowsUserCustomization = false
         toolbar.showsBaselineSeparator = false
         // Setting the delegate first: NSToolbar populates its items from
@@ -353,9 +319,9 @@ final class MainContainerViewController: NSViewController, NSToolbarDelegate {
         // a pushed page to pop, as the system's own back button does.
         pathSubscription = store.publisher.path
             .sink { [weak self] path in
-                self?.updateBackButton(visible: !path.isEmpty)
+                self?.updateBackItem(present: !path.isEmpty)
             }
-        updateBackButton(visible: !store.path.isEmpty)
+        updateBackItem(present: !store.path.isEmpty)
         // Self-verifying: the item order is what parks the field right.
         KumoneLogger.app.notice(
             "SEARCH toolbar items=\(toolbar.items.map { $0.itemIdentifier.rawValue }.joined(separator: ","), privacy: .public)"
@@ -396,6 +362,21 @@ final class MainContainerViewController: NSViewController, NSToolbarDelegate {
         store.send(.path(.popFrom(id: id)))
     }
 
+    /// Inserts the back button at the leading edge while the stack has a page
+    /// to pop, and removes it when the stack empties. The button view's own
+    /// leading margin keeps it clear of the titlebar-row sidebar toggle when
+    /// the sidebar collapses and the toolbar's leading slot slides left.
+    private func updateBackItem(present: Bool) {
+        guard let toolbar = searchToolbar else { return }
+        let existing = toolbar.items
+            .firstIndex { $0.itemIdentifier == Self.backItemIdentifier }
+        if present, existing == nil {
+            toolbar.insertItem(withItemIdentifier: Self.backItemIdentifier, at: 0)
+        } else if !present, let existing {
+            toolbar.removeItem(at: existing)
+        }
+    }
+
     /// The sidebar toggle: the window toolbar's own items render centered
     /// over the detail column (d1bcd89 removed the bridged `.toolbars`
     /// option whose system toggle sat at the leading edge), so the toggle
@@ -408,21 +389,23 @@ final class MainContainerViewController: NSViewController, NSToolbarDelegate {
     func toolbar(_ toolbar: NSToolbar, itemForItemIdentifier itemIdentifier: NSToolbarItem.Identifier, willBeInsertedIntoToolbar flag: Bool) -> NSToolbarItem? {
         switch itemIdentifier {
         case Self.searchItemIdentifier: return makeSearchItem()
+        case Self.backItemIdentifier: return makeBackItem()
         default: return nil
         }
     }
 
     func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
-        [.flexibleSpace, Self.searchItemIdentifier]
+        [Self.backItemIdentifier, .flexibleSpace, Self.searchItemIdentifier]
     }
 
     func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
-        // Both leading controls — sidebar toggle and back button — live in
-        // the traffic-light row (installSidebarToggle / installBackButton):
-        // the toolbar's leading cluster lands over the detail column, not
-        // over the sidebar, and it slides under the titlebar buttons when
-        // the sidebar collapses. The toolbar's default chrome is therefore
-        // just the search field pinned right.
+        // The toolbar's leading cluster lands over the detail column — the
+        // main window's side — not over the sidebar, and it slides left past
+        // the titlebar-row sidebar toggle when the sidebar collapses, so the
+        // back item's view carries the margin that clears it. The default
+        // chrome is the search field pinned right; the back button is *not*
+        // in the defaults: it is inserted only while the navigation stack
+        // holds a pushed page, like the system back button it replaces.
         [.flexibleSpace, Self.searchItemIdentifier]
     }
 

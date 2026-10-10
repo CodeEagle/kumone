@@ -10,7 +10,22 @@ struct ArtistDetailView: View {
 
     @State private var hasStartedHeroFlight = false
 
+    #if os(macOS)
+    @ObservedObject private var heroFlight = HeroFlightDirector.shared
+    @ObservedObject private var heroProbe = HeroProbe.shared
+    #endif
+
     private var heroID: String { HeroID.artist(store.artistID) }
+
+    /// The cover flies in first; the rest of the page reveals only after it
+    /// lands (see PlaylistDetailView.isFlying).
+    private var isFlying: Bool {
+        #if os(macOS)
+        heroProbe.armedIDs.contains(heroID) || heroFlight.active[heroID] != nil
+        #else
+        false
+        #endif
+    }
 
     private var account: AccountFeature.State { appStore.account }
 
@@ -52,6 +67,8 @@ struct ArtistDetailView: View {
                             },
                             appStore: appStore
                         )
+                        .opacity(isFlying ? 0 : 1)
+                        .animation(AppAnimation.smooth, value: isFlying)
                         .padding(.horizontal, isCompact ? 6 : Theme.Layout.contentInset - 10)
                     }
 
@@ -212,6 +229,8 @@ struct ArtistDetailView: View {
                 .frame(width: 180, height: 180)
                 .clipShape(Circle())
                 .shadow(color: .black.opacity(0.25), radius: 16, y: 8)
+                .opacity(isFlying ? 0 : 1)
+                .animation(nil, value: isFlying)
                 .heroTarget(
                     id: heroID,
                     artworkURL: artist.picUrl?.resizedImageURL(384),
@@ -267,6 +286,8 @@ struct ArtistDetailView: View {
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
+            .opacity(isFlying ? 0 : 1)
+            .animation(AppAnimation.smooth, value: isFlying)
         }
     }
 

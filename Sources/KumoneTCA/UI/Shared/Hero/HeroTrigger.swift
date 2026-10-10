@@ -63,6 +63,7 @@ enum HeroTrigger {
                 KumoneLogger.hero.notice(
                     "HERO ARM \(heroID, privacy: .public) no-source target-owned"
                 )
+                HeroProbe.shared.cancel(heroID)
                 return
             }
             if let frame = HeroFrameStore.shared.frame(for: heroID) {
@@ -73,6 +74,9 @@ enum HeroTrigger {
         KumoneLogger.hero.notice(
             "HERO ARM \(heroID, privacy: .public) no-source waited=\(1000 * sourceWait, privacy: .public)ms"
         )
+        // No flight will launch: clear the armed id so a detail page gating
+        // its reveal on the arm is not left hidden forever.
+        HeroProbe.shared.cancel(heroID)
     }
 
     private static func recordSource(_ heroID: String, frame: CGRect, waited: TimeInterval?, imageURL: URL? = nil) {

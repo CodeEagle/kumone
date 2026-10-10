@@ -13,7 +13,25 @@ struct PlaylistDetailView: View {
 
     @State private var hasStartedHeroFlight = false
 
+    #if os(macOS)
+    @ObservedObject private var heroFlight = HeroFlightDirector.shared
+    @ObservedObject private var heroProbe = HeroProbe.shared
+    #endif
+
     private var heroID: String { HeroID.playlist(store.playlistID) }
+
+    /// The cover flies in first; the rest of the page reveals only after it
+    /// lands. The probe's armed id covers the pre-launch push frames the
+    /// director's entry cannot (the flight is armed at tap, launched once the
+    /// target measures), and the director's entry covers launch-to-land, so
+    /// the union spans tap through landing.
+    private var isFlying: Bool {
+        #if os(macOS)
+        heroProbe.armedIDs.contains(heroID) || heroFlight.active[heroID] != nil
+        #else
+        false
+        #endif
+    }
 
     private var account: AccountFeature.State { appStore.account }
 
@@ -61,6 +79,8 @@ struct PlaylistDetailView: View {
                         },
                         appStore: appStore
                     )
+                    .opacity(isFlying ? 0 : 1)
+                    .animation(AppAnimation.smooth, value: isFlying)
                     .padding(.horizontal, isCompact ? 6 : Theme.Layout.contentInset - 10)
 
                     if store.isLoadingMore {
@@ -227,6 +247,8 @@ struct PlaylistDetailView: View {
                 .frame(width: 200, height: 200)
                 .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.large, style: .continuous))
                 .shadow(color: .black.opacity(0.25), radius: 16, y: 8)
+                .opacity(isFlying ? 0 : 1)
+                .animation(nil, value: isFlying)
                 .heroTarget(
                     id: heroID,
                     artworkURL: detail.coverImgUrl?.resizedImageURL(384),
@@ -285,6 +307,8 @@ struct PlaylistDetailView: View {
                 actionRow(detail)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
+            .opacity(isFlying ? 0 : 1)
+            .animation(AppAnimation.smooth, value: isFlying)
         }
         .frame(height: 210)
     }
