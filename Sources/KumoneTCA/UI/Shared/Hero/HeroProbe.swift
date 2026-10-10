@@ -23,7 +23,7 @@ final class HeroProbe: ObservableObject {
         var scale: CGFloat = 0.01
     }
 
-    static let tolerance = Tolerance()
+    nonisolated static let tolerance = Tolerance()
 
     /// A frame may sit flush against the edge of the hosting surface (a header
     /// pinned to the top, a mini player to the bottom) and still be visible, so
@@ -90,6 +90,11 @@ final class HeroProbe: ObservableObject {
 
     static let logFilePath = "/tmp/kumone-hero.log"
 
+    /// How many finished flights the audit trail keeps before the oldest
+    /// are dropped. The self-test suites read verdicts back; a long running
+    /// session produces one record per flight otherwise.
+    private static let maxRecords = 1000
+
     @Published private(set) var records: [Record] = []
     private var active: [String: Record] = [:]
 
@@ -104,6 +109,12 @@ final class HeroProbe: ObservableObject {
     func sourceID(for id: String) -> String? {
         sourceFrame(for: id) != nil ? id : nil
     }
+
+    func isArmed(_ id: String) -> Bool { active[id] != nil }
+
+    /// A destination that leaves before landing must not keep an old source
+    /// armed for a later presentation of the same item.
+    func cancel(_ id: String) { active.removeValue(forKey: id) }
 
 
     func sourceScale(for id: String) -> CGFloat {
@@ -182,6 +193,9 @@ final class HeroProbe: ObservableObject {
         let verdict = Self.judge(record: current, tolerance: Self.tolerance)
         current.verdict = verdict
         records.append(current)
+        // The archive is a flight audit trail, consumed by the self-test
+        // suites; a long session would otherwise grow it without end.
+        if records.count > Self.maxRecords { records.removeFirst(records.count - Self.maxRecords) }
         let line = Self.format(current)
         KumoneLogger.hero.notice("\(line, privacy: .public)")
         Self.writeFile(line)
@@ -309,24 +323,12 @@ final class HeroProbe: ObservableObject {
     /// sandbox that forbids it only loses the copy, not the verdict. Every
     /// write runs on one serial queue: concurrent writers that each seek to
     /// the end and write leave overlapping tails in the file — a corrupted
-    /// audit trail that is indistinguishable from lost verdicts.
+    /// audit trail that is indistinguishable from lost verdicts. The append
+    /// itself is bounded, so a long test run cannot fill the disk.
     static func writeFile(_ line: String) {
         let url = URL(fileURLWithPath: logFilePath)
-        let payload = (line + "\n").data(using: .utf8) ?? Data()
         writeQueue.async {
-            do {
-                if let handle = try? FileHandle(forWritingTo: url) {
-                    try handle.seekToEnd()
-                    try handle.write(contentsOf: payload)
-                    try handle.close()
-                } else {
-                    try payload.write(to: url)
-                }
-            } catch {
-                KumoneLogger.hero.debug(
-                    "probe log file unwritable: \(error.localizedDescription, privacy: .public)"
-                )
-            }
+            BoundedLogFile.append(line, to: url)
         }
     }
 

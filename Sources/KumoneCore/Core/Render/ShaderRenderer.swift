@@ -3,6 +3,13 @@ import Metal
 import MetalKit
 import simd
 
+/// A uniquely owned readback buffer: CPU access occurs only in Metal's
+/// completion handler after GPU writes finish, and no CPU writer exists.
+/// Remove the wrapper once the SDK marks MTLBuffer Sendable.
+private struct ShaderReadbackBuffer: @unchecked Sendable {
+    let buffer: any MTLBuffer
+}
+
 /// Draws a single shader full-screen.
 ///
 /// The host (this class) owns the vertex stage, the uniform buffer, and the
@@ -31,6 +38,8 @@ public final class ShaderRenderer: NSObject, MTKViewDelegate {
 
     private var pipelineState: (any MTLRenderPipelineState)?
     private var uniformBuffer: any MTLBuffer?
+    private var needsPixelProbe = false
+    private let libraryOwner = UUID()
     private let uniformStride: Int
 
     private var bridge = ShaderAudioBridge()
@@ -46,14 +55,7 @@ public final class ShaderRenderer: NSObject, MTKViewDelegate {
     private var lastProbeTime: CFTimeInterval = 0
     private static let probeLogURL = URL(fileURLWithPath: "/tmp/kumone-shader.log")
     private static func writeFile(_ line: String) {
-        let payload = (line + "\n").data(using: .utf8) ?? Data()
-        if let handle = try? FileHandle(forWritingTo: probeLogURL) {
-            _ = try? handle.seekToEnd()
-            try? handle.write(contentsOf: payload)
-            try? handle.close()
-        } else {
-            try? payload.write(to: probeLogURL, options: [.atomic])
-        }
+        BoundedLogFile.append(line, to: probeLogURL)
     }
 
     /// Set when a shader fails to build, so the host can show why instead of a
@@ -72,13 +74,32 @@ public final class ShaderRenderer: NSObject, MTKViewDelegate {
         super.init()
     }
 
+    deinit {
+        // A renderer that dies without an explicit unload() must not strand
+        // its library leases in ShaderDiscovery: every current owner calls
+        // tearDown()/unload(), but that is a convention, not a guarantee.
+        // The owner token is a value, and deinit is nonisolated, so the
+        // release is deferred to a MainActor task that captures nothing of
+        // this instance but the token itself.
+        let owner = libraryOwner
+        Task { @MainActor in
+            ShaderDiscovery.shared.releaseLibraries(ownedBy: owner)
+        }
+    }
+
     // MARK: - Shader loading
 
     /// Compiles `descriptor` and rebuilds the pipeline. Returns false on failure
     /// and records `lastError`.
     @discardableResult
     public func load(_ descriptor: ShaderDescriptor) -> Bool {
-        guard let library = ShaderDiscovery.shared.library(for: descriptor) else {
+        unload()
+        // Failed compilation must release partial leases while retaining the
+        // useful diagnostic. A successful load owns both fragment and vertex.
+        defer {
+            if pipelineState == nil { releasePipelineResources() }
+        }
+        guard let library = ShaderDiscovery.shared.library(for: descriptor, owner: libraryOwner) else {
             lastError = "无法编译 shader：\(descriptor.name)"
             pipelineState = nil
             return false
@@ -93,7 +114,7 @@ public final class ShaderRenderer: NSObject, MTKViewDelegate {
 
         // The vertex stage always comes from the shared types library, so every
         // shader — bundled or user-supplied — gets the same UV contract.
-        guard let vertexLibrary = ShaderDiscovery.shared.library(for: sharedTypesDescriptor) else {
+        guard let vertexLibrary = ShaderDiscovery.shared.library(for: sharedTypesDescriptor, owner: libraryOwner) else {
             lastError = "无法加载宿主 vertex stage"
             pipelineState = nil
             return false
@@ -122,6 +143,8 @@ public final class ShaderRenderer: NSObject, MTKViewDelegate {
 
         do {
             pipelineState = try device.makeRenderPipelineState(descriptor: pipelineDescriptor)
+            prepareUniformBuffer()
+            needsPixelProbe = ArtworkLifetimeDiagnostics.isEnabled
             if descriptor.usesOriginalAnimation {
                 startTime = 0
                 lastFrameTime = 0
@@ -136,9 +159,20 @@ public final class ShaderRenderer: NSObject, MTKViewDelegate {
     }
 
     public func unload() {
-        pipelineState = nil
+        releasePipelineResources()
+        startTime = 0
+        lastFrameTime = 0
+        lastProbeTime = 0
         lastError = nil
     }
+
+    private func releasePipelineResources() {
+        pipelineState = nil
+        uniformBuffer = nil
+        ShaderDiscovery.shared.releaseLibraries(ownedBy: libraryOwner)
+    }
+
+    var hasPipelineResources: Bool { pipelineState != nil || uniformBuffer != nil }
 
     /// Submits a single frame cleared to the view's clear color.
     ///
@@ -235,6 +269,8 @@ public final class ShaderRenderer: NSObject, MTKViewDelegate {
         uniforms.beatBirthTs = (beatBirthTs[0], beatBirthTs[1], beatBirthTs[2], beatBirthTs[3])
 
         buffer.contents().copyMemory(from: &uniforms, byteCount: MemoryLayout<ShaderUniforms>.stride)
+        let targetMatches = descriptor.colorAttachments[0].texture === drawable.texture
+        descriptor.colorAttachments[0].storeAction = .store
 
         guard let commandBuffer = commandQueue.makeCommandBuffer(),
               let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: descriptor) else {
@@ -248,6 +284,35 @@ public final class ShaderRenderer: NSObject, MTKViewDelegate {
         encoder.endEncoding()
 
         commandBuffer.present(drawable)
+        if needsPixelProbe, !view.framebufferOnly, drawable.texture.width >= 600 {
+            needsPixelProbe = false
+            if let samples = device.makeBuffer(length: 64 * 256, options: .storageModeShared),
+               let blit = commandBuffer.makeBlitCommandEncoder() {
+                for index in 0..<64 {
+                    let x = (index % 8 * 2 + 1) * drawable.texture.width / 16
+                    let y = (index / 8 * 2 + 1) * drawable.texture.height / 16
+                    blit.copy(from: drawable.texture, sourceSlice: 0, sourceLevel: 0,
+                              sourceOrigin: MTLOrigin(x: x, y: y, z: 0), sourceSize: MTLSize(width: 1, height: 1, depth: 1),
+                              to: samples, destinationOffset: index * 256, destinationBytesPerRow: 256, destinationBytesPerImage: 256)
+                }
+                blit.endEncoding()
+                let readback = ShaderReadbackBuffer(buffer: samples)
+                commandBuffer.addCompletedHandler { completed in
+                    let bytes = readback.buffer.contents().assumingMemoryBound(to: UInt8.self)
+                    var minimum = 255, maximum = 0, lit = 0, alpha = 0
+                    for index in 0..<64 {
+                        let offset = index * 256
+                        let value = max(Int(bytes[offset]), Int(bytes[offset + 1]), Int(bytes[offset + 2]))
+                        minimum = min(minimum, value)
+                        maximum = max(maximum, value)
+                        if value > 8 { lit += 1 }
+                        alpha = max(alpha, Int(bytes[offset + 3]))
+                    }
+                    let line = "SHADER GPU completed=\(completed.status == .completed) targetMatches=\(targetMatches) lit=\(lit)/64 min=\(minimum) max=\(maximum) alpha=\(alpha) error=\(completed.error?.localizedDescription ?? "nil")"
+                    KumoneLogger.app.notice("\(line, privacy: .public)")
+                }
+            }
+        }
         commandBuffer.commit()
 
         // Shader diagnostic probe: every 2s log the palette slots and the audio
@@ -269,6 +334,11 @@ public final class ShaderRenderer: NSObject, MTKViewDelegate {
                 p.background.x, p.background.y, p.background.z)
             KumoneLogger.hero.notice("\(line, privacy: .public)")
             Self.writeFile(line)
+            #if os(macOS)
+            let surface = "SHADER SURFACE drawable=\(drawable.texture.width)x\(drawable.texture.height) hidden=\(view.isHiddenOrHasHiddenAncestor) opacity=\(view.layer?.opacity ?? 0) window=\(view.window != nil)"
+            KumoneLogger.app.notice("\(surface, privacy: .public)")
+            Self.writeFile(surface)
+            #endif
         }
     }
 

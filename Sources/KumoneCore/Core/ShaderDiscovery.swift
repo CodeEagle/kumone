@@ -38,7 +38,8 @@ public struct ShaderDescriptor: Identifiable, Hashable {
 ///   iOS, which is what makes "drop a shader in a folder" work at all.
 ///
 /// A compiled library is cached per descriptor so switching back to a shader is
-/// instant; a failed compile is remembered as `nil` so the error isn't retried
+/// instant while a renderer is using it; disabling the last user releases it.
+/// A failed compile is remembered so the error isn't retried
 /// sixty times a second.
 ///
 /// This is the discovery/core layer: it owns no observable state for views. The
@@ -48,7 +49,10 @@ public final class ShaderDiscovery {
     public static let shared = ShaderDiscovery()
 
     private var cache: [ShaderDescriptor: any MTLLibrary] = [:]
+    private var libraryOwners: [UUID: Set<ShaderDescriptor>] = [:]
     private var failures: Set<String> = []
+
+    var cachedLibraryCount: Int { cache.count }
 
     /// Shaders found the last time the directory was scanned. The bundled
     /// library is compiled into the framework's resource bundle and is empty
@@ -119,7 +123,8 @@ public final class ShaderDiscovery {
     /// Returns a compiled library for the descriptor, or `nil` if the shader
     /// failed to build. The fragment function name is looked up separately by
     /// the renderer via `fragmentFunctionName(for:)`.
-    public func library(for descriptor: ShaderDescriptor) -> (any MTLLibrary)? {
+    public func library(for descriptor: ShaderDescriptor, owner: UUID? = nil) -> (any MTLLibrary)? {
+        if let owner { libraryOwners[owner, default: []].insert(descriptor) }
         if let cached = cache[descriptor] { return cached }
         guard !failures.contains(descriptor.id) else { return nil }
 
@@ -158,6 +163,14 @@ public final class ShaderDiscovery {
     public func invalidate() {
         cache.removeAll()
         failures.removeAll()
+    }
+
+    /// Drop this renderer's cache ownership without touching libraries still
+    /// used by another backdrop, visualizer or shader-picker preview.
+    func releaseLibraries(ownedBy owner: UUID) {
+        libraryOwners.removeValue(forKey: owner)
+        let stillUsed = libraryOwners.values.reduce(into: Set<ShaderDescriptor>()) { $0.formUnion($1) }
+        cache = cache.filter { stillUsed.contains($0.key) }
     }
 
     private func defaultLibrary() -> (any MTLLibrary)? {

@@ -6,12 +6,24 @@ import SwiftUI
 /// the tap may come before the next layout pass. Anchor views report their
 /// frame through `.heroAnchor(_:)` on every geometry change, so the store
 /// always holds the last measured frame and the trigger reads it synchronously.
+///
+/// Anchor ids are not all fixed constants: detail pages register one id per
+/// album, artist and playlist seen (`HeroID.album(track.album.id)` and co.),
+/// so an unbounded cache would grow with everything the user ever opened.
+/// The store is therefore LRU-bounded: a re-appearing view re-measures into
+/// it, so evicting an idle entry costs one geometry pass, not a flight.
 @MainActor
 final class HeroFrameStore: ObservableObject {
     static let shared = HeroFrameStore()
 
-    @Published private(set) var frames: [String: CGRect] = [:]
-    @Published private(set) var scales: [String: CGFloat] = [:]
+    /// Frame + scale plus the insertion stamp the LRU evicts on.
+    struct Entry {
+        var frame: CGRect
+        var scale: CGFloat
+        var stamp: UInt64
+    }
+
+    @Published private(set) var frames: [String: Entry] = [:]
     /// Ids whose frame store entry now belongs to the *target* end of a
     /// flight. A trigger waiting for its source must not read one of these:
     /// the target registers under the same id, and the waiting arm would
@@ -19,17 +31,27 @@ final class HeroFrameStore: ObservableObject {
     //  where it lands, which is no flight at all.
     @Published private(set) var targetOwned: Set<String> = []
 
+    /// How many anchors the store keeps. Fixed hero ids number in the tens;
+    /// the rest are per-content ids, and an evicted one is re-measured on
+    /// demand.
+    private let maxEntries = 512
+    private var stamp: UInt64 = 0
+
     func set(_ id: String, frame: CGRect, scale: CGFloat) {
-        frames[id] = frame
-        scales[id] = scale
+        stamp &+= 1
+        frames[id] = Entry(frame: frame, scale: scale, stamp: stamp)
+        while frames.count > maxEntries,
+              let oldest = frames.min(by: { $0.value.stamp < $1.value.stamp }) {
+            frames.removeValue(forKey: oldest.key)
+        }
     }
 
     func frame(for id: String) -> CGRect? {
-        frames[id]
+        frames[id]?.frame
     }
 
     func scale(for id: String) -> CGFloat? {
-        scales[id]
+        frames[id]?.scale
     }
 
     /// Marks this id as target-owned, so a source that has not measured yet
@@ -48,12 +70,10 @@ final class HeroFrameStore: ObservableObject {
     func clearTarget(_ id: String) {
         targetOwned.remove(id)
         frames.removeValue(forKey: id)
-        scales.removeValue(forKey: id)
     }
 
     func clear(_ id: String) {
         frames.removeValue(forKey: id)
-        scales.removeValue(forKey: id)
         targetOwned.remove(id)
     }
 }

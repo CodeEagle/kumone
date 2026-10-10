@@ -20,9 +20,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var cancellables = Set<AnyCancellable>()
     private var mainWindowController: MainWindowController?
     private var settingsWindowController: SettingsWindowController?
+    private var menuBarPlayer: MenuBarPlayerController?
     private var keymapMonitor: AppKeymapMonitor?
     private var configStore: ConfigStore?
     private var screenWindows: [String: ConfigPreviewWindow] = [:]
+    /// Drops a preview window from `screenWindows` when it closes. Without it,
+    /// a closed screen pins its hosting controller and SwiftUI tree until the
+    /// app quits — reopening the screen builds a fresh window anyway.
+    private var screenCloseObserver: NSObjectProtocol?
     private lazy var actions: ActionRegistry = {
         let registry = AppActions.dispatcher(store: store)
         // Window-level verbs are registered here, not in AppActions: they
@@ -48,6 +53,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         loadConfigStore()
         keymapMonitor = AppKeymapMonitor(store: configStore!, dispatcher: actions)
         keymapMonitor?.start()
+        GlobalHotKeyManager.shared.start { [weak self] action in
+            _ = self?.actions.invoke(action.actionName)
+        }
 
         ShaderDiscovery.shared.reload()
         store.send(.setShader(resolveInitialShaderID()))
@@ -71,7 +79,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             Task { await LeakStress.run(appStore: store) }
         }
         #endif
-        artworkStore.setArtworkNeeded(true)
         artworkStore.update(
             trackID: store.player.currentTrack?.id,
             artworkURL: store.player.currentTrack?.album.picUrl
@@ -85,6 +92,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         observeAppearance()
         observeDesktopLyrics()
         MainMenu.install(store: store, showSettings: { [weak self] in self?.showSettings() })
+        ShortcutManager.shared.$appShortcuts
+            .receive(on: DispatchQueue.main)
+            .sink { _ in MainMenu.refreshPlaybackShortcuts() }
+            .store(in: &cancellables)
+        menuBarPlayer = MenuBarPlayerController(store: store) { [weak self] in
+            guard let self else { return }
+            if let controller = self.mainWindowController {
+                controller.showWindow(nil)
+                NSApplication.shared.activate(ignoringOtherApps: true)
+            } else {
+                self.showMainWindow()
+            }
+        }
+        if let window = mainWindowController?.window {
+            HeroVisualAcceptance.start(appStore: store, window: window)
+        }
+        screenCloseObserver = NotificationCenter.default.addObserver(
+            forName: NSWindow.willCloseNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] note in
+            MainActor.assumeIsolated {
+                guard let self,
+                      let window = note.object as? ConfigPreviewWindow else { return }
+                self.screenWindows = self.screenWindows.filter { $0.value !== window }
+            }
+        }
         presentScreen("preview")
     }
 
@@ -153,16 +187,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         } else {
             descriptor = nil
         }
+        // This store only supplies the shader's palette. Disabling the shader
+        // cancels its request and releases its cover, independently of metadata.
+        artworkStore.setArtworkNeeded(false)
         // The intensity slider scales how strongly the shader composites over
         // the frosted backdrop, keeping the old "背景色强度" control meaningful.
         let intensity = store.settings.mainWindowAmbientBackgroundIntensity
+        KumoneLogger.app.notice("SHADER WINDOW requested=\(self.store.shaderID ?? "nil", privacy: .public) enabled=\(self.store.settings.showMainWindowAmbientBackground) intensity=\(intensity) resolved=\(descriptor?.id ?? "nil", privacy: .public)")
         container.shaderLayer.layer?.opacity = Float(min(max(intensity, 0), 1))
         container.shaderLayer.apply(
-            shader: descriptor,
+            // MainWindow now owns the single visible renderer. Keep the old
+            // native shell inert rather than running a duplicate behind it.
+            shader: nil,
             isPlaying: store.player.isPlaying,
             palette: ShaderPaletteBuilder.make(from: artworkStore.colors),
             pcmSync: ShaderSettings.shared.pcmSyncEnabled
         )
+        container.logShaderStack(shaderID: descriptor?.id)
     }
 
     /// Restores the user's last pick instead of always landing on the first
@@ -189,6 +230,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self?.applyShader()
             }
             .store(in: &cancellables)
+        // Every picker writes the shared selection. Keep the native window in
+        // sync too, rather than relying on a particular SwiftUI surface to
+        // forward an action. Defer reads until both name/disabled writes finish.
+        ShaderSettings.shared.$pickedShaderName
+            .combineLatest(ShaderSettings.shared.$shaderPickingDisabled)
+            .dropFirst()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                guard let self else { return }
+                let id = self.resolveInitialShaderID()
+                guard self.store.shaderID != id else { return }
+                self.store.send(.setShader(id))
+                self.applyShader()
+            }
+            .store(in: &cancellables)
     }
 
     private func observeArtwork() {
@@ -209,6 +265,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func observeArtworkColors() {
+        ImageLoadingControl.shared.$isDisabled
+            .dropFirst()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in self?.applyShader() }
+            .store(in: &cancellables)
         artworkStore.$colors
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
@@ -220,6 +281,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func observeShader() {
         withObservationTracking { [weak self] in
             _ = self?.store.shaderID
+            _ = self?.store.settings.disableImageLoading
             _ = self?.store.player.isPlaying
             _ = self?.store.settings.showMainWindowAmbientBackground
             _ = self?.store.settings.mainWindowAmbientBackgroundIntensity
@@ -320,6 +382,11 @@ extension AppDelegate {
         mainWindowController = controller
         controller.showWindow(nil)
         NSApplication.shared.activate(ignoringOtherApps: true)
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        GlobalHotKeyManager.shared.shutdown()
+        keymapMonitor?.stop()
     }
 }
 

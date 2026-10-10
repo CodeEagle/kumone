@@ -24,9 +24,15 @@ public final class NowPlayingArtworkStore: ObservableObject {
     private var artworkIsNeeded = false
 
     public init(imageLoader: @escaping ImageLoader = { url in
-        await ImageCache.shared.image(for: url)
+        await ImageCache.shared.image(for: url, rendition: .playback)
     }) {
         self.imageLoader = imageLoader
+    }
+
+    deinit { loadTask?.cancel() }
+
+    public static func needsArtwork(backgroundEnabled: Bool, shaderID: String?, isNowPlayingPresented: Bool) -> Bool {
+        isNowPlayingPresented || (backgroundEnabled && shaderID != nil)
     }
 
     public func update(trackID: Int?, artworkURL: String?) {
@@ -49,6 +55,10 @@ public final class NowPlayingArtworkStore: ObservableObject {
     public func setArtworkNeeded(_ artworkIsNeeded: Bool) {
         guard self.artworkIsNeeded != artworkIsNeeded else { return }
         self.artworkIsNeeded = artworkIsNeeded
+        if ArtworkLifetimeDiagnostics.isEnabled {
+            let imageAddress = artwork.map { String(describing: Unmanaged.passUnretained($0).toOpaque()) } ?? "nil"
+            KumoneLogger.player.notice("ARTLIFE store-demand needed=\(artworkIsNeeded) image=\(imageAddress, privacy: .public)")
+        }
 
         if artworkIsNeeded {
             loadArtworkForCurrentTrack()
@@ -76,6 +86,7 @@ public final class NowPlayingArtworkStore: ObservableObject {
         self.request = request
         let imageLoader = imageLoader
         loadTask = Task { [weak self] in
+            guard !Task.isCancelled else { return }
             let image = await imageLoader(request.imageURL)
             guard !Task.isCancelled,
                   let self,
@@ -86,6 +97,10 @@ public final class NowPlayingArtworkStore: ObservableObject {
             self.loadTask = nil
             guard let image else { return }
             self.artwork = image
+            if ArtworkLifetimeDiagnostics.isEnabled {
+                let imageAddress = String(describing: Unmanaged.passUnretained(image).toOpaque())
+                KumoneLogger.player.notice("ARTLIFE store-assigned image=\(imageAddress, privacy: .public)")
+            }
             if let cgImage = image.cgImageRef {
                 self.colors = ArtworkPalette.extract(from: cgImage, cacheKey: request.artworkURL)
             }

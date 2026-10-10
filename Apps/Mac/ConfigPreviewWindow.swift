@@ -41,7 +41,10 @@ final class ConfigPreviewWindow: NSWindow {
             defer: false)
         title = screenWindow.title ?? "配置预览 — \(name)"
         contentView = hosting.view
-        isReleasedWhenClosed = false  // keep one instance alive per app
+        // Closing drops the window from the owner's registry (its
+        // willClose observer), which is what releases it — reopening the
+        // screen builds a new window rather than reusing this one.
+        isReleasedWhenClosed = false
         applyMinSize(screenWindow)
 
         // Live geometry: a window block edit reaches the open window the

@@ -39,7 +39,7 @@ enum ShaderDrawableBudget {
 public final class ShaderLayerView: MTKView {
     /// Renders the loaded shader every frame. `nil` when the system has no
     /// Metal device, in which case the layer stays inert rather than crashing.
-    private let renderer: ShaderRenderer?
+    private var renderer: ShaderRenderer?
 
     /// Tracks the shader currently loaded into `renderer` so the pipeline is
     /// rebuilt only on an actual change; rebuilding it every frame would stall
@@ -51,21 +51,24 @@ public final class ShaderLayerView: MTKView {
     /// overridden; the zero-argument and `init(frame:)` forms stay available
     /// through initializer inheritance.
     public override init(frame frameRect: CGRect, device: MTLDevice?) {
-        let device = device ?? MTLCreateSystemDefaultDevice()
-        self.renderer = ShaderRenderer(device: device)
-        super.init(frame: frameRect, device: device)
+        // Do not allocate GPU resources for a background that starts disabled.
+        // The optional caller-supplied device is installed on the first enable.
+        requestedDevice = device
+        super.init(frame: frameRect, device: nil)
+        self.device = nil
 
         colorPixelFormat = .bgra8Unorm_srgb
         preferredFramesPerSecond = 60
-        isPaused = false
+        isPaused = true
+        isHidden = true
         enableSetNeedsDisplay = false
-        framebufferOnly = true
+        framebufferOnly = !ArtworkLifetimeDiagnostics.isEnabled
         if let metalLayer = layer as? CAMetalLayer {
             metalLayer.maximumDrawableCount = 2
         }
         // Disable automatic sizing before clamping, including while bounds are zero.
         autoResizeDrawable = false
-        clampDrawableSize()
+        drawableSize = CGSize(width: 1, height: 1)
 
         // Shaders emit glow that composites over the window's frosted backdrop,
         // so the layer itself must be transparent where they don't draw.
@@ -77,12 +80,11 @@ public final class ShaderLayerView: MTKView {
         layer.backgroundColor = UIColor.clear.cgColor
         #endif
         clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 0)
-
-        if let renderer {
-            renderer.prepareUniformBuffer()
-            self.delegate = renderer
-        }
     }
+
+    private let requestedDevice: (any MTLDevice)?
+
+    var hasRenderer: Bool { renderer != nil }
 
     required public init(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
@@ -113,6 +115,7 @@ public final class ShaderLayerView: MTKView {
     }
 
     private func clampDrawableSize() {
+        guard device != nil else { return }
         guard let target = ShaderDrawableBudget.clamped(from: bounds.size, scale: scaleForClamping) else { return }
         guard drawableSize != target else { return }
         drawableSize = target
@@ -126,39 +129,70 @@ public final class ShaderLayerView: MTKView {
     ///   analysis. Off means the shader keeps its own time-driven motion and
     ///   the audio uniforms read as silence.
     public func apply(shader: ShaderDescriptor?, isPlaying: Bool, palette: ShaderPalette, pcmSync: Bool = true) {
-        clampDrawableSize()
-        isPaused = shader == nil || (!isPlaying && shader?.usesOriginalAnimation != true)
-        guard let renderer else {
-            ShaderLayerView.logApply("no-renderer shaderId=\(shader?.id ?? "nil") isPlaying=\(isPlaying)")
+        guard let shader else {
+            tearDown()
+            ShaderLayerView.logApply(
+                "shaderId=nil isPlaying=\(isPlaying) released=true"
+                    + " renderer=\(hasRenderer ? 1 : 0) device=\(device == nil ? 0 : 1)"
+                    + " cachedLibraries=\(ShaderDiscovery.shared.cachedLibraryCount)"
+            )
             return
         }
-        ShaderLayerView.logApply("shaderId=\(shader?.id ?? "nil") isPlaying=\(isPlaying) pcmSync=\(pcmSync) isPaused=\(isPaused)")
+        if renderer == nil {
+            device = requestedDevice ?? MTLCreateSystemDefaultDevice()
+            renderer = ShaderRenderer(device: device)
+            delegate = renderer
+        }
+        clampDrawableSize()
+        guard let renderer else {
+            ShaderLayerView.logApply("no-renderer shaderId=\(shader.id) isPlaying=\(isPlaying)")
+            return
+        }
+        ShaderLayerView.logApply("shaderId=\(shader.id) isPlaying=\(isPlaying) pcmSync=\(pcmSync) isPaused=\(isPaused)")
 
-        if shader?.id != currentShaderID {
-            currentShaderID = shader?.id
-            if let shader {
-                // A shader that fails to build must not leave the previous
-                // shader's last frame on the layer either.
-                if !renderer.load(shader) {
-                    renderer.clearOnce(in: self)
-                }
-            } else {
-                renderer.unload()
+        if shader.id != currentShaderID {
+            currentShaderID = shader.id
+            // A shader that fails to build must not leave the previous
+            // shader's last frame on the layer either.
+            if !renderer.load(shader) {
+                ShaderLayerView.logApply("load-failed shaderId=\(shader.id) error=\(renderer.lastError ?? "unknown")")
                 renderer.clearOnce(in: self)
             }
         }
 
+        isHidden = false
+
         renderer.palette = palette
         renderer.isAudioPlaying = isPlaying
-        renderer.isAudioReactive = pcmSync && shader?.usesOriginalAnimation != true
+        renderer.isAudioReactive = pcmSync && !shader.usesOriginalAnimation
+        // Restore visibility and uniforms before restarting MetalKit's display
+        // link. After releasing drawables/device, explicitly seed a new frame
+        // rather than relying on a resize or playback change to wake it up.
+        isPaused = !isPlaying && !shader.usesOriginalAnimation
+        draw()
     }
 
-    /// Stops rendering and releases GPU resources when the host discards this view.
+    /// Disables the background without destroying its layout shell. Renderer,
+    /// queue, attachments and this view's library leases are released; another
+    /// apply(shader:) lazily rebuilds them. Also used by representable dismantle.
     public func tearDown() {
         isPaused = true
+        isHidden = true
         delegate = nil
         renderer?.unload()
+        renderer = nil
+        currentShaderID = nil
         releaseDrawables()
+        // MTKView's attachments and CAMetalLayer's last full-size surface must
+        // not stay warm while disabled. No transparent clear frame is submitted:
+        // hiding immediately reveals the backdrop without acquiring a drawable.
+        drawableSize = CGSize(width: 1, height: 1)
+        device = nil
+        #if os(macOS)
+        layer?.contents = nil
+        #else
+        layer.contents = nil
+        #endif
     }
     /// Triage probe for headless runs: `apply` decisions land in
     /// /tmp/kumone-apply.log so a script can prove which shader id the store
@@ -167,15 +201,7 @@ public final class ShaderLayerView: MTKView {
     private static func logApply(_ message: String) {
         let line = "SHADER APPLY \(message)"
         KumoneLogger.app.notice("\(line, privacy: .public)")
-        let url = URL(fileURLWithPath: "/tmp/kumone-apply.log")
-        let payload = (line + "\n").data(using: .utf8) ?? Data()
-        if let handle = try? FileHandle(forWritingTo: url) {
-            _ = try? handle.seekToEnd()
-            try? handle.write(contentsOf: payload)
-            try? handle.close()
-        } else {
-            try? payload.write(to: url, options: [.atomic])
-        }
+        BoundedLogFile.append(line, to: URL(fileURLWithPath: "/tmp/kumone-apply.log"))
     }
 
 }
