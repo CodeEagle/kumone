@@ -34,6 +34,8 @@ enum HeroID {
     static let nowPlayingLyricsTarget = "now-playing-lyrics-target"
     static let nowPlayingAirPlay = "now-playing-airplay"
     static let nowPlayingAirPlayTarget = "now-playing-airplay-target"
+    static let nowPlayingRoaming = "now-playing-roaming"
+    static let nowPlayingRoamingTarget = "now-playing-roaming-target"
 
     /// Song title and artist: shared pure-text elements between the mini bar
     /// and the Now Playing page. The stand-in carries the destination end's
@@ -60,6 +62,7 @@ enum HeroID {
         (nowPlayingFMTrash, nowPlayingFMTrashTarget),
         (nowPlayingLyrics, nowPlayingLyricsTarget),
         (nowPlayingAirPlay, nowPlayingAirPlayTarget),
+        (nowPlayingRoaming, nowPlayingRoamingTarget),
         (nowPlayingTitle, nowPlayingTitleTarget),
         (nowPlayingVIP, nowPlayingVIPTarget),
         (nowPlayingArtist, nowPlayingArtistTarget),

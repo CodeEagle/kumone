@@ -315,10 +315,13 @@ public struct MainWindow: View {
                     background: .none, diameter: 26, fontSize: 13, weight: .medium
                 )
             case HeroID.nowPlayingAirPlay:
+                content = .routePicker(diameter: 26, glyphSize: 13,
+                                       tint: .secondary, background: .clear)
+            case HeroID.nowPlayingRoaming:
                 content = .icon(
-                    name: "airplayvideo",
-                    tint: .secondary, background: .none,
-                    diameter: 26, fontSize: 13, weight: .medium
+                    name: "wave.3.right.circle.fill",
+                    tint: Theme.accent, background: .none,
+                    diameter: 26, fontSize: 13, weight: .semibold
                 )
             default:
                 continue

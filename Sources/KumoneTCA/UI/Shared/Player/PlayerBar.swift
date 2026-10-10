@@ -282,6 +282,16 @@ struct PlayerBar: View {
             }
             .help("播放队列")
             #if os(macOS)
+            if player.isFMMode {
+                PlayerIconButton(
+                    icon: "wave.3.right.circle.fill", size: 13,
+                    isActive: true
+                ) {
+                    appStore.send(.presentNowPlaying)
+                }
+                .help("漫游模式")
+                .heroAnchor(HeroID.nowPlayingRoaming)
+            }
             RoutePickerButton(diameter: 26, glyphSize: 13,
                               tint: .secondary, background: .clear)
                 .heroAnchor(HeroID.nowPlayingAirPlay)

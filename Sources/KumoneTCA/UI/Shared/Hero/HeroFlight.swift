@@ -220,6 +220,13 @@ struct HeroFlight: View {
                 isReturning: flight.targetAnchorID != nil,
                 progress: shadowProgress
             )
+        case let .routePicker(diameter, glyphSize, tint, background):
+            // The stand-in renders the real system control so the glyph
+            // cannot drift from AVRoutePickerView's; it is inert for the
+            // flight's duration and interactive again at the landing view.
+            RoutePickerButton(diameter: diameter, glyphSize: glyphSize,
+                              tint: tint, background: background)
+                .allowsHitTesting(false)
         }
     }
 }

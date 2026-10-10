@@ -50,6 +50,7 @@ struct NowPlayingView: View {
     @State private var hasStartedArtistFlight = false
     @State private var hasStartedLyricsFlight = false
     @State private var hasStartedAirPlayFlight = false
+    @State private var hasStartedRoamingFlight = false
     @State private var hasStartedHeroFlight = false
     @ObservedObject private var heroFlight = HeroFlightDirector.shared
     @AppStorage("nowPlaying.zenModeEnabled") private var isZenMode = false
@@ -1148,10 +1149,8 @@ struct NowPlayingView: View {
                 .heroAnchor(HeroID.nowPlayingAirPlayTarget)
                 .nowPlayingHeroTarget(
                     id: HeroID.nowPlayingAirPlay,
-                    content: .icon(name: "airplayvideo",
-                                   tint: .white.opacity(0.85),
-                                   background: .translucentWhite,
-                                   diameter: 36, fontSize: 14, weight: .medium),
+                    content: .routePicker(diameter: 36, glyphSize: 14,
+                                          tint: .white.opacity(0.8), background: .white.opacity(0.1)),
                     anchorID: HeroID.nowPlayingAirPlayTarget,
                     isPresented: appStore?.isNowPlayingPresented == true,
                     hasStarted: $hasStartedAirPlayFlight
@@ -1250,12 +1249,32 @@ struct NowPlayingView: View {
     }
 
     private var fmRoamingBadge: some View {
-        Image(systemName: "wave.3.right.circle.fill")
+        #if os(macOS)
+        let isFlying = heroFlight.active[HeroID.nowPlayingRoaming] != nil
+        #else
+        let isFlying = false
+        #endif
+        return Image(systemName: "wave.3.right.circle.fill")
             .font(.system(size: 14, weight: .semibold))
             .foregroundStyle(Theme.accent)
             .frame(width: 36, height: 36)
             .background(.white.opacity(0.12), in: Circle())
             .accessibilityLabel("私人漫游")
+            #if os(macOS)
+            .opacity(isFlying ? 0 : 1)
+            .animation(nil, value: isFlying)
+            .heroAnchor(HeroID.nowPlayingRoamingTarget)
+            .nowPlayingHeroTarget(
+                id: HeroID.nowPlayingRoaming,
+                content: .icon(name: "wave.3.right.circle.fill",
+                               tint: Theme.accent,
+                               background: .translucentWhite,
+                               diameter: 36, fontSize: 14, weight: .semibold),
+                anchorID: HeroID.nowPlayingRoamingTarget,
+                isPresented: appStore?.isNowPlayingPresented == true,
+                hasStarted: $hasStartedRoamingFlight
+            )
+            #endif
     }
     #endif
 
