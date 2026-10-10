@@ -224,9 +224,16 @@ struct HeroFlight: View {
             // The stand-in renders the real system control so the glyph
             // cannot drift from AVRoutePickerView's; it is inert for the
             // flight's duration and interactive again at the landing view.
-            RoutePickerButton(diameter: diameter, glyphSize: glyphSize,
-                              tint: tint, background: background)
-                .allowsHitTesting(false)
+            // The endpoint colors crossfade on the same spring as the frame:
+            // the mini bar's picker is secondary-on-clear and the page's is
+            // white-on-glass, and a single target-styled stand-in snapped to
+            // white at lift-off while the gray source still sat underneath.
+            RoutePickerCrossfade(
+                diameter: diameter, glyphSize: glyphSize,
+                tint: tint, background: background,
+                isReturning: flight.targetAnchorID != nil,
+                progress: shadowProgress
+            )
         }
     }
 }
@@ -278,6 +285,42 @@ private struct HeroIconStandIn: View, Animatable {
             ))
             .frame(width: proxy.size.width, height: proxy.size.height)
         }
+    }
+}
+
+/// The AirPlay stand-in rides the same spring as the frame: the mini bar's
+/// picker is secondary-on-clear, the immersive page's is white-on-glass, and
+/// the hand-off between the two endpoint colors happens over the flight
+/// instead of snapping at lift-off, so the swap reads at mid-flight.
+private struct RoutePickerCrossfade: View, Animatable {
+    let diameter: CGFloat
+    let glyphSize: CGFloat
+    /// The landing end's styling, as the flight's content describes it.
+    let tint: Color
+    let background: Color
+    /// The return leg's content describes the mini bar, so its lift-off
+    /// styling is the immersive page's.
+    let isReturning: Bool
+    var progress: CGFloat
+
+    var animatableData: CGFloat {
+        get { progress }
+        set { progress = newValue }
+    }
+
+    var body: some View {
+        let amount = min(max(progress, 0), 1)
+        let liftOffTint = isReturning ? Color.white.opacity(0.8) : Color.secondary
+        let liftOffBackground = isReturning ? Color.white.opacity(0.1) : Color.clear
+        ZStack {
+            RoutePickerButton(diameter: diameter, glyphSize: glyphSize,
+                              tint: liftOffTint, background: liftOffBackground)
+                .opacity(1 - Double(amount))
+            RoutePickerButton(diameter: diameter, glyphSize: glyphSize,
+                              tint: tint, background: background)
+                .opacity(Double(amount))
+        }
+        .allowsHitTesting(false)
     }
 }
 

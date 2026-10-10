@@ -270,6 +270,7 @@ struct PlayerBar: View {
             }
             .help("歌词")
             .heroAnchor(HeroID.nowPlayingLyrics)
+            .opacity(heroFlight.active[HeroID.nowPlayingLyrics] != nil ? 0 : 1)
             PlayerIconButton(
                 icon: "inset.filled.bottomthird.square", size: 13,
                 isActive: appStore.settings.showDesktopLyrics
@@ -289,6 +290,7 @@ struct PlayerBar: View {
             RoutePickerButton(diameter: 26, glyphSize: 13,
                               tint: .secondary, background: .clear)
                 .heroAnchor(HeroID.nowPlayingAirPlay)
+                .opacity(heroFlight.active[HeroID.nowPlayingAirPlay] != nil ? 0 : 1)
             #endif
             VolumeControl(appStore: appStore)
         }
