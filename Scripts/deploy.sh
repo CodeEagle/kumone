@@ -9,6 +9,11 @@ REMOTE_USER="${KUMONE_DEPLOY_USER:-lincoln}"
 REMOTE_APP_PATH="${KUMONE_DEPLOY_APP_PATH:-/Applications/MiuMiu.app}"
 REMOTE_STAGING="${KUMONE_DEPLOY_STAGING:-~/Downloads}"
 APP_NAME="${APP_NAME:-MiuMiu}"
+case "$APP_NAME" in miumiu|Miumiu|MiuMiu) APP_NAME="MiuMiu" ;; esac
+case "$REMOTE_APP_PATH" in
+  /Applications/miumiu.app|/Applications/Miumiu.app)
+    REMOTE_APP_PATH="/Applications/MiuMiu.app" ;;
+esac
 CONF=release
 DRY_RUN=false
 CONF_SET=false
@@ -46,12 +51,11 @@ esac
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 TARGET="$REMOTE_USER@$REMOTE_HOST"
-# The upload name pins on the shipped commit: an interrupted transfer can
-# resume the very same file on the next attempt, while a freshly built
-# commit gets a fresh name and never reuses a stale leftover.
-SHORT_COMMIT="$(git -C "$ROOT" rev-parse --short HEAD)" || \
-  fail "Could not read the git commit at $ROOT; deploy from a clean checkout."
-UPLOAD_NAME="$APP_NAME.app.$SHORT_COMMIT.tar.gz"
+# One fixed upload name: the transfer is resumable (rsync
+# --partial --append-verify verifies the existing partial before stitching
+# a tail onto it), and the remote install removes the archive once it has
+# landed, so no stale leftover accumulates under another name.
+UPLOAD_NAME="$APP_NAME.app.tar.gz"
 REMOTE_UPLOAD="${REMOTE_STAGING%/}/$UPLOAD_NAME"
 
 remote_script() {
@@ -92,7 +96,22 @@ pkill -f "$PROCESS_PATTERN" || [ "$?" -eq 1 ]
 # Also clear any other live instances (e.g. a build-dir copy) so the
 # deployment leaves exactly one running instance, the freshly installed one.
 pkill -x "$APP_NAME" || [ "$?" -eq 1 ]
+# First canonical-name deployment must also stop the previously shipped
+# lowercase executable before replacing the bundle.
+if [ "$APP_NAME" = MiuMiu ]; then
+  for LEGACY_NAME in miumiu Miumiu; do
+    pkill -x "$LEGACY_NAME" || [ "$?" -eq 1 ]
+  done
+fi
 sleep 2
+if [ "$APP_NAME" = MiuMiu ]; then
+  for LEGACY_NAME in miumiu Miumiu; do
+    if pgrep -x "$LEGACY_NAME" >/dev/null; then
+      printf 'ERROR: Legacy application is still running; installation was not replaced.\n' >&2
+      exit 1
+    fi
+  done
+fi
 if pgrep -x "$APP_NAME" >/dev/null; then
   printf 'ERROR: Application is still running; installation was not replaced.\n' >&2
   exit 1
