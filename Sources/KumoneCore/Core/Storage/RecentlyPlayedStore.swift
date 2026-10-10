@@ -1,4 +1,5 @@
 import Foundation
+import os
 
 /// Remembers which tracks were played recently so that personal FM
 /// (`/v1/radio/get`) and heartbeat mode (`/playmode/intelligence/list`) can
@@ -14,6 +15,7 @@ import Foundation
 /// the internal initializer injects retention/clock state for unit tests.
 public actor RecentlyPlayedStore {
     public static let shared = RecentlyPlayedStore()
+    private static let log = Logger(subsystem: "im.missuo.kumone", category: "recent-filter")
 
     // MARK: - Configuration keys (shared with SettingsFeature)
 
@@ -27,6 +29,7 @@ public actor RecentlyPlayedStore {
     /// `songID -> timestamp played`. Only entries inside the retention window.
     private var played: [Int: TimeInterval] = [:]
     private var dirty = false
+    private var hasLoaded = false
     private let storeURL: URL?
     private let defaults: UserDefaults
     private let clock: @Sendable () -> Date
@@ -44,7 +47,6 @@ public actor RecentlyPlayedStore {
         clock = { Date() }
         injectedDays = nil
         injectedEnabled = nil
-        Task { await load() }
     }
 
     /// Test-only: inject retention/enable state and a controllable clock.
@@ -61,7 +63,6 @@ public actor RecentlyPlayedStore {
         self.storeURL = storeURL
         self.defaults = defaults
         self.clock = clock
-        Task { await load() }
     }
 
     // MARK: - Configuration
@@ -91,19 +92,25 @@ public actor RecentlyPlayedStore {
     /// from the same hook as scrobble start. Re-playing a song refreshes its
     /// timestamp, pushing its expiry out again.
     public func record(trackID: Int) {
+        loadIfNeeded()
         guard isEnabled, retentionSeconds > 0 else { return }
         played[trackID] = clock().timeIntervalSince1970
         dirty = true
         pruneAndSave()
+        Self.log.info("RECENT FILTER record id=\(trackID) history=\(self.played.count)")
     }
 
     /// Drops songs played within the retention window. Returns the input
     /// untouched when the filter is off or retention is zero.
     public func filter(_ tracks: [Track]) -> [Track] {
+        loadIfNeeded()
         guard isEnabled, retentionSeconds > 0 else { return tracks }
         prune()
         // After prune, every remaining entry is inside the window.
-        return tracks.filter { played[$0.id] == nil }
+        var seen = Set<Int>()
+        let kept = tracks.filter { played[$0.id] == nil && seen.insert($0.id).inserted }
+        Self.log.info("RECENT FILTER input=\(tracks.count) kept=\(kept.count) history=\(self.played.count)")
+        return kept
     }
 
     // MARK: - Pruning & persistence
@@ -121,7 +128,9 @@ public actor RecentlyPlayedStore {
         save()
     }
 
-    private func load() {
+    private func loadIfNeeded() {
+        guard !hasLoaded else { return }
+        hasLoaded = true
         guard let storeURL,
               let data = try? Data(contentsOf: storeURL),
               let stored = try? JSONDecoder().decode([Int: TimeInterval].self, from: data)
@@ -137,7 +146,14 @@ public actor RecentlyPlayedStore {
     private func save() {
         guard let storeURL, dirty else { return }
         guard let data = try? JSONEncoder().encode(played) else { return }
-        try? data.write(to: storeURL, options: .atomic)
-        dirty = false
+        do {
+            try FileManager.default.createDirectory(
+                at: storeURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try data.write(to: storeURL, options: .atomic)
+            dirty = false
+        } catch {
+            // Keep dirty so a later playback can retry persistence.
+            Self.log.error("RECENT FILTER save failed: \(error.localizedDescription)")
+        }
     }
 }

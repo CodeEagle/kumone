@@ -113,7 +113,7 @@ struct AlbumDetailView: View {
                     .shadow(color: .black.opacity(0.2), radius: 10, y: 4)
                     .heroTarget(
                         id: heroID,
-                        artworkURL: album.picUrl?.resizedImageURL(512),
+                        artworkURL: album.picUrl?.resizedImageURL(384),
                         cornerRadius: Theme.Radius.standard,
                         hasStarted: $hasStartedHeroFlight
                     )
@@ -220,7 +220,7 @@ struct AlbumDetailView: View {
                 .shadow(color: .black.opacity(0.25), radius: 16, y: 8)
                 .heroTarget(
                     id: heroID,
-                    artworkURL: album.picUrl?.resizedImageURL(512),
+                    artworkURL: album.picUrl?.resizedImageURL(384),
                     cornerRadius: Theme.Radius.large,
                     hasStarted: $hasStartedHeroFlight
                 )

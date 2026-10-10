@@ -842,9 +842,22 @@ final class PlayerFeatureTests: XCTestCase {
     func testFMFetchesThenAdvances() async {
         var state = PlayerFeature.State()
         state.isFMMode = true
+        let clock = TestClock()
         let store = TestStore(initialState: state) { PlayerFeature() } withDependencies: {
             configureResolve(&$0)
             $0.personalFM = MockPersonalFM(tracks: [Self.t1])
+            $0.continuousClock = clock
+            var provider = $0.musicProvider as! MockMusicProvider
+            let songURL = provider.songURLHandler
+            provider.songURLHandler = { ids, quality in
+                try await clock.sleep(for: .seconds(4))
+                return try await songURL(ids, quality)
+            }
+            provider.lyricHandler = { _ in
+                try await clock.sleep(for: .seconds(3))
+                return Self.emptyLyrics()
+            }
+            $0.musicProvider = provider
         }
         await store.send(.fmNext) {
             $0.playbackIntent = true
@@ -854,7 +867,9 @@ final class PlayerFeatureTests: XCTestCase {
         await store.receive(\.fmResponse) {
             $0.fmUpcoming = [Self.t1]
         }
-        await store.receive(\.fmAdvance) {
+        await store.receive(\.fmAdvance)
+        await store.receive(.fmAdvanceValidated(
+            snapshotIDs: [1], currentID: nil, tracks: [Self.t1])) {
             $0.fmUpcoming = []
         }
         await store.receive(\.startPlaying) {
@@ -865,13 +880,14 @@ final class PlayerFeatureTests: XCTestCase {
         }
         // The batch ran dry, so a refill was requested alongside playback.
         await store.receive(\.fmFetch)
-        // The refill arrived; with autostart off it just tops up the buffer.
-        await store.receive(\.fmResponse) {
-            $0.fmUpcoming = [Self.t1]
-        }
+        // The provider repeats the current song; it must not re-enter the buffer.
+        await clock.advance(by: .seconds(2))
+        await store.receive(.fmResponse(tracks: [], autostart: false))
+        await clock.advance(by: .seconds(1))
         await store.receive(\.lyricsResponse) {
             $0.lyrics = LyricsParser.parse(Self.emptyLyrics())
         }
+        await clock.advance(by: .seconds(1))
         await store.receive(\.urlResolved) {
             $0.servedQuality = "exhigh"
             $0.engineHasItem = true
@@ -1902,7 +1918,9 @@ final class PlayerFeatureTests: XCTestCase {
             }
             $0.musicProvider = provider
         }
-        await store.send(.fmAdvance) {
+        await store.send(.fmAdvance)
+        await store.receive(.fmAdvanceValidated(
+            snapshotIDs: [1, 2], currentID: nil, tracks: [Self.t1, Self.t2])) {
             $0.fmUpcoming = [Self.t2]
         }
         await store.receive(.startPlaying(Self.t1)) {
@@ -1923,6 +1941,109 @@ final class PlayerFeatureTests: XCTestCase {
             $0.startScrobbled = true
         }
         await store.finish()
+    }
+
+    func testFMResponseExcludesCurrentAndQueuedDuplicates() async {
+        var state = PlayerFeature.State()
+        state.isFMMode = true
+        state.currentTrack = Self.t1
+        state.fmUpcoming = [Self.t2]
+        let store = TestStore(initialState: state) { PlayerFeature() }
+        await store.send(.fmResponse(
+            tracks: [Self.t1, Self.t2, Self.t3, Self.t3], autostart: false)) {
+            $0.fmUpcoming = [Self.t2, Self.t3]
+        }
+        await store.finish()
+    }
+
+    func testFMFetchRetriesWhenHistoryRemovesEntireBatch() async {
+        var state = PlayerFeature.State()
+        state.isFMMode = true
+        let calls = LockIsolated(0)
+        let store = TestStore(initialState: state) { PlayerFeature() } withDependencies: {
+            var fm = MockMusicProvider()
+            fm.personalFMHandler = {
+                calls.withValue { $0 += 1 }
+                return [Self.t1]
+            }
+            $0.personalFM = fm
+            $0.continuousClock = ImmediateClock()
+            $0.recentPlayback.filter = { _ in [] }
+        }
+        await store.send(.fmFetch(autostart: true))
+        await store.receive(.fmResponse(tracks: [], autostart: true))
+        await store.finish()
+        XCTAssertEqual(calls.value, 3)
+    }
+
+    func testFMAdvanceRechecksHistoryAndDeduplicatesBeforePlayback() async {
+        var state = PlayerFeature.State()
+        state.isFMMode = true
+        state.currentTrack = Self.t1
+        state.fmUpcoming = [Self.t2, Self.t3, Self.t3]
+        let store = TestStore(initialState: state) { PlayerFeature() } withDependencies: {
+            configureResolve(&$0)
+            $0.personalFM = MockPersonalFM(tracks: [])
+            $0.continuousClock = ImmediateClock()
+            $0.recentPlayback.filter = { $0.filter { $0.id != 2 } }
+        }
+        store.exhaustivity = .off
+        await store.send(.fmAdvance)
+        await store.receive(.fmAdvanceValidated(
+            snapshotIDs: [2, 3, 3], currentID: 1, tracks: [Self.t3, Self.t3])) {
+            $0.fmUpcoming = []
+        }
+        await store.receive(.startPlaying(Self.t3)) {
+            $0.currentTrack = Self.t3
+        }
+        await store.finish()
+    }
+
+    func testStaleFMValidationCannotAdvanceNewQueue() async {
+        var state = PlayerFeature.State()
+        state.isFMMode = true
+        state.currentTrack = Self.t2
+        state.fmUpcoming = [Self.t3]
+        let store = TestStore(initialState: state) { PlayerFeature() }
+        await store.send(.fmAdvanceValidated(
+            snapshotIDs: [2, 3], currentID: 1, tracks: [Self.t2, Self.t3]))
+        await store.finish()
+    }
+
+    func testFMResponseAfterLeavingFMDoesNotPopulateQueue() async {
+        let store = TestStore(initialState: PlayerFeature.State()) { PlayerFeature() }
+        await store.send(.fmResponse(tracks: [Self.t1], autostart: true))
+        await store.finish()
+    }
+
+    func testLocalHistoryIsRecordedBeforeSlowScrobbleCompletes() async {
+        var state = PlayerFeature.State()
+        state.currentTrack = Self.t1
+        state.engineHasItem = true
+        let clock = TestClock()
+        let events = LockIsolated<[String]>([])
+        let store = TestStore(initialState: state) { PlayerFeature() } withDependencies: {
+            configureResolve(&$0)
+            $0.recentPlayback.record = { id in
+                XCTAssertEqual(id, 1)
+                events.withValue { $0.append("local") }
+            }
+            var provider = $0.musicProvider as! MockMusicProvider
+            provider.scrobbleStartHandler = { _, _ in
+                XCTAssertEqual(events.value, ["local"])
+                try? await clock.sleep(for: .seconds(10))
+                events.withValue { $0.append("remote") }
+            }
+            $0.musicProvider = provider
+        }
+        await store.send(.togglePlayPause) {
+            $0.isPlaying = true
+            $0.playbackIntent = true
+            $0.startScrobbled = true
+        }
+        await clock.advance(by: .seconds(10))
+        await store.finish()
+        XCTAssertEqual(events.value, ["local", "remote"])
     }
 
     func testStartFMClearsQueueModesAndRecordsContext() async {
@@ -1977,7 +2098,9 @@ final class PlayerFeatureTests: XCTestCase {
             }
             $0.musicProvider = provider
         }
-        await store.send(.fmAdvance) { $0.fmUpcoming = [] }
+        await store.send(.fmAdvance)
+        await store.receive(.fmAdvanceValidated(
+            snapshotIDs: [1], currentID: nil, tracks: [Self.t1])) { $0.fmUpcoming = [] }
         await store.receive(.startPlaying(Self.t1)) {
             $0.currentTrack = Self.t1
             $0.duration = 200

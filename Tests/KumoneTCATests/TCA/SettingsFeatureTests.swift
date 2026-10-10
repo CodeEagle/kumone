@@ -70,7 +70,10 @@ final class SettingsFeatureTests: XCTestCase {
             $0.verbatimLyrics = false
             $0.enableUnblock = false
             $0.autoCheckUpdates = false
-            $0.showMainWindowAmbientBackground = false
+            // Presence semantics (3a0ad7b): an unstored key keeps the
+            // ambient background on; the mock's stringForKey is nil for all
+            // keys, so rehydrate leaves the default-on value.
+            $0.showMainWindowAmbientBackground = true
         }
     }
 

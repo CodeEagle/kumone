@@ -169,6 +169,7 @@ public struct PlayerFeature {
         case fmAdvance
         case fmFetch(autostart: Bool)
         case fmResponse(tracks: [Track], autostart: Bool)
+        case fmAdvanceValidated(snapshotIDs: [Int], currentID: Int?, tracks: [Track])
 
         // Recents
         case playContext(PlayContext)
@@ -200,6 +201,7 @@ public struct PlayerFeature {
     @Dependency(\.playback) public var playback
     @Dependency(\.musicProvider) public var provider
     @Dependency(\.personalFM) public var fm
+    @Dependency(\.recentPlayback) public var recentPlayback
     @Dependency(\.unblock) public var unblock
     @Dependency(\.audioSourceFallback) public var audioSourceFallback
     @Dependency(\.persistence) public var persistence
@@ -717,12 +719,17 @@ public struct PlayerFeature {
                 return .send(.fmAdvance)
 
             case let .fmFetch(autostart):
-                return .run { [fm, clock] send in
+                let currentID = state.currentTrack?.id
+                return .run { [fm, clock, recentPlayback] send in
                     var tracks: [Track] = []
                     for attempt in 0..<3 {
-                        if let fetched = try? await fm?.personalFM(), !fetched.isEmpty {
-                            tracks = fetched
-                            break
+                        if let fetched = try? await fm?.personalFM() {
+                            let filtered = await recentPlayback.filter(fetched)
+                                .filter { $0.id != currentID }
+                            if !filtered.isEmpty {
+                                tracks = filtered
+                                break
+                            }
                         }
                         if attempt == 2 { break }
                         try? await clock.sleep(for: .seconds(1))
@@ -731,12 +738,34 @@ public struct PlayerFeature {
                 }
 
             case let .fmResponse(tracks, autostart):
-                state.fmUpcoming.append(contentsOf: tracks)
+                guard state.isFMMode else { return .none }
+                var seen = Set(state.fmUpcoming.map(\.id))
+                if let currentID = state.currentTrack?.id { seen.insert(currentID) }
+                state.fmUpcoming.append(contentsOf: tracks.filter { seen.insert($0.id).inserted })
                 guard autostart, !state.fmUpcoming.isEmpty else { return .none }
                 return .send(.fmAdvance)
 
             case .fmAdvance:
                 guard state.isFMMode else { return .none }
+                guard !state.fmUpcoming.isEmpty else { return .send(.fmFetch(autostart: true)) }
+                let upcoming = state.fmUpcoming
+                let currentID = state.currentTrack?.id
+                return .run { [recentPlayback] send in
+                    let filtered = await recentPlayback.filter(upcoming)
+                    await send(.fmAdvanceValidated(
+                        snapshotIDs: upcoming.map(\.id), currentID: currentID,
+                        tracks: filtered))
+                }
+
+            case let .fmAdvanceValidated(snapshotIDs, currentID, tracks):
+                // Do not let a suspended filter overwrite a newer queue or
+                // advance twice after another rapid-next request completed.
+                guard state.isFMMode,
+                      state.currentTrack?.id == currentID,
+                      state.fmUpcoming.map(\.id) == snapshotIDs else { return .none }
+                var seen = Set<Int>()
+                if let currentID { seen.insert(currentID) }
+                state.fmUpcoming = tracks.filter { seen.insert($0.id).inserted }
                 guard !state.fmUpcoming.isEmpty else { return .send(.fmFetch(autostart: true)) }
                 let track = state.fmUpcoming.removeFirst()
                 // Keep one batch ahead so the next track needs no reopen.
@@ -852,9 +881,9 @@ public struct PlayerFeature {
         state.startScrobbled = true
         let trackID = track.id
         let sourceID = state.source.sourceID
-        return .run { [provider] _ in
+        return .run { [provider, recentPlayback] _ in
+            await recentPlayback.record(trackID)
             await provider.scrobbleStart(trackID: MusicID(trackID), sourceID: MusicID(sourceID))
-            await RecentlyPlayedStore.shared.record(trackID: trackID)
         }
     }
 

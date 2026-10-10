@@ -149,7 +149,7 @@ struct ArtistDetailView: View {
                     .shadow(color: .black.opacity(0.2), radius: 10, y: 4)
                     .heroTarget(
                         id: heroID,
-                        artworkURL: artist.picUrl?.resizedImageURL(512),
+                        artworkURL: artist.picUrl?.resizedImageURL(384),
                         cornerRadius: 50,
                         hasStarted: $hasStartedHeroFlight
                     )
@@ -214,7 +214,7 @@ struct ArtistDetailView: View {
                 .shadow(color: .black.opacity(0.25), radius: 16, y: 8)
                 .heroTarget(
                     id: heroID,
-                    artworkURL: artist.picUrl?.resizedImageURL(512),
+                    artworkURL: artist.picUrl?.resizedImageURL(384),
                     cornerRadius: 90,
                     hasStarted: $hasStartedHeroFlight
                 )

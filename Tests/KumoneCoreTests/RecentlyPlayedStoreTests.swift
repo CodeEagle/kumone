@@ -66,6 +66,27 @@ struct RecentlyPlayedStoreTests {
         #expect(kept.map(\.id) == [43])
         try? FileManager.default.removeItem(at: url)
     }
+
+    @Test func deduplicatesWithinRecommendationBatch() async throws {
+        let store = RecentlyPlayedStore(days: 30, enabled: true)
+        let kept = await store.filter([try track(1), try track(1), try track(2)])
+        #expect(kept.map(\.id) == [1, 2])
+    }
+
+    @Test func firstRecordPreservesPreviouslySavedHistory() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("recent-filter-\(UUID().uuidString)")
+        let url = directory.appendingPathComponent("nested/history.json")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let writer = RecentlyPlayedStore(days: 30, enabled: true, storeURL: url)
+        await writer.record(trackID: 41)
+        #expect(FileManager.default.fileExists(atPath: url.path))
+        let restarted = RecentlyPlayedStore(days: 30, enabled: true, storeURL: url)
+        await restarted.record(trackID: 42)
+        let reader = RecentlyPlayedStore(days: 30, enabled: true, storeURL: url)
+        let kept = await reader.filter([try track(41), try track(42), try track(43)])
+        #expect(kept.map(\.id) == [43])
+    }
 }
 
 /// Mutable, injectable clock so tests can advance time past the window.

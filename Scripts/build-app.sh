@@ -9,12 +9,14 @@ cd "$ROOT"
 
 CONF="${1:-debug}"
 APP_NAME="${APP_NAME:-MiuMiu}"
+case "$APP_NAME" in miumiu|Miumiu|MiuMiu) APP_NAME="MiuMiu" ;; esac
 BUNDLE_ID="${BUNDLE_ID:-im.missuo.Kumone}"
 SWIFT_PRODUCT="${SWIFT_PRODUCT:-Kumone}"
 # The user-facing name (Launchpad/Dock). Defaults to the product name; a deploy
 # script can override it to ship under a different display name without
 # touching the executable, bundle id, or install path.
 DISPLAY_NAME="${DISPLAY_NAME:-$APP_NAME}"
+case "$DISPLAY_NAME" in miumiu|Miumiu|MiuMiu) DISPLAY_NAME="MiuMiu" ;; esac
 # Version resolution: environment > version.env > defaults.
 ENV_MARKETING_VERSION="${MARKETING_VERSION:-}"
 ENV_BUILD_NUMBER="${BUILD_NUMBER:-}"

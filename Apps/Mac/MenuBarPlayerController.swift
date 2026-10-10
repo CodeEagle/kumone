@@ -53,8 +53,8 @@ final class MenuBarPlayerController: NSObject {
         info.isBordered = false
         info.font = .menuBarFont(ofSize: 12)
         info.lineBreakMode = .byTruncatingTail
-        info.toolTip = title ?? "打开 Miumiu"
-        info.setAccessibilityLabel(title ?? "打开 Miumiu")
+        info.toolTip = title ?? "打开 MiuMiu"
+        info.setAccessibilityLabel(title ?? "打开 MiuMiu")
         host.addSubview(info)
         controls.append(info)
 

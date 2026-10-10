@@ -180,6 +180,10 @@ struct PlayerBar: View {
                         .font(.system(size: 12))
                         .foregroundStyle(Theme.accent)
                         .frame(width: 26, height: 26)
+                        #if os(macOS)
+                        .heroAnchor(HeroID.nowPlayingRoaming)
+                        .opacity(heroFlight.active[HeroID.nowPlayingRoaming] != nil ? 0 : 1)
+                        #endif
                         .help("私人漫游中")
                 } else {
                     PlayerIconButton(
@@ -282,16 +286,6 @@ struct PlayerBar: View {
             }
             .help("播放队列")
             #if os(macOS)
-            if player.isFMMode {
-                PlayerIconButton(
-                    icon: "wave.3.right.circle.fill", size: 13,
-                    isActive: true
-                ) {
-                    appStore.send(.presentNowPlaying)
-                }
-                .help("漫游模式")
-                .heroAnchor(HeroID.nowPlayingRoaming)
-            }
             RoutePickerButton(diameter: 26, glyphSize: 13,
                               tint: .secondary, background: .clear)
                 .heroAnchor(HeroID.nowPlayingAirPlay)
