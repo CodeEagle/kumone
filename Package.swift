@@ -116,6 +116,11 @@ let package = Package(
             path: "Apps/Mac",
             swiftSettings: [
                 .swiftLanguageMode(.v5),
+                // Debug-only diagnostics (the Hero self-test menu item, the
+                // leak-stress driver) are compiled behind #if DEBUG. SwiftPM
+                // does not define it for debug builds by default, so it is
+                // conditioned on the configuration here; release stays clean.
+                .define("DEBUG", .when(configuration: .debug)),
             ],
             linkerSettings: [
                 // Sparkle.framework is embedded in Contents/Frameworks by Scripts/build-app.sh.
