@@ -301,7 +301,13 @@ final class MainContainerViewController: NSViewController, NSToolbarDelegate {
     private func makeBackItem() -> NSToolbarItem {
         let item = NSToolbarItem(itemIdentifier: Self.backItemIdentifier)
         item.label = "返回"
-        let container = NSView(frame: NSRect(x: 0, y: 0, width: 62, height: 38))
+        // NSToolbar re-lays out a custom item's view to its standard height
+        // (22pt inside a 38pt row, origin y=8) — measured live via lldb as
+        // frame={0,8,62,22} — so the container cannot assume its own 38pt
+        // frame, and neither can the button's position. The button is hidden
+        // from the container's `layout()` until the item is inserted, so the
+        // centering happens both here and on every later layout pass.
+        let container = BackItemContainer(frame: NSRect(x: 0, y: 0, width: 62, height: 38))
         let button = NSButton(
             image: NSImage(systemSymbolName: "chevron.backward", accessibilityDescription: "返回")!,
             target: self, action: #selector(navigateBack)
@@ -310,11 +316,13 @@ final class MainContainerViewController: NSViewController, NSToolbarDelegate {
         button.imagePosition = .imageOnly
         container.addSubview(button)
         item.view = container
-        // The item is not in the toolbar yet (the delegate is asked to build
-        // it during insertion), so the lookup in applyBackButtonLayout cannot
-        // find it — set the glyph's frame directly.
+        // The leading margin parks the glyph clear of the titlebar-row
+        // sidebar toggle in both column states (see `sidebarCollapsed`).
+        container.leadingOffset = sidebarCollapsed ? 40 : 8
+        // An initial frame for the first paint; `layout()` re-centers once
+        // NSToolbar resizes the container to its standard 22pt height.
         button.frame = NSRect(
-            x: sidebarCollapsed ? 40 : 8,
+            x: container.leadingOffset,
             y: (container.bounds.height - 26) / 2,
             width: 22,
             height: 26
@@ -323,15 +331,19 @@ final class MainContainerViewController: NSViewController, NSToolbarDelegate {
     }
 
     /// Positions the back button's glyph inside its item view: vertically
-    /// centered in the toolbar's row, and leading-offset per the sidebar
-    /// state (see `sidebarCollapsed`). Animated when the sidebar flips so the
-    /// button rides into place instead of jumping.
+    /// centered in the toolbar's row (the row is 38pt tall but NSToolbar
+    /// resizes the item's container to 22pt at y=8 — see
+    /// `BackItemContainer`), and leading-offset per the sidebar state (see
+    /// `sidebarCollapsed`). Animated when the sidebar flips so the button
+    /// rides into place instead of jumping.
     private func applyBackButtonLayout(animating: Bool) {
         guard let container = searchToolbar?.items
-            .first(where: { $0.itemIdentifier == Self.backItemIdentifier })?.view,
+            .first(where: { $0.itemIdentifier == Self.backItemIdentifier })?.view
+            as? BackItemContainer,
             let button = container.subviews.first else { return }
+        container.leadingOffset = sidebarCollapsed ? 40 : 8
         let frame = NSRect(
-            x: sidebarCollapsed ? 40 : 8,
+            x: container.leadingOffset,
             y: (container.bounds.height - 26) / 2,
             width: 22,
             height: 26
@@ -524,5 +536,29 @@ final class MainContainerViewController: NSViewController, NSToolbarDelegate {
             hosting.view.topAnchor.constraint(equalTo: root.topAnchor),
             hosting.view.bottomAnchor.constraint(equalTo: root.bottomAnchor)
         ])
+    }
+}
+
+/// The back button's item view. NSToolbar re-lays out a custom item view to
+/// its standard 22pt height inside the 38pt row (live measurement:
+/// frame={0,8,62,22}), so the button cannot be positioned once at build time
+/// against the container's nominal 38pt frame — after the resize the stored
+/// y would put the glyph 8pt above the row's visual centre. Re-centering on
+/// every `layout()` keeps the glyph at the traffic lights' height whatever
+/// height AppKit settles on, and `leadingOffset` keeps the clear-of-toggle
+/// margin across the sidebar's collapse animation.
+final class BackItemContainer: NSView {
+    var leadingOffset: CGFloat = 8
+    private let buttonSize: NSSize = NSSize(width: 22, height: 26)
+
+    override func layout() {
+        super.layout()
+        guard let button = subviews.first else { return }
+        button.frame = NSRect(
+            x: leadingOffset,
+            y: round((bounds.height - buttonSize.height) / 2),
+            width: buttonSize.width,
+            height: buttonSize.height
+        )
     }
 }
