@@ -385,12 +385,11 @@ private struct HeroFlightHost: View {
                     flight: flight,
                     containerFrame: proxy.frame(in: .global)
                 )
-                // The stand-in fades out where it lands instead of vanishing
-                // in one frame, crossing over into the destination's cover
-                // so the hand-off no longer flickers as the cover appears.
-                .transition(.opacity)
+                // The stand-in vanishes where it lands in one frame, handing
+                // the pixels straight to the destination target underneath it.
+                // A fade-out here overlays the stand-in on the target for the
+                // fade's duration and reads as the cover flickering.
             }
         }
-        .animation(AppAnimation.smooth, value: director.active.count)
     }
 }
