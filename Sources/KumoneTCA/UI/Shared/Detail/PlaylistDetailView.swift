@@ -148,6 +148,9 @@ struct PlaylistDetailView: View {
             HeroFlightDirector.shared.end(id: heroID)
             hasAppeared = false
         }
+        // The page's text is selectable: the title, creator, stats and
+        // description carry playlist details a user may want to copy.
+        .textSelection(.enabled)
     }
 
     // MARK: - Compact (Mobile) Header
