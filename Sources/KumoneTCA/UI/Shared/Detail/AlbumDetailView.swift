@@ -111,11 +111,10 @@ struct AlbumDetailView: View {
         // transparency, fading in with the rest of the page after the cover
         // lands.
         .scrollContentBackground(.hidden)
-        // See PlaylistDetailView: the frosted background rides the overlay's
-        // insertion fade from zero, so it materialises during the flight and
-        // is in place when the cover lands; the content still waits below.
-        .opacity(isFlying ? 0 : 1)
-        .animation(AppAnimation.smooth, value: isFlying)
+        // See PlaylistDetailView: the whole page rides the overlay's
+        // insertion fade from zero, materialising during the flight; groups
+        // that need the landing keep their own gates, and the cover target
+        // is hidden by its own heroTarget until the flight ends.
         .background(.ultraThinMaterial)
         #else
         .navigationBarTitleDisplayMode(.inline)
