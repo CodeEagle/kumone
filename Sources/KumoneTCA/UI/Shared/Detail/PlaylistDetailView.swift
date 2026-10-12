@@ -104,14 +104,13 @@ struct PlaylistDetailView: View {
         }
         #if os(macOS)
         .navigationTitle(store.detail?.name ?? String(localized: "歌单"))
-        // The pushed page's scroll view otherwise paints an opaque sheet over
-        // the feed while the cover is still flying — the "black background,
-        // image covered" break in continuity. Transparent during the flight,
-        // restored when the content fades in after the landing. The opacity
-        // gates the whole page — including the loading skeleton, which the
-        // per-section opacity below does not cover — so nothing of the
-        // destination appears before the cover lands.
-        .scrollContentBackground(isFlying ? .hidden : .automatic)
+        // The page sits in an overlay above the root column (see
+        // detailStack in MainWindow): a frosted background replaces the
+        // opaque system scroll background so the rooted feed behind it and
+        // the window's shader read through, and the whole page — this glass
+        // included — fades in after the cover lands.
+        .scrollContentBackground(.hidden)
+        .background(.ultraThinMaterial)
         .opacity(isFlying ? 0 : 1)
         .animation(AppAnimation.smooth, value: isFlying)
         #else

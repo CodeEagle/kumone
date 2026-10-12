@@ -107,10 +107,11 @@ struct AlbumDetailView: View {
         }
         #if os(macOS)
         .navigationTitle(store.album?.name ?? String(localized: "专辑"))
-        // See PlaylistDetailView: transparent while the cover flies. The
-        // opacity gates the whole page — including the loading skeleton —
-        // so nothing of the destination appears before the cover lands.
-        .scrollContentBackground(isFlying ? .hidden : .automatic)
+        // See PlaylistDetailView: a frosted background over the overlay's
+        // transparency, fading in with the rest of the page after the cover
+        // lands.
+        .scrollContentBackground(.hidden)
+        .background(.ultraThinMaterial)
         .opacity(isFlying ? 0 : 1)
         .animation(AppAnimation.smooth, value: isFlying)
         #else
