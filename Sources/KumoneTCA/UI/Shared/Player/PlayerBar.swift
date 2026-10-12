@@ -60,9 +60,10 @@ struct PlayerBar: View {
                         #if os(macOS)
                         .heroAnchor(HeroID.nowPlayingTitle)
                         // The flying stand-in owns the title for the whole
-                        // flight, in both directions.
+                        // flight, in both directions; it fades in as the
+                        // stand-in fades out onto it.
                         .opacity(heroFlight.active[HeroID.nowPlayingTitle] != nil ? 0 : 1)
-                        .animation(nil, value: heroFlight.active[HeroID.nowPlayingTitle] != nil)
+                        .animation(AppAnimation.smooth, value: heroFlight.active[HeroID.nowPlayingTitle] != nil)
                         #endif
                     if player.currentTrack?.fee == 1 {
                         VIPBadge()
@@ -122,7 +123,10 @@ struct PlayerBar: View {
                 )
                 .shadow(color: .black.opacity(0.2), radius: 4, y: 2)
                 .opacity(heroFlight.active[HeroID.nowPlayingArtwork] != nil ? 0 : 1)
-                .animation(nil, value: heroFlight.active[HeroID.nowPlayingArtwork] != nil)
+                // The return flight's stand-in fades out onto this 38pt
+                // artwork, which fades back in on the same curve — a
+                // crossfade rather than a snap under the fading stand-in.
+                .animation(AppAnimation.smooth, value: heroFlight.active[HeroID.nowPlayingArtwork] != nil)
         }
         .buttonStyle(.pressable)
         .noFocusRing()
