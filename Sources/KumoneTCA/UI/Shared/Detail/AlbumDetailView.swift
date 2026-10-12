@@ -8,6 +8,9 @@ struct AlbumDetailView: View {
 
     @State private var showFullDescription = false
     @State private var hasStartedHeroFlight = false
+    /// See PlaylistDetailView: the page's own arrival fade, driven from
+    /// `onAppear` in the view layer.
+    @State private var hasAppeared = false
 
     #if os(macOS)
     @ObservedObject private var heroFlight = HeroFlightDirector.shared
@@ -113,10 +116,10 @@ struct AlbumDetailView: View {
         // transparency, fading in with the rest of the page after the cover
         // lands.
         .scrollContentBackground(.hidden)
-        // See PlaylistDetailView: the whole page rides the overlay's
-        // insertion fade from zero, materialising during the flight; groups
-        // that need the landing keep their own gates, and the cover target
-        // is hidden by its own heroTarget until the flight ends.
+        // See PlaylistDetailView: the page fades in from zero on its own
+        // onAppear-driven state, without needing an animation transaction
+        // on the TCA send.
+        .opacity(hasAppeared ? 1 : 0)
         .background(.ultraThinMaterial)
         #else
         .navigationBarTitleDisplayMode(.inline)
@@ -124,9 +127,16 @@ struct AlbumDetailView: View {
         .task(id: store.albumID) {
             store.send(.onAppear)
         }
+        .onAppear {
+            KumoneLogger.app.notice("PAGE appear album")
+            withAnimation(AppAnimation.smooth) {
+                hasAppeared = true
+            }
+        }
         .onDisappear {
             hasStartedHeroFlight = false
             HeroFlightDirector.shared.end(id: heroID)
+            hasAppeared = false
         }
     }
 

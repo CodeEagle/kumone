@@ -12,6 +12,12 @@ struct PlaylistDetailView: View {
     @State private var showFullDescription = false
 
     @State private var hasStartedHeroFlight = false
+    /// Drives the page's own arrival fade. `onAppear` flips it inside a
+    /// plain `withAnimation`, so the fade runs purely in the view layer —
+    /// no reliance on the push's animation transaction reaching the
+    /// overlay's insertion transition (TCA + Observation state changes do
+    /// not reliably carry one).
+    @State private var hasAppeared = false
 
     #if os(macOS)
     @ObservedObject private var heroFlight = HeroFlightDirector.shared
@@ -112,14 +118,14 @@ struct PlaylistDetailView: View {
         // the window's shader read through, and the whole page — this glass
         // included — fades in after the cover lands.
         .scrollContentBackground(.hidden)
-        // The whole page — frosted background included — rides the overlay's
-        // insertion fade: a plain opacity fade from zero that starts the
-        // moment the push begins, so the page materialises progressively
-        // while the cover is still flying and is in place when it lands,
-        // the way a system push brings its page in with the transition.
-        // Element groups that need the landing keep their own gates below
-        // (the track list, the header chrome); the cover target itself is
-        // hidden by its own heroTarget until the flight ends.
+        // The whole page — frosted background included — fades in from zero
+        // when the page appears: driven by the page's own state flipped
+        // from onAppear inside withAnimation, so it starts the moment the
+        // push mounts the page (while the cover is still flying) without
+        // depending on an animation transaction riding the TCA send. The
+        // cover target is hidden by its own heroTarget until the flight
+        // ends, so it stays out of this fade.
+        .opacity(hasAppeared ? 1 : 0)
         .background(.ultraThinMaterial)
         #else
         .navigationBarTitleDisplayMode(.inline)
@@ -127,9 +133,16 @@ struct PlaylistDetailView: View {
         .task(id: store.playlistID) {
             store.send(.onAppear)
         }
+        .onAppear {
+            KumoneLogger.app.notice("PAGE appear playlist")
+            withAnimation(AppAnimation.smooth) {
+                hasAppeared = true
+            }
+        }
         .onDisappear {
             hasStartedHeroFlight = false
             HeroFlightDirector.shared.end(id: heroID)
+            hasAppeared = false
         }
     }
 
