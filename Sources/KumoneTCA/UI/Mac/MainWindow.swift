@@ -1,4 +1,5 @@
 import ComposableArchitecture
+@_spi(Internals) import ComposableArchitecture
 import KumoneCore
 import SwiftUI
 
@@ -248,11 +249,38 @@ public struct MainWindow: View {
     }
 
     private var detailStack: some View {
-        NavigationStack(path: $store.scope(\.path, action: \.path)) {
-            rootView
-        } destination: { pathStore in
-            Self.destinationView(pathStore, appStore: store)
-        }
+        // The detail pages render above the root, not pushed into a
+        // NavigationStack. SwiftUI's macOS push is a slide transition whose
+        // travelling container is opaque, so the moment the push starts a
+        // black sheet covers the feed while the hero cover is still flying
+        // over it — the `isFlying` opacity gate cannot fix it, because a
+        // transparent page over a black container still reads as black.
+        // Rendering the stack as overlays gives the pages the same
+        // non-geometric presentation NowPlayingView already uses (its own
+        // comment: "Keep the page transition non-geometric"): the root stays
+        // put under the flying artwork, and each pushed page fades in once
+        // its cover has landed. The multi-level stack still works — every
+        // pushed page is its own overlay layer, and popping removes the top
+        // one. Element stores come from the same `scope(component:)` helper
+        // the library's NavigationStack destination uses.
+        rootView
+            .overlay(alignment: .topLeading) {
+                // Scoping a stack state this way is what the library's own
+                // NavigationStack destination does under the hood; every
+                // component store is cached, so re-running this closure per
+                // redraw is cheap.
+                let pathStore = store.scope(state: \.path, action: \.path)
+                let components = zip(store.path.ids, store.path)
+                    .map { StackState<AppFeature.Path.State>.Component(id: $0, element: $1) }
+                ForEach(components, id: \.id) { component in
+                    Self.destinationView(
+                        pathStore.scope(component: component),
+                        appStore: store
+                    )
+                    .transition(.opacity)
+                }
+            }
+            .animation(AppAnimation.smooth, value: store.path.count)
     }
 
     /// Flies the Now Playing artwork back to the mini player on dismiss, so the
@@ -701,4 +729,5 @@ extension BrightnessIntent {
 /// lives in SwiftUI, so the button posts this and the window answers.
 public extension Notification.Name {
     static let kumoneToggleSidebar = Notification.Name("im.missuo.Kumone.toggleSidebar")
+    static let kumoneDebugPushDetail = Notification.Name("im.missuo.Kumone.debugPushDetail")
 }
