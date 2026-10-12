@@ -110,9 +110,15 @@ struct PlaylistDetailView: View {
         // the window's shader read through, and the whole page — this glass
         // included — fades in after the cover lands.
         .scrollContentBackground(.hidden)
-        .background(.ultraThinMaterial)
+        // The frosted background sits outside the content's isFlying gate:
+        // it rides the overlay's own insertion fade (a plain opacity fade
+        // from zero that starts at the push), so it materialises during the
+        // flight and is already in place when the cover lands — neither
+        // popping in after the landing (which read as abrupt) nor arriving
+        // half-opaque ahead of it (which read as covering the cover).
         .opacity(isFlying ? 0 : 1)
         .animation(AppAnimation.smooth, value: isFlying)
+        .background(.ultraThinMaterial)
         #else
         .navigationBarTitleDisplayMode(.inline)
         #endif

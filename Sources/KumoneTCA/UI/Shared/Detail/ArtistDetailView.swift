@@ -147,9 +147,12 @@ struct ArtistDetailView: View {
         // transparency, fading in with the rest of the page after the cover
         // lands.
         .scrollContentBackground(.hidden)
-        .background(.ultraThinMaterial)
+        // See PlaylistDetailView: the frosted background rides the overlay's
+        // insertion fade from zero, so it materialises during the flight and
+        // is in place when the cover lands; the content still waits below.
         .opacity(isFlying ? 0 : 1)
         .animation(AppAnimation.smooth, value: isFlying)
+        .background(.ultraThinMaterial)
         #else
         .navigationBarTitleDisplayMode(.inline)
         #endif
