@@ -143,13 +143,13 @@ struct ArtistDetailView: View {
         }
         #if os(macOS)
         .navigationTitle(store.artist?.name ?? String(localized: "歌手"))
-        // See PlaylistDetailView: a frosted background over the overlay's
-        // transparency, fading in with the rest of the page after the cover
-        // lands.
         .scrollContentBackground(.hidden)
-        .background(.ultraThinMaterial)
+        // See PlaylistDetailView: content hides until the cover lands; the
+        // frosted background rides the overlay's insertion fade and appears
+        // with the cover instead.
         .opacity(isFlying ? 0 : 1)
         .animation(AppAnimation.smooth, value: isFlying)
+        .background(.ultraThinMaterial)
         #else
         .navigationBarTitleDisplayMode(.inline)
         #endif

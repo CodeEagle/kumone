@@ -104,15 +104,14 @@ struct PlaylistDetailView: View {
         }
         #if os(macOS)
         .navigationTitle(store.detail?.name ?? String(localized: "歌单"))
-        // The page sits in an overlay above the root column (see
-        // detailStack in MainWindow): a frosted background replaces the
-        // opaque system scroll background so the rooted feed behind it and
-        // the window's shader read through, and the whole page — this glass
-        // included — fades in after the cover lands.
         .scrollContentBackground(.hidden)
-        .background(.ultraThinMaterial)
+        // Content stays hidden until the cover lands; the frosted background
+        // below is deliberately outside this gate: it rides the overlay's
+        // own insertion fade instead, so it appears with the flying cover
+        // rather than after it.
         .opacity(isFlying ? 0 : 1)
         .animation(AppAnimation.smooth, value: isFlying)
+        .background(.ultraThinMaterial)
         #else
         .navigationBarTitleDisplayMode(.inline)
         #endif
