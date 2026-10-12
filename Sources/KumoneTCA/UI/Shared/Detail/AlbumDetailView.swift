@@ -238,7 +238,7 @@ struct AlbumDetailView: View {
 
     private func regularHeader(_ album: AlbumDetail) -> some View {
         HStack(alignment: .bottom, spacing: 24) {
-            CachedAsyncImage(url: album.picUrl?.resizedImageURL(512))
+            CachedAsyncImage(url: album.picUrl?.resizedImageURL(512), animated: false)
                 .frame(width: 200, height: 200)
                 .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.large, style: .continuous))
                 .shadow(color: .black.opacity(0.25), radius: 16, y: 8)

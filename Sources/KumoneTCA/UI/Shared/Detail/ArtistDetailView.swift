@@ -232,7 +232,7 @@ struct ArtistDetailView: View {
 
     private func regularHeader(_ artist: ArtistSummary) -> some View {
         HStack(alignment: .center, spacing: 28) {
-            CachedAsyncImage(url: artist.picUrl?.resizedImageURL(512))
+            CachedAsyncImage(url: artist.picUrl?.resizedImageURL(512), animated: false)
                 .frame(width: 180, height: 180)
                 .clipShape(Circle())
                 .shadow(color: .black.opacity(0.25), radius: 16, y: 8)

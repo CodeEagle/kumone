@@ -251,7 +251,7 @@ struct PlaylistDetailView: View {
 
     private func regularHeader(_ detail: PlaylistDetail) -> some View {
         HStack(alignment: .bottom, spacing: 24) {
-            CachedAsyncImage(url: detail.coverImgUrl?.resizedImageURL(512))
+            CachedAsyncImage(url: detail.coverImgUrl?.resizedImageURL(512), animated: false)
                 .frame(width: 200, height: 200)
                 .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.large, style: .continuous))
                 .shadow(color: .black.opacity(0.25), radius: 16, y: 8)

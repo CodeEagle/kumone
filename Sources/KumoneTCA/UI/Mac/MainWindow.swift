@@ -277,7 +277,11 @@ public struct MainWindow: View {
                         pathStore.scope(component: component),
                         appStore: store
                     )
-                    .transition(.opacity)
+                    // Insertion starts at half opacity rather than fully
+                    // transparent: the frosted background is already a solid
+                    // presence as the cover begins flying, instead of assembling
+                    // from nothing. Removal fades to zero like a normal pop.
+                    .transition(.detailFade)
                 }
             }
             .animation(AppAnimation.smooth, value: store.path.count)
@@ -730,4 +734,22 @@ extension BrightnessIntent {
 public extension Notification.Name {
     static let kumoneToggleSidebar = Notification.Name("im.missuo.Kumone.toggleSidebar")
     static let kumoneDebugPushDetail = Notification.Name("im.missuo.Kumone.debugPushDetail")
+}
+
+/// The detail overlay's own transition. Insertion begins at half opacity —
+/// its frosted background reads as already half-materialised the moment the
+/// push starts, so it arrives with the flying cover instead of growing out
+/// of transparency. Removal is an ordinary fade out.
+private struct OpacityBackdrop: ViewModifier {
+    let opacity: Double
+    func body(content: Content) -> some View { content.opacity(opacity) }
+}
+
+extension AnyTransition {
+    static var detailFade: AnyTransition {
+        .asymmetric(
+            insertion: .modifier(active: OpacityBackdrop(opacity: 0.5), identity: OpacityBackdrop(opacity: 1)),
+            removal: .opacity
+        )
+    }
 }
