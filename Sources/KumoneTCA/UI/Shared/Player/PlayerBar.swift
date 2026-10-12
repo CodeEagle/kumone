@@ -24,12 +24,7 @@ struct PlayerBar: View {
             .padding(.horizontal, 14)
         }
         .frame(height: Theme.Layout.playerBarHeight)
-        // A/B trial: Liquid Glass (glassEffect) refracts whatever sits
-        // behind the bar, and recomputes that refraction when a detail push
-        // swaps the backdrop — the recompute reads as the bar flickering.
-        // ultraThinMaterial renders the same backdrop change as a plain
-        // translucent tint with no refraction step.
-        .background(.ultraThinMaterial, in: Capsule())
+        .compatGlass(interactive: true, in: Capsule())
         // The Liquid Glass effect layer does not participate in hit testing, so
         // the capsule itself has to claim the area: without this, clicks and
         // hover on the bar's empty stretches fall through to whatever is
