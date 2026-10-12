@@ -239,24 +239,20 @@ struct PlayerBar: View {
 
     private func optionsSection(compact: Bool) -> some View {
         HStack(spacing: 4) {
-            // Reserve a constant-width slot for the quality tag: it is
-            // inserted/removed on every track change (servedQuality is
-            // cleared while resolving the next URL), which would otherwise
-            // widen/narrow this section and visibly shift the transport.
+            // Reserve a constant-width slot for the quality/source tag: tags
+            // are swapped on every track change (servedQuality is cleared
+            // while resolving the next URL), which would otherwise widen/narrow
+            // this section and visibly shift the transport.
             if !compact {
                 Group {
-                    if let level = player.servedQuality,
-                       let quality = AudioQuality(rawValue: level) {
+                    if let source = player.unblockSource {
+                        SourceTag(source: source)
+                            .help("来自 \(source)")
+                    } else if let level = player.servedQuality,
+                              let quality = AudioQuality(rawValue: level) {
                         QualityTag(text: quality.badge)
-                    } else if player.unblockSource != nil {
-                        QualityTag(text: String(localized: "音源"))
-                            .help("来自 \(player.unblockSource ?? "")")
                     } else {
-                        // An empty `if let` inside a fixed frame does NOT hold
-                        // its width in an HStack (verified: the slot collapses to
-                        // 0 and the whole right section jumps the first time a
-                        // quality badge appears). Color.clear keeps the 56pt.
-                        Color.clear
+                        SourceTag(source: nil)
                     }
                 }
                 .frame(width: 56, alignment: .leading)

@@ -965,6 +965,7 @@ struct NowPlayingView: View {
                         .opacity(heroFlight.active[HeroID.nowPlayingVIP] != nil ? 0 : 1)
                         #endif
                 }
+                SourceTag(source: player.unblockSource, neutralColor: .white.opacity(0.6))
             }
             if let track = player.currentTrack {
                 NowPlayingTrackDestinationLinks(

@@ -190,6 +190,41 @@ struct QualityTag: View {
     }
 }
 
+struct SourceTag: View {
+    /// `nil` = served natively by NetEase Cloud Music; otherwise the name of
+    /// the third-party unblock source (e.g. "pyncmd", "LX 解析", "酷狗音乐").
+    let source: String?
+    /// Color of the native variant — it must adapt to its background, which is
+    /// dark in NowPlayingView, so callers there pass a white-based color.
+    var neutralColor: Color = .secondary
+
+    private var text: String {
+        if let source {
+            return source
+        } else {
+            return String(localized: "网易原生")
+        }
+    }
+
+    var body: some View {
+        Text(text)
+            .font(.system(size: 9, weight: .semibold))
+            .lineLimit(1)
+            .fixedSize(horizontal: true, vertical: false)
+            .foregroundStyle(color)
+            .padding(.horizontal, 5)
+            .padding(.vertical, 2)
+            .overlay(
+                RoundedRectangle(cornerRadius: 3.5, style: .continuous)
+                    .stroke(color.opacity(0.7), lineWidth: 1)
+            )
+    }
+
+    private var color: Color {
+        source == nil ? neutralColor : Theme.accent
+    }
+}
+
 // MARK: - Hover play overlay
 
 struct PlayOverlayButton: View {
