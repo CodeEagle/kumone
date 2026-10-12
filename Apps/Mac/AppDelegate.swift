@@ -5,6 +5,7 @@ import KumoneCore
 import KumoneTCA
 import KumoneUI
 import Observation
+import ScreenCaptureKit
 import SwiftUI
 
 @MainActor
@@ -29,6 +30,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// app quits — reopening the screen builds a fresh window anyway.
     private var screenCloseObserver: NSObjectProtocol?
     private var debugPushObserver: NSObjectProtocol?
+    #if DEBUG
+    private var debugCaptureObserver: NSObjectProtocol?
+    #endif
     private lazy var actions: ActionRegistry = {
         let registry = AppActions.dispatcher(store: store)
         // Window-level verbs are registered here, not in AppActions: they
@@ -74,6 +78,147 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         ) { [weak self] _ in
             MainActor.assumeIsolated {
                 self?.store.animateOpen(.playlist(3136952023))
+            }
+        }
+        // Diagnostics hook: posting `kumoneDebugCapture` samples the layer
+        // tree's presentation opacities every 50ms and logs the ones that
+        // change — a running fade leaves a 0→1 trail in the log, a snapped
+        // one shows a single jump. ScreenCaptureKit/CGWindowList need TCC
+        // this app does not have; the layer probe needs nothing.
+        debugCaptureObserver = NotificationCenter.default.addObserver(
+            forName: .kumoneDebugCapture, object: nil, queue: .main
+        ) { _ in
+            MainActor.assumeIsolated {
+                final class LayerProbe {
+                    var previous: [String: Float] = [:]
+                    /// Layers whose frame sits in the window's bottom strip
+                    /// (the mini player) or the top-right detail header —
+                    /// the two regions under investigation.
+                    func region(_ layer: CALayer) -> String? {
+                        let frame = layer.frame
+                        if frame.minX < 120, frame.minY > 540, 30 < frame.width, frame.width < 50 {
+                            return "art"
+                        }
+                        if frame.minY > 540 && frame.height < 120 {
+                            return "bar"
+                        }
+                        if frame.minY < 320 && frame.minX > 300 {
+                            return "detail"
+                        }
+                        return nil
+                    }
+                    /// Once per interesting layer, print the ancestor frames so
+                    /// its owner (player capsule vs track row vs page) is
+                    /// identifiable by the chain's geometry.
+                    var printedAncestors = Set<String>()
+                    func ancestry(_ layer: CALayer) -> String {
+                        var sizes: [String] = []
+                        var node: CALayer? = layer
+                        for _ in 0..<6 {
+                            guard let current = node else { break }
+                            sizes.append(
+                                String(
+                                    format: "%0.fx%0.f",
+                                    current.bounds.width, current.bounds.height
+                                )
+                            )
+                            node = current.superlayer
+                        }
+                        return sizes.joined(separator: ">")
+                    }
+                    func walk(_ layer: CALayer, path: String, into now: inout [String: Float]) {
+                        let opacity = layer.presentation()?.opacity ?? layer.opacity
+                        if opacity < 0.995, let region = region(layer) {
+                            let frame = layer.frame
+                            let geometry = String(
+                                format: "%0.fx%0.f@%0.f,%0.f",
+                                frame.width, frame.height, frame.minX, frame.minY
+                            )
+                            let key = "\(region) \(geometry) \(path)"
+                            now[key] = opacity
+                            if region == "art" || region == "bar" {
+                                let chain = "\(geometry) [\(ancestry(layer))] "
+                                    + String(format: "op=%.2f", opacity)
+                                if !printedAncestors.contains(chain) {
+                                    printedAncestors.insert(chain)
+                                    let url = URL(fileURLWithPath: "/tmp/ancestry.txt")
+                                    if FileManager.default.fileExists(atPath: url.path),
+                                       let handle = try? FileHandle(forWritingTo: url) {
+                                        try? handle.seekToEnd()
+                                        try? handle.write(contentsOf: Data(chain.utf8))
+                                        try? handle.write(contentsOf: Data("\n".utf8))
+                                        try? handle.close()
+                                    } else {
+                                        try? Data((chain + "\n").utf8).write(to: url)
+                                    }
+                                }
+                            }
+                        }
+                        for (i, sub) in (layer.sublayers ?? []).enumerated() {
+                            walk(sub, path: "\(path)/\(i)", into: &now)
+                        }
+                    }
+                }
+                let probe = LayerProbe()
+                var index = 0
+                Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { timer in
+                    index += 1
+                    guard
+                        let window = NSApplication.shared.windows
+                            .first(where: { $0.contentView != nil && !$0.title.isEmpty }),
+                        let root = window.contentView?.layer
+                    else { return }
+                    var now: [String: Float] = [:]
+                    probe.walk(root, path: "r", into: &now)
+                    // Full dump of the bar strip every frame (not just
+                    // changes): a frozen intermediate opacity — the actual
+                    // flicker signature — only shows up this way.
+                    let barDump = now
+                        .filter { $0.key.hasPrefix("bar") || $0.key.hasPrefix("art") }
+                        .sorted { $0.key < $1.key }
+                        .map { "\($0.key)=\(String(format: "%.2f", $0.value))" }
+                        .joined(separator: " ")
+                    if !barDump.isEmpty {
+                        let url = URL(fileURLWithPath: "/tmp/barall.txt")
+                        let line = "t=\(index) \(barDump)\n"
+                        if FileManager.default.fileExists(atPath: url.path),
+                           let handle = try? FileHandle(forWritingTo: url) {
+                            try? handle.seekToEnd()
+                            try? handle.write(contentsOf: Data(line.utf8))
+                            try? handle.close()
+                        } else {
+                            try? Data(line.utf8).write(to: url)
+                        }
+                    }
+                    let nowKeys = Set(now.keys)
+                    let appeared = nowKeys.subtracting(Set(probe.previous.keys))
+                    let disappeared = Set(probe.previous.keys).subtracting(nowKeys)
+                    let changes = now.filter { probe.previous[$0.key] != $0.value }
+                    if !changes.isEmpty || !appeared.isEmpty || !disappeared.isEmpty {
+                            let trail = changes
+                                .sorted { $0.key < $1.key }
+                                .map { "\($0.key)=\(String(format: "%.2f", $0.value))" }
+                                .joined(separator: " ")
+                            let lifecycle =
+                                (appeared.isEmpty ? "" : " +\(appeared.sorted().joined(separator: ",")) ")
+                                + (disappeared.isEmpty ? "" : " -\(disappeared.sorted().joined(separator: ",")) ")
+                            let line = "t=\(index) \(lifecycle)\(trail)\n"
+                            let url = URL(fileURLWithPath: "/tmp/probe.txt")
+                            if FileManager.default.fileExists(atPath: url.path),
+                               let handle = try? FileHandle(forWritingTo: url) {
+                                try? handle.seekToEnd()
+                                try? handle.write(contentsOf: Data(line.utf8))
+                                try? handle.close()
+                            } else {
+                                try? Data(line.utf8).write(to: url)
+                            }
+                            KumoneLogger.app.notice(
+                                "LAYER t=\(index, privacy: .public) \(trail, privacy: .public)"
+                            )
+                        }
+                    probe.previous = now
+                    if index >= 40 { timer.invalidate() }
+                }
             }
         }
 

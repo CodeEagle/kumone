@@ -126,6 +126,7 @@ struct PlaylistDetailView: View {
         // cover target is hidden by its own heroTarget until the flight
         // ends, so it stays out of this fade.
         .opacity(hasAppeared ? 1 : 0)
+        .animation(AppAnimation.smooth, value: hasAppeared)
         .background(.ultraThinMaterial)
         #else
         .navigationBarTitleDisplayMode(.inline)
@@ -135,9 +136,12 @@ struct PlaylistDetailView: View {
         }
         .onAppear {
             KumoneLogger.app.notice("PAGE appear playlist")
-            withAnimation(AppAnimation.smooth) {
-                hasAppeared = true
-            }
+            // Set on the next run loop: the first frame renders the
+            // unfaded state, and the implicit .animation(value:) above
+            // (proven to run in this app — withAnimation does not) then
+            // fades it in. WithAnimation here would render the final
+            // value directly with no fade at all.
+            DispatchQueue.main.async { hasAppeared = true }
         }
         .onDisappear {
             hasStartedHeroFlight = false

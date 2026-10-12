@@ -156,6 +156,7 @@ struct ArtistDetailView: View {
         // onAppear-driven state, without needing an animation transaction
         // on the TCA send.
         .opacity(hasAppeared ? 1 : 0)
+        .animation(AppAnimation.smooth, value: hasAppeared)
         .background(.ultraThinMaterial)
         #else
         .navigationBarTitleDisplayMode(.inline)
@@ -165,9 +166,7 @@ struct ArtistDetailView: View {
         }
         .onAppear {
             KumoneLogger.app.notice("PAGE appear artist")
-            withAnimation(AppAnimation.smooth) {
-                hasAppeared = true
-            }
+            DispatchQueue.main.async { hasAppeared = true }
         }
         .onDisappear {
             hasStartedHeroFlight = false

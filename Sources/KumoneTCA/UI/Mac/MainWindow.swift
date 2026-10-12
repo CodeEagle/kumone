@@ -733,6 +733,9 @@ extension BrightnessIntent {
 public extension Notification.Name {
     static let kumoneToggleSidebar = Notification.Name("im.missuo.Kumone.toggleSidebar")
     static let kumoneDebugPushDetail = Notification.Name("im.missuo.Kumone.debugPushDetail")
+    #if DEBUG
+    static let kumoneDebugCapture = Notification.Name("im.missuo.Kumone.debugCapture")
+    #endif
 }
 
 /// The detail overlay's own transition. A plain opacity fade in both
