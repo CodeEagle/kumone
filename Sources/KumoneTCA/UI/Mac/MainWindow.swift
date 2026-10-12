@@ -277,10 +277,9 @@ public struct MainWindow: View {
                         pathStore.scope(component: component),
                         appStore: store
                     )
-                    // Insertion starts at half opacity rather than fully
-                    // transparent: the frosted background is already a solid
-                    // presence as the cover begins flying, instead of assembling
-                    // from nothing. Removal fades to zero like a normal pop.
+                    // The page fades in as a whole after the cover lands
+                    // (its content gates on `isFlying` inside the page) and
+                    // fades back out on pop like a normal dismissal.
                     .transition(.detailFade)
                 }
             }
@@ -736,20 +735,13 @@ public extension Notification.Name {
     static let kumoneDebugPushDetail = Notification.Name("im.missuo.Kumone.debugPushDetail")
 }
 
-/// The detail overlay's own transition. Insertion begins at half opacity —
-/// its frosted background reads as already half-materialised the moment the
-/// push starts, so it arrives with the flying cover instead of growing out
-/// of transparency. Removal is an ordinary fade out.
-private struct OpacityBackdrop: ViewModifier {
-    let opacity: Double
-    func body(content: Content) -> some View { content.opacity(opacity) }
-}
-
+/// The detail overlay's own transition. A plain opacity fade in both
+/// directions: the page — frosted background included — materialises as a
+/// whole only after the cover lands (its content sits under an `isFlying`
+/// gate in the detail views), and pops fade out the same way. Anything
+/// fancier here — insertions that begin half-opaque, or splitting the
+/// background out of that gate — put page chrome on screen ahead of the
+/// landing cover or covered it, so keep it plain.
 extension AnyTransition {
-    static var detailFade: AnyTransition {
-        .asymmetric(
-            insertion: .modifier(active: OpacityBackdrop(opacity: 0.5), identity: OpacityBackdrop(opacity: 1)),
-            removal: .opacity
-        )
-    }
+    static var detailFade: AnyTransition { .opacity }
 }
