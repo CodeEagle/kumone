@@ -89,9 +89,13 @@ public struct PlayerFeature {
         // item, which the reducer cannot see any other way — it decides whether
         // a play/pause tap resumes the current item or re-resolves a restored
         // queue. `resolveGeneration` invalidates in-flight URL/lyrics work when
-        // the track changes.
+        // the track changes. `pendingResolve` marks the window between choosing
+        // a track and hearing its resolution back, during which the engine's
+        // isPlayingChanged(false) from pausing the outgoing song must not flip
+        // the transport state (see `isPlayingChanged`).
         public var engineHasItem = false
         public var resolveGeneration = 0
+        public var pendingResolve = false
         public var consecutiveFailures = 0
         public var scrobbled = false
         public var startScrobbled = false
@@ -375,6 +379,17 @@ public struct PlayerFeature {
                 // arrive here; the reducer's own play/pause commands produce the
                 // same event, so the guard keeps state from churning.
                 guard state.isPlaying != isPlaying else { return .none }
+                // A track switch stops the outgoing song in the engine
+                // (`startPlaying` pauses it while the new URL resolves). Its
+                // isPlayingChanged(false) — and the one the previous track's
+                // end-of-item fires between the switch and the resolution —
+                // must not unpick the switch: the new track has not loaded yet
+                // (`pendingResolve`), and clearing `isPlaying` here would flip
+                // the transport to paused for the whole load and, worse, let
+                // urlResolved read a stale intent.
+                if !isPlaying, state.pendingResolve, state.currentTrack != nil {
+                    return .none
+                }
                 state.isPlaying = isPlaying
                 // Playback has begun: the preload fill is no longer a loading
                 // state, even before the next buffering event arrives.
@@ -596,12 +611,20 @@ public struct PlayerFeature {
                 state.pendingSeekTarget = nil
                 state.seekGuardUntil = nil
                 state.resolveGeneration += 1
+                state.pendingResolve = true
                 let generation = state.resolveGeneration
                 state.persist(using: persistence)
 
                 return .merge(
                     scrobbleFinish,
                     .run { [playback] _ in
+                        // Stop the outgoing track's audio the moment the new
+                        // one is chosen, not when its URL resolves: the
+                        // resolution network call can take a second or fail,
+                        // and until it lands the engine keeps playing the
+                        // previous song while the title already says the new
+                        // one.
+                        playback.pause()
                         playback.updateMetadata(
                             title: track.name, artist: track.artistNames, album: track.album.name, coverURL: nil)
                     },
@@ -615,6 +638,7 @@ public struct PlayerFeature {
 
             case let .urlResolved(generation, autostart, resolved):
                 guard generation == state.resolveGeneration else { return .none }
+                state.pendingResolve = false
                 state.servedQuality = resolved.servedQuality
                 state.unblockSource = resolved.unblockSource
                 state.isTrial = resolved.isTrial

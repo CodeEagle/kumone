@@ -102,6 +102,7 @@ final class PlayerFeatureTests: XCTestCase {
             $0.engineHasItem = false
             $0.isPlaying = true
             $0.resolveGeneration = 2
+            $0.pendingResolve = true
         }
         // The outgoing engine keeps emitting while the new URL is resolving.
         await store.send(.timeTick(26))
@@ -115,6 +116,7 @@ final class PlayerFeatureTests: XCTestCase {
         await store.receive(\.urlResolved) {
             $0.servedQuality = "exhigh"
             $0.engineHasItem = true
+            $0.pendingResolve = false
             $0.startScrobbled = true
         }
         await store.send(.timeTick(11)) {
@@ -163,6 +165,7 @@ final class PlayerFeatureTests: XCTestCase {
             $0.duration = Self.t2.duration
             $0.isPlaying = true
             $0.resolveGeneration = 1
+            $0.pendingResolve = true
         }
         await store.receive(\.lyricsResponse) {
             $0.lyrics = LyricsParser.parse(Self.emptyLyrics())
@@ -170,6 +173,7 @@ final class PlayerFeatureTests: XCTestCase {
         await store.receive(\.urlResolved) {
             $0.servedQuality = "exhigh"
             $0.engineHasItem = true
+            $0.pendingResolve = false
             $0.startScrobbled = true
         }
     }
@@ -192,6 +196,7 @@ final class PlayerFeatureTests: XCTestCase {
             $0.duration = Self.t1.duration
             $0.isPlaying = true
             $0.resolveGeneration = 1
+            $0.pendingResolve = true
         }
         await store.receive(\.lyricsResponse) {
             $0.lyrics = LyricsParser.parse(Self.emptyLyrics())
@@ -199,6 +204,7 @@ final class PlayerFeatureTests: XCTestCase {
         await store.receive(\.urlResolved) {
             $0.servedQuality = "exhigh"
             $0.engineHasItem = true
+            $0.pendingResolve = false
             $0.startScrobbled = true
         }
     }
@@ -220,6 +226,7 @@ final class PlayerFeatureTests: XCTestCase {
             $0.duration = Self.t2.duration
             $0.isPlaying = true
             $0.resolveGeneration = 1
+            $0.pendingResolve = true
         }
         await store.receive(\.lyricsResponse) {
             $0.lyrics = LyricsParser.parse(Self.emptyLyrics())
@@ -227,6 +234,7 @@ final class PlayerFeatureTests: XCTestCase {
         await store.receive(\.urlResolved) {
             $0.servedQuality = "exhigh"
             $0.engineHasItem = true
+            $0.pendingResolve = false
             $0.startScrobbled = true
         }
     }
@@ -286,6 +294,7 @@ final class PlayerFeatureTests: XCTestCase {
             $0.duration = Self.t1.duration
             $0.engineHasItem = false
             $0.resolveGeneration = 1
+            $0.pendingResolve = true
         }
         await store.receive(\.lyricsResponse) {
             $0.lyrics = LyricsParser.parse(Self.emptyLyrics())
@@ -293,6 +302,7 @@ final class PlayerFeatureTests: XCTestCase {
         await store.receive(\.urlResolved) {
             $0.servedQuality = "exhigh"
             $0.engineHasItem = true
+            $0.pendingResolve = false
             $0.startScrobbled = true
         }
     }
@@ -327,6 +337,7 @@ final class PlayerFeatureTests: XCTestCase {
             $0.engineHasItem = false
             $0.startScrobbled = false
             $0.resolveGeneration = 1
+            $0.pendingResolve = true
         }
         await store.receive(\.lyricsResponse) {
             $0.lyrics = LyricsParser.parse(Self.emptyLyrics())
@@ -334,6 +345,7 @@ final class PlayerFeatureTests: XCTestCase {
         await store.receive(\.urlResolved) {
             $0.servedQuality = "exhigh"
             $0.engineHasItem = true
+            $0.pendingResolve = false
             $0.startScrobbled = true
         }
         XCTAssertEqual(loads.count, 1)
@@ -574,6 +586,7 @@ final class PlayerFeatureTests: XCTestCase {
             $0.bufferProgress = 0
             $0.pendingSeekTarget = nil
             $0.resolveGeneration = 1
+            $0.pendingResolve = true
         }
         await store.receive(\.lyricsResponse) {
             $0.lyrics = LyricsParser.parse(Self.emptyLyrics())
@@ -581,6 +594,7 @@ final class PlayerFeatureTests: XCTestCase {
         await store.receive(\.urlResolved) {
             $0.servedQuality = "exhigh"
             $0.engineHasItem = true
+            $0.pendingResolve = false
             $0.startScrobbled = true
         }
     }
@@ -624,6 +638,7 @@ final class PlayerFeatureTests: XCTestCase {
             $0.progress = 0
             $0.engineHasItem = false
             $0.resolveGeneration = 1
+            $0.pendingResolve = true
         }
         await store.receive(\.lyricsResponse) {
             $0.lyrics = LyricsParser.parse(Self.emptyLyrics())
@@ -631,6 +646,7 @@ final class PlayerFeatureTests: XCTestCase {
         await store.receive(\.urlResolved) {
             $0.servedQuality = "exhigh"
             $0.engineHasItem = true
+            $0.pendingResolve = false
             $0.startScrobbled = true
         }
     }
@@ -655,6 +671,7 @@ final class PlayerFeatureTests: XCTestCase {
             $0.duration = Self.t1.duration
             $0.isPlaying = true
             $0.resolveGeneration = 1
+            $0.pendingResolve = true
         }
         await store.receive(\.lyricsResponse) {
             $0.lyrics = LyricsParser.parse(Self.emptyLyrics())
@@ -662,6 +679,7 @@ final class PlayerFeatureTests: XCTestCase {
         await store.receive(\.urlResolved) {
             $0.servedQuality = "exhigh"
             $0.engineHasItem = true
+            $0.pendingResolve = false
             $0.startScrobbled = true
         }
     }
@@ -681,6 +699,7 @@ final class PlayerFeatureTests: XCTestCase {
             $0.duration = Self.t1.duration
             $0.isPlaying = true
             $0.resolveGeneration = 1
+            $0.pendingResolve = true
         }
         await store.receive(\.lyricsResponse) {
             $0.lyrics = LyricsParser.parse(Self.emptyLyrics())
@@ -688,6 +707,7 @@ final class PlayerFeatureTests: XCTestCase {
         await store.receive(\.urlResolved) {
             $0.servedQuality = "exhigh"
             $0.engineHasItem = true
+            $0.pendingResolve = false
             $0.startScrobbled = true
         }
     }
@@ -738,6 +758,7 @@ final class PlayerFeatureTests: XCTestCase {
             $0.currentTrack = Self.t2
             $0.duration = Self.t2.duration
             $0.resolveGeneration = 6
+            $0.pendingResolve = true
         }
         await store.receive(\.lyricsResponse) {
             $0.lyrics = LyricsParser.parse(Self.emptyLyrics())
@@ -745,6 +766,7 @@ final class PlayerFeatureTests: XCTestCase {
         await store.receive(\.urlResolved) {
             $0.servedQuality = "exhigh"
             $0.engineHasItem = true
+            $0.pendingResolve = false
             $0.consecutiveFailures = 0
             $0.startScrobbled = true
         }
@@ -779,6 +801,7 @@ final class PlayerFeatureTests: XCTestCase {
             $0.progress = 0
             $0.engineHasItem = false
             $0.resolveGeneration = 1
+            $0.pendingResolve = true
         }
         await store.receive(\.lyricsResponse) {
             $0.lyrics = LyricsParser.parse(Self.emptyLyrics())
@@ -786,6 +809,7 @@ final class PlayerFeatureTests: XCTestCase {
         await store.receive(\.urlResolved) {
             $0.servedQuality = "exhigh"
             $0.engineHasItem = true
+            $0.pendingResolve = false
             $0.startScrobbled = true
         }
         XCTAssertEqual(finished.count, 1)
@@ -877,6 +901,7 @@ final class PlayerFeatureTests: XCTestCase {
             $0.duration = Self.t1.duration
             $0.isPlaying = true
             $0.resolveGeneration = 1
+            $0.pendingResolve = true
         }
         // The batch ran dry, so a refill was requested alongside playback.
         await store.receive(\.fmFetch)
@@ -891,6 +916,7 @@ final class PlayerFeatureTests: XCTestCase {
         await store.receive(\.urlResolved) {
             $0.servedQuality = "exhigh"
             $0.engineHasItem = true
+            $0.pendingResolve = false
             $0.startScrobbled = true
         }
     }
@@ -915,6 +941,7 @@ final class PlayerFeatureTests: XCTestCase {
             $0.duration = Self.t1.duration
             $0.isPlaying = true
             $0.resolveGeneration = 1
+            $0.pendingResolve = true
         }
         await store.receive(\.lyricsResponse) {
             $0.lyrics = LyricsParser.parse(Self.emptyLyrics())
@@ -922,6 +949,7 @@ final class PlayerFeatureTests: XCTestCase {
         await store.receive(\.urlResolved) {
             $0.servedQuality = "exhigh"
             $0.engineHasItem = true
+            $0.pendingResolve = false
             $0.startScrobbled = true
         }
     }
@@ -947,6 +975,7 @@ final class PlayerFeatureTests: XCTestCase {
                 $0.duration = Self.t1.duration
                 $0.isPlaying = true
                 $0.resolveGeneration = 1
+                $0.pendingResolve = true
             }
             await store.receive(\.lyricsResponse) {
                 $0.lyrics = LyricsParser.parse(Self.emptyLyrics())
@@ -954,6 +983,7 @@ final class PlayerFeatureTests: XCTestCase {
             await store.receive(\.urlResolved) {
                 $0.servedQuality = "exhigh"
                 $0.engineHasItem = true
+                $0.pendingResolve = false
                 $0.startScrobbled = true
             }
         }
@@ -1507,6 +1537,7 @@ final class PlayerFeatureTests: XCTestCase {
             $0.servedQuality = "standard"
             $0.isTrial = true
             $0.engineHasItem = true
+            $0.pendingResolve = false
         }
         await store.receive(.toast(String(localized: "VIP 歌曲，当前为试听片段")))
         await store.finish()
@@ -1625,6 +1656,7 @@ final class PlayerFeatureTests: XCTestCase {
             $0.duration = 200
             $0.isPlaying = true
             $0.resolveGeneration = 1
+            $0.pendingResolve = true
         }
         await store.receive(.lyricsResponse(generation: 1, LyricsParser.parse(Self.emptyLyrics()))) {
             $0.lyrics = LyricsParser.parse(Self.emptyLyrics())
@@ -1635,6 +1667,7 @@ final class PlayerFeatureTests: XCTestCase {
                   isTrial: false, unblockSource: nil))) {
             $0.servedQuality = "standard"
             $0.engineHasItem = true
+            $0.pendingResolve = false
             $0.startScrobbled = true
         }
         await store.finish()
@@ -1671,6 +1704,7 @@ final class PlayerFeatureTests: XCTestCase {
                 $0.duration = 200
                 $0.isPlaying = true
                 $0.resolveGeneration = 1
+                $0.pendingResolve = true
             }
             await store.receive(.lyricsResponse(generation: 1, LyricsParser.parse(Self.emptyLyrics()))) {
                 $0.lyrics = LyricsParser.parse(Self.emptyLyrics())
@@ -1682,6 +1716,7 @@ final class PlayerFeatureTests: XCTestCase {
                 .init(url: resolvedURL, servedQuality: nil, isTrial: false, unblockSource: "test"))) {
                 $0.unblockSource = "test"
                 $0.engineHasItem = true
+                $0.pendingResolve = false
                 $0.startScrobbled = true
             }
             await store.finish()
@@ -1737,6 +1772,7 @@ final class PlayerFeatureTests: XCTestCase {
             $0.duration = 200
             $0.isPlaying = true
             $0.resolveGeneration = 1
+            $0.pendingResolve = true
         }
         await store.receive(.lyricsResponse(generation: 1, LyricsParser.parse(Self.emptyLyrics()))) {
             $0.lyrics = LyricsParser.parse(Self.emptyLyrics())
@@ -1747,6 +1783,7 @@ final class PlayerFeatureTests: XCTestCase {
                   isTrial: false, unblockSource: nil))) {
             $0.servedQuality = "exhigh"
             $0.engineHasItem = true
+            $0.pendingResolve = false
             $0.startScrobbled = true
         }
         await store.finish()
@@ -1775,6 +1812,7 @@ final class PlayerFeatureTests: XCTestCase {
             $0.duration = 200
             $0.isPlaying = true
             $0.resolveGeneration = 1
+            $0.pendingResolve = true
         }
         await store.receive(.lyricsResponse(generation: 1, LyricsParser.parse(Self.emptyLyrics()))) {
             $0.lyrics = LyricsParser.parse(Self.emptyLyrics())
@@ -1785,6 +1823,7 @@ final class PlayerFeatureTests: XCTestCase {
                   isTrial: false, unblockSource: nil))) {
             $0.servedQuality = "exhigh"
             $0.engineHasItem = true
+            $0.pendingResolve = false
             $0.startScrobbled = true
         }
         await store.finish()
@@ -1812,6 +1851,7 @@ final class PlayerFeatureTests: XCTestCase {
             $0.duration = 200
             $0.isPlaying = true
             $0.resolveGeneration = 1
+            $0.pendingResolve = true
         }
         await store.receive(.lyricsResponse(generation: 1, LyricsParser.parse(Self.emptyLyrics()))) {
             $0.lyrics = LyricsParser.parse(Self.emptyLyrics())
@@ -1822,6 +1862,7 @@ final class PlayerFeatureTests: XCTestCase {
                   isTrial: false, unblockSource: nil))) {
             $0.servedQuality = "exhigh"
             $0.engineHasItem = true
+            $0.pendingResolve = false
             $0.startScrobbled = true
         }
         await store.finish()
@@ -1850,6 +1891,7 @@ final class PlayerFeatureTests: XCTestCase {
             $0.duration = 200
             $0.isPlaying = true
             $0.resolveGeneration = 1
+            $0.pendingResolve = true
         }
         await store.receive(.lyricsResponse(generation: 1, LyricsParser.parse(Self.emptyLyrics()))) {
             $0.lyrics = LyricsParser.parse(Self.emptyLyrics())
@@ -1860,6 +1902,7 @@ final class PlayerFeatureTests: XCTestCase {
                   isTrial: false, unblockSource: nil))) {
             $0.servedQuality = "exhigh"
             $0.engineHasItem = true
+            $0.pendingResolve = false
             $0.startScrobbled = true
         }
         await store.finish()
@@ -1887,6 +1930,7 @@ final class PlayerFeatureTests: XCTestCase {
             $0.duration = 200
             $0.isPlaying = true
             $0.resolveGeneration = 1
+            $0.pendingResolve = true
         }
         await store.receive(.lyricsResponse(generation: 1, LyricsParser.parse(Self.emptyLyrics()))) {
             $0.lyrics = LyricsParser.parse(Self.emptyLyrics())
@@ -1897,6 +1941,7 @@ final class PlayerFeatureTests: XCTestCase {
                   isTrial: false, unblockSource: nil))) {
             $0.servedQuality = "exhigh"
             $0.engineHasItem = true
+            $0.pendingResolve = false
             $0.startScrobbled = true
         }
         await store.finish()
@@ -1928,6 +1973,7 @@ final class PlayerFeatureTests: XCTestCase {
             $0.duration = 200
             $0.isPlaying = true
             $0.resolveGeneration = 1
+            $0.pendingResolve = true
         }
         await store.receive(.lyricsResponse(generation: 1, LyricsParser.parse(Self.emptyLyrics()))) {
             $0.lyrics = LyricsParser.parse(Self.emptyLyrics())
@@ -1938,6 +1984,7 @@ final class PlayerFeatureTests: XCTestCase {
                   isTrial: false, unblockSource: nil))) {
             $0.servedQuality = "exhigh"
             $0.engineHasItem = true
+            $0.pendingResolve = false
             $0.startScrobbled = true
         }
         await store.finish()
@@ -2106,6 +2153,7 @@ final class PlayerFeatureTests: XCTestCase {
             $0.duration = 200
             $0.isPlaying = true
             $0.resolveGeneration = 1
+            $0.pendingResolve = true
         }
         await store.receive(.fmFetch(autostart: false))
         await store.receive(.fmResponse(tracks: [Self.t2], autostart: false)) {
@@ -2121,6 +2169,7 @@ final class PlayerFeatureTests: XCTestCase {
                   isTrial: false, unblockSource: nil))) {
             $0.servedQuality = "exhigh"
             $0.engineHasItem = true
+            $0.pendingResolve = false
             $0.startScrobbled = true
         }
         await store.finish()
@@ -2150,6 +2199,7 @@ final class PlayerFeatureTests: XCTestCase {
             $0.duration = 200
             $0.isPlaying = true
             $0.resolveGeneration = 1
+            $0.pendingResolve = true
         }
         await store.receive(.lyricsResponse(generation: 1, LyricsParser.parse(Self.emptyLyrics()))) {
             $0.lyrics = LyricsParser.parse(Self.emptyLyrics())
@@ -2158,6 +2208,7 @@ final class PlayerFeatureTests: XCTestCase {
         await store.receive(.urlResolved(generation: 1, autostart: false,
             .init(url: nil, servedQuality: nil, isTrial: false, unblockSource: nil))) {
             $0.consecutiveFailures = 5
+            $0.pendingResolve = false
         }
         let name = Self.t1.name
         let suffix = ""
@@ -2221,6 +2272,7 @@ final class PlayerFeatureTests: XCTestCase {
             $0.duration = 200
             $0.isPlaying = true
             $0.resolveGeneration = 1
+            $0.pendingResolve = true
         }
         await store.receive(.lyricsResponse(generation: 1, LyricsParser.parse(Self.emptyLyrics()))) {
             $0.lyrics = LyricsParser.parse(Self.emptyLyrics())
@@ -2231,6 +2283,7 @@ final class PlayerFeatureTests: XCTestCase {
                   isTrial: false, unblockSource: nil))) {
             $0.servedQuality = "exhigh"
             $0.engineHasItem = true
+            $0.pendingResolve = false
             $0.startScrobbled = true
         }
         await store.finish()

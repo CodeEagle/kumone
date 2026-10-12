@@ -731,6 +731,7 @@ final class AppFeatureTests: XCTestCase {
             $0.player.duration = recommended.duration
             $0.player.isPlaying = true
             $0.player.resolveGeneration = 1
+            $0.player.pendingResolve = true
         }
         await store.receive(.toasts(.presented(message))) {
             $0.toasts.current = Toast(id: toastID, message: message)
@@ -743,6 +744,7 @@ final class AppFeatureTests: XCTestCase {
         )))) {
             $0.player.servedQuality = "exhigh"
             $0.player.engineHasItem = true
+            $0.player.pendingResolve = false
             $0.player.startScrobbled = true
         }
         await clock.advance(by: .seconds(1))
