@@ -80,6 +80,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self?.store.animateOpen(.playlist(3136952023))
             }
         }
+        #if DEBUG
         // Diagnostics hook: posting `kumoneDebugCapture` samples the layer
         // tree's presentation opacities every 50ms and logs the ones that
         // change — a running fade leaves a 0→1 trail in the log, a snapped
@@ -221,6 +222,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 }
             }
         }
+        #endif
 
         #if DEBUG
         // Zero-human hero verification: with KUMONE_HERO_SELF_TEST=1 the app
