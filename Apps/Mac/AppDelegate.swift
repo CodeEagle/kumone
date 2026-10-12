@@ -28,6 +28,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// a closed screen pins its hosting controller and SwiftUI tree until the
     /// app quits — reopening the screen builds a fresh window anyway.
     private var screenCloseObserver: NSObjectProtocol?
+    private var debugPushObserver: NSObjectProtocol?
     private lazy var actions: ActionRegistry = {
         let registry = AppActions.dispatcher(store: store)
         // Window-level verbs are registered here, not in AppActions: they
@@ -64,6 +65,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // their YAML; the registry is the same channel plugins would use.
         BuiltinComponents.register()
         showMainWindow()
+
+        // Diagnostics hook: posting `kumoneDebugPushDetail` drives one
+        // detail-page push from outside (lldb, scripts), so the push
+        // transition can be captured frame by frame without GUI automation.
+        debugPushObserver = NotificationCenter.default.addObserver(
+            forName: .kumoneDebugPushDetail, object: nil, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated {
+                self?.store.send(.openDestination(.playlist(3136952023)))
+            }
+        }
 
         #if DEBUG
         // Zero-human hero verification: with KUMONE_HERO_SELF_TEST=1 the app
