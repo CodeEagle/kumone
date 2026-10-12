@@ -385,7 +385,13 @@ public struct MainWindow: View {
     private func openDestination(_ destination: Destination) {
         #if os(macOS)
         guard store.isNowPlayingPresented else {
-            store.send(.openDestination(destination))
+            // Wrapped in withAnimation so the detail overlay's insertion (and
+            // the removal on pop) has an animation transaction to ride: TCA
+            // sends are otherwise plain state mutations, and the overlay's
+            // .transition would snap in and out with no fade at all.
+            withAnimation(AppAnimation.smooth) {
+                _ = store.send(.openDestination(destination))
+            }
             return
         }
 

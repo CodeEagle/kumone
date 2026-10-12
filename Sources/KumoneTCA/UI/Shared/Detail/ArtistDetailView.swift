@@ -67,8 +67,10 @@ struct ArtistDetailView: View {
                             },
                             appStore: appStore
                         )
-                        .opacity(isFlying ? 0 : 1)
-                        .animation(AppAnimation.smooth, value: isFlying)
+                        // No isFlying gate: with the push wrapped in
+                        // withAnimation (see openDestination), the track list
+                        // rides the overlay's own insertion fade and arrives
+                        // with the flight instead of waiting for the landing.
                         .padding(.horizontal, isCompact ? 6 : Theme.Layout.contentInset - 10)
                     }
 
@@ -295,8 +297,9 @@ struct ArtistDetailView: View {
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            .opacity(isFlying ? 0 : 1)
-            .animation(AppAnimation.smooth, value: isFlying)
+            // No isFlying gate: see the track list note — this column rides
+            // the insertion fade with the rest of the page now that the push
+            // is animated.
         }
     }
 
