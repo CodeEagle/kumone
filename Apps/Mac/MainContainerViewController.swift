@@ -386,8 +386,23 @@ final class MainContainerViewController: NSViewController, NSToolbarDelegate {
         pathSubscription = store.publisher.path
             .sink { [weak self] path in
                 self?.updateBackItem(present: !path.isEmpty)
+                self?.enforceDetailTitle()
             }
         updateBackItem(present: !store.path.isEmpty)
+        // The window title is driven by the SwiftUI side (`HomeView`'s
+        // `navigationTitle` via the hosting controller's `.title` scene
+        // bridge, which rewrites `window.title` on invalidations). The pushed
+        // pages render as overlays outside any navigation container, so
+        // their own `navigationTitle` never becomes the scene title and the
+        // bridge keeps restoring the root's. Correcting from this sink races
+        // the bridge's next write; the window itself corrects every write
+        // synchronously instead (`KumoneWindow.titleCorrection`) — so the
+        // correction is always the last one while the stack is up, and the
+        // bridge's own value (the root's title) stands when it is empty.
+        (view.window as? KumoneWindow)?.titleCorrection = { [weak self] _ in
+            self?.store.path.last.map(Self.detailTitle(for:))
+        }
+        enforceDetailTitle()
         // Self-verifying: the item order is what parks the field right.
         KumoneLogger.app.notice(
             "SEARCH toolbar items=\(toolbar.items.map { $0.itemIdentifier.rawValue }.joined(separator: ","), privacy: .public)"
@@ -426,6 +441,50 @@ final class MainContainerViewController: NSViewController, NSToolbarDelegate {
     @objc private func navigateBack() {
         guard let id = store.path.ids.last else { return }
         store.send(.path(.popFrom(id: id)))
+    }
+
+    /// Keeps `window.title` on the topmost pushed page while the detail
+    /// stack is up. The pages live in an overlay (see `detailStack` in
+    /// `MainWindow`), so their own `navigationTitle` no longer has a
+    /// navigation container to propagate through — the scene bridge keeps
+    /// writing the root's title. Called once on toolbar install (the
+    /// window itself corrects the bridge's later writes; see
+    /// `KumoneWindow.titleCorrection`) and from the path subscription so a
+    /// stack change lands even when no one else writes the title.
+    private func enforceDetailTitle() {
+        guard let window = view.window,
+              let top = store.path.last else { return }
+        let desired = Self.detailTitle(for: top)
+        guard window.title != desired else { return }
+        window.title = desired
+        KumoneLogger.app.notice(
+            "TITLE enforce now=\(window.title, privacy: .public)"
+        )
+    }
+
+    private static func detailTitle(for state: AppFeature.Path.State) -> String {
+        switch state {
+        case let .playlist(detail), let .radarPlaylist(detail):
+            return detail.detail?.name ?? String(localized: "歌单")
+        case let .album(album):
+            return album.album?.name ?? String(localized: "专辑")
+        case let .artist(artist):
+            return artist.artist?.name ?? String(localized: "歌手")
+        case let .search(search):
+            return search.query.isEmpty
+                ? String(localized: "搜索")
+                : "搜索：\(search.query)"
+        case .daily:
+            return String(localized: "每日推荐")
+        case .toplists:
+            return String(localized: "排行榜")
+        case .recents:
+            return String(localized: "最近播放")
+        case .collections:
+            return String(localized: "收藏")
+        case .cloud:
+            return String(localized: "音乐云盘")
+        }
     }
 
     /// Inserts the back button at the leading edge while the stack has a page
