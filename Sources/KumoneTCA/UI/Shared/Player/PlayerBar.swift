@@ -242,7 +242,8 @@ struct PlayerBar: View {
             // Reserve a constant-width slot for the quality/source tag: tags
             // are swapped on every track change (servedQuality is cleared
             // while resolving the next URL), which would otherwise widen/narrow
-            // this section and visibly shift the transport.
+            // this section and visibly shift the transport. A native stream
+            // shows no source tag — only third-party sources are named.
             if !compact {
                 Group {
                     if let source = player.unblockSource {
@@ -252,7 +253,11 @@ struct PlayerBar: View {
                               let quality = AudioQuality(rawValue: level) {
                         QualityTag(text: quality.badge)
                     } else {
-                        SourceTag(source: nil)
+                        // An empty `if let` inside a fixed frame does NOT hold
+                        // its width in an HStack (verified: the slot collapses to
+                        // 0 and the whole right section jumps the first time a
+                        // quality badge appears). Color.clear keeps the 56pt.
+                        Color.clear
                     }
                 }
                 .frame(width: 56, alignment: .leading)
