@@ -42,6 +42,19 @@ struct PlayerBar: View {
         .padding(.horizontal, 20)
         .padding(.bottom, Theme.Layout.playerBarBottomMargin)
         .background(alignment: .bottom) { bottomFade }
+        // Diagnostics: which endpoint gates flip while a detail page pushes.
+        // They should not move at all for a detail push — a flip here is the
+        // mini bar's cover/buttons flickering, and the track tells us which
+        // one moved and when, relative to the hero flight's own log.
+        .onChange(of: heroFlight.active[HeroID.nowPlayingArtwork] != nil) { _, active in
+            KumoneLogger.app.notice("MINIBAR artwork gate active=\(active, privacy: .public)")
+        }
+        .onChange(of: heroFlight.active[HeroID.nowPlayingTitle] != nil) { _, active in
+            KumoneLogger.app.notice("MINIBAR title gate active=\(active, privacy: .public)")
+        }
+        .onChange(of: appStore.isNowPlayingPresented) { _, presented in
+            KumoneLogger.app.notice("MINIBAR presented=\(presented, privacy: .public)")
+        }
     }
 
     // MARK: - Left: artwork + titles + like
