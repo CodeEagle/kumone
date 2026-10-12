@@ -435,18 +435,25 @@ final class MainContainerViewController: NSViewController, NSToolbarDelegate {
         guard let toolbar = searchToolbar else { return }
         let existing = toolbar.items
             .firstIndex { $0.itemIdentifier == Self.backItemIdentifier }
-        if present, existing == nil {
-            toolbar.insertItem(withItemIdentifier: Self.backItemIdentifier, at: 0)
+        if present {
+            if existing == nil {
+                toolbar.insertItem(withItemIdentifier: Self.backItemIdentifier, at: 0)
+            }
             guard let view = toolbar.items
                 .first(where: { $0.itemIdentifier == Self.backItemIdentifier })?.view else { return }
             applyBackButtonLayout(animating: false)
-            view.alphaValue = 0
+            // A fade-out can still be in flight when the next page is pushed
+            // before the removal lands (back, then straight into another
+            // detail). The item is already in the toolbar, so instead of
+            // skipping — which leaves it at the fade's alpha, and lets the
+            // pending removal delete it from under the new page — restore it.
+            guard view.alphaValue != 1 else { return }
             NSAnimationContext.runAnimationGroup { context in
                 context.duration = toolbarAnimationDuration
                 context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
                 view.animator().alphaValue = 1
             }
-        } else if !present, let existing {
+        } else if let existing {
             guard let view = toolbar.items[existing].view else {
                 toolbar.removeItem(at: existing)
                 return
@@ -455,10 +462,23 @@ final class MainContainerViewController: NSViewController, NSToolbarDelegate {
                 context.duration = toolbarAnimationDuration
                 context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
                 view.animator().alphaValue = 0
-            } completionHandler: {
-                let index = toolbar.items
-                    .firstIndex { $0.itemIdentifier == Self.backItemIdentifier } ?? existing
-                toolbar.removeItem(at: index)
+            } completionHandler: { [weak self] in
+                MainActor.assumeIsolated {
+                    guard let self else { return }
+                    // A page pushed while the fade-out was in flight needs the
+                    // item: keep it and make sure it is visible rather than
+                    // removing it from under the new page.
+                    if !self.store.path.isEmpty {
+                        if let view = self.searchToolbar?.items
+                            .first(where: { $0.itemIdentifier == Self.backItemIdentifier })?.view {
+                            view.alphaValue = 1
+                        }
+                        return
+                    }
+                    let index = self.searchToolbar?.items
+                        .firstIndex { $0.itemIdentifier == Self.backItemIdentifier } ?? existing
+                    self.searchToolbar?.removeItem(at: index)
+                }
             }
         }
     }
