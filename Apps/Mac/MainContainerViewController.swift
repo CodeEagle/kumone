@@ -430,7 +430,7 @@ final class MainContainerViewController: NSViewController, NSToolbarDelegate {
         let item = NSToolbarItem(itemIdentifier: Self.searchItemIdentifier)
         item.label = "搜索"
         let hosting = NSHostingView(rootView: SearchFieldView { [weak self] query in
-            self?.store.send(.openDestination(.search(query)))
+            self?.store.animateOpen(.search(query))
         })
         // Let the system measure the item from constraints (minSize/maxSize
         // are deprecated and triggered an insertion assertion).
@@ -440,7 +440,12 @@ final class MainContainerViewController: NSViewController, NSToolbarDelegate {
 
     @objc private func navigateBack() {
         guard let id = store.path.ids.last else { return }
-        store.send(.path(.popFrom(id: id)))
+        // Wrapped in withAnimation so the overlay's removal fades out (see
+        // animateOpen on the push side): a bare pop snaps the page away.
+        // AppAnimation.smooth is module-internal to KumoneTCA; same curve.
+        withAnimation(.easeInOut(duration: 0.35)) {
+            store.send(.path(.popFrom(id: id)))
+        }
     }
 
     /// Keeps `window.title` on the topmost pushed page while the detail

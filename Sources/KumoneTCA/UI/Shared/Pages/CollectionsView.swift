@@ -43,7 +43,7 @@ struct CollectionsView: View {
                                 Button {
                                     HeroTrigger.arm(HeroID.album(album.id),
                                                     sourceImageURL: album.picUrl?.resizedImageURL(384))
-                                    appStore.send(.openDestination(.album(album.id)))
+                                    appStore.animateOpen(.album(album.id))
                                 } label: {
                                     CoverCardBody(
                                         coverURL: album.picUrl?.resizedImageURL(384),
@@ -65,7 +65,7 @@ struct CollectionsView: View {
                         CardGrid(minWidth: 140) {
                             ForEach(account.likedArtists) { artist in
                                 Button {
-                                    appStore.send(.openDestination(.artist(artist.id)))
+                                    appStore.animateOpen(.artist(artist.id))
                                 } label: {
                                     VStack(spacing: 10) {
                                         CachedAsyncImage(url: artist.picUrl?.resizedImageURL(256))

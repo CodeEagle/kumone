@@ -72,7 +72,7 @@ struct HomeView: View {
                         Button {
                             HeroTrigger.arm(HeroID.playlist(radar.id),
                                             sourceImageURL: radar.coverURL?.resizedImageURL(384))
-                            appStore.send(.openDestination(.radarPlaylist(radar.id)))
+                            appStore.animateOpen(.radarPlaylist(radar.id))
                         } label: {
                             CoverCardBody(
                                 coverURL: radar.coverURL?.resizedImageURL(384),
@@ -94,7 +94,7 @@ struct HomeView: View {
                         Button {
                             HeroTrigger.arm(HeroID.playlist(toplist.id),
                                             sourceImageURL: toplist.coverImgUrl?.resizedImageURL(384))
-                            appStore.send(.openDestination(.playlist(toplist.id)))
+                            appStore.animateOpen(.playlist(toplist.id))
                         } label: {
                             toplistCard(toplist)
                         }
@@ -133,7 +133,7 @@ struct HomeView: View {
                 Color.clear.frame(width: max(0, Theme.Layout.contentInset - 16), height: 1)
                 if account.isLoggedIn {
                     Button {
-                        appStore.send(.openDestination(.daily))
+                        appStore.animateOpen(.daily)
                     } label: {
                         FeatureCard(
                             title: "每日推荐",
@@ -184,7 +184,7 @@ struct HomeView: View {
         Button {
             HeroTrigger.arm(HeroID.playlist(playlist.id),
                             sourceImageURL: playlist.coverURL?.resizedImageURL(384))
-            appStore.send(.openDestination(.playlist(playlist.id)))
+            appStore.animateOpen(.playlist(playlist.id))
         } label: {
             CoverCardBody(
                 coverURL: playlist.coverURL?.resizedImageURL(384),
@@ -203,7 +203,7 @@ struct HomeView: View {
         Button {
             HeroTrigger.arm(HeroID.album(album.id),
                             sourceImageURL: album.picUrl?.resizedImageURL(384))
-            appStore.send(.openDestination(.album(album.id)))
+            appStore.animateOpen(.album(album.id))
         } label: {
             CoverCardBody(
                 coverURL: album.picUrl?.resizedImageURL(384),
@@ -221,7 +221,7 @@ struct HomeView: View {
         Button {
             HeroTrigger.arm(HeroID.artist(artist.id),
                             sourceImageURL: artist.picUrl?.resizedImageURL(256))
-            appStore.send(.openDestination(.artist(artist.id)))
+            appStore.animateOpen(.artist(artist.id))
         } label: {
             VStack(spacing: 10) {
                 CachedAsyncImage(url: artist.picUrl?.resizedImageURL(256))

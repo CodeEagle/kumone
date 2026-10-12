@@ -80,7 +80,7 @@ struct AlbumDetailView: View {
                                 ForEach(store.otherAlbums) { item in
                                     Button {
                                         HeroTrigger.arm(HeroID.album(item.id))
-                                        appStore.send(.openDestination(.album(item.id)))
+                                        appStore.animateOpen(.album(item.id))
                                     } label: {
                                         CoverCardBody(
                                             coverURL: item.picUrl?.resizedImageURL(384),
@@ -153,7 +153,7 @@ struct AlbumDetailView: View {
 
                     if let artist = album.artist {
                         Button {
-                            appStore.send(.openDestination(.artist(artist.id)))
+                            appStore.animateOpen(.artist(artist.id))
                         } label: {
                             Text(artist.name)
                                 .font(.system(size: 13, weight: .medium))
@@ -266,7 +266,7 @@ struct AlbumDetailView: View {
 
                 if let artist = album.artist {
                     Button {
-                        appStore.send(.openDestination(.artist(artist.id)))
+                        appStore.animateOpen(.artist(artist.id))
                     } label: {
                         Text(artist.name)
                             .font(.system(size: 14, weight: .medium))

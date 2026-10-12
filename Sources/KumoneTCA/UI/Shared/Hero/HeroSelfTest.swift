@@ -195,7 +195,7 @@ public enum HeroSelfTest {
         }
 
         HeroTrigger.arm(id)
-        appStore.send(.openDestination(.playlist(playlistID)))
+        appStore.animateOpen(.playlist(playlistID))
         HeroProbe.writeFile("HERO SELFTEST CARD ARMED id=\(id) playlist=\(playlistID)")
 
         // The detail header (and its .heroTarget) appears only once the page
@@ -325,7 +325,7 @@ public enum HeroSelfTest {
         }
 
         HeroTrigger.arm(id)
-        appStore.send(.openDestination(.album(albumID)))
+        appStore.animateOpen(.album(albumID))
         HeroProbe.writeFile("HERO SELFTEST ALBUM ARMED id=\(id) album=\(albumID)")
 
         await waitForDetailLoad(appStore: appStore, deadline: 20, expecting: .album)

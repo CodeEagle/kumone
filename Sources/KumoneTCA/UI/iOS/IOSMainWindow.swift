@@ -293,7 +293,7 @@ public struct IOSMainWindow: View {
 
     private func openDestination(_ destination: Destination) {
         store.send(.dismissNowPlaying)
-        store.send(.openDestination(destination))
+        store.animateOpen(destination)
     }
 
     @ViewBuilder

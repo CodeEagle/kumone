@@ -113,7 +113,7 @@ struct ArtistDetailView: View {
                                 Spacer().frame(width: (isCompact ? 16 : Theme.Layout.contentInset) - 16)
                                 ForEach(store.similar) { sim in
                                     Button {
-                                        appStore.send(.openDestination(.artist(sim.id)))
+                                        appStore.animateOpen(.artist(sim.id))
                                     } label: {
                                         VStack(spacing: 8) {
                                             CachedAsyncImage(url: sim.picUrl?.resizedImageURL(256))
@@ -306,7 +306,7 @@ struct ArtistDetailView: View {
     private func albumCard(_ album: AlbumSummary) -> some View {
         Button {
             HeroTrigger.arm(HeroID.album(album.id))
-            appStore.send(.openDestination(.album(album.id)))
+            appStore.animateOpen(.album(album.id))
         } label: {
             CoverCardBody(
                 coverURL: album.picUrl?.resizedImageURL(384),

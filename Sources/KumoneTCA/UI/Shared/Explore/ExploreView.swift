@@ -21,7 +21,7 @@ struct ExploreView: View {
                             Button {
                                 HeroTrigger.arm(HeroID.playlist(playlist.id),
                                                 sourceImageURL: playlist.coverURL?.resizedImageURL(384))
-                                appStore.send(.openDestination(.playlist(playlist.id)))
+                                appStore.animateOpen(.playlist(playlist.id))
                             } label: {
                                 CoverCardBody(
                                     coverURL: playlist.coverURL?.resizedImageURL(384),
@@ -95,7 +95,7 @@ struct ToplistGrid: View {
         ) {
             ForEach(toplists) { toplist in
                 Button {
-                    appStore.send(.openDestination(.playlist(toplist.id)))
+                    appStore.animateOpen(.playlist(toplist.id))
                 } label: {
                     HStack(spacing: 14) {
                         CachedAsyncImage(url: toplist.coverImgUrl?.resizedImageURL(256))

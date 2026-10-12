@@ -73,12 +73,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             forName: .kumoneDebugPushDetail, object: nil, queue: .main
         ) { [weak self] _ in
             MainActor.assumeIsolated {
-                // withAnimation to match the real tap path, so the push
-                // transition this hook drives resembles a user's
-                // (AppAnimation.smooth is module-internal; same curve).
-                withAnimation(.easeInOut(duration: 0.35)) {
-                    self?.store.send(.openDestination(.playlist(3136952023)))
-                }
+                self?.store.animateOpen(.playlist(3136952023))
             }
         }
 
