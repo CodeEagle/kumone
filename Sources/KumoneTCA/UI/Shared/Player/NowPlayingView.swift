@@ -928,10 +928,7 @@ struct NowPlayingView: View {
         // directions; the real one reappears the instant the stand-in lands.
         .shadow(color: .black.opacity(0.45), radius: 36, y: 18)
         .opacity(heroFlight.active[HeroID.nowPlayingArtwork] != nil ? 0 : 1)
-        // The stand-in fades out as it lands, so the real artwork fades in
-        // over the same curve — the hand-off is a true crossfade instead of
-        // the artwork snapping on under a half-faded stand-in (a flicker).
-        .animation(AppAnimation.smooth, value: heroFlight.active[HeroID.nowPlayingArtwork] != nil)
+        .animation(nil, value: heroFlight.active[HeroID.nowPlayingArtwork] != nil)
         .scaleEffect(player.isPlaying ? 1 : 0.95)
         .animation(AppAnimation.bouncy, value: player.isPlaying)
     }
@@ -953,9 +950,7 @@ struct NowPlayingView: View {
                         hasStarted: $hasStartedTitleFlight
                     )
                     .opacity(heroFlight.active[HeroID.nowPlayingTitle] != nil ? 0 : 1)
-                    // Crossfades in as the stand-in fades out onto it
-                    // (see artworkSurface).
-                    .animation(AppAnimation.smooth, value: heroFlight.active[HeroID.nowPlayingTitle] != nil)
+                    .animation(nil, value: heroFlight.active[HeroID.nowPlayingTitle] != nil)
                     #endif
                 if player.currentTrack?.fee == 1 {
                     VIPBadge()
@@ -1153,7 +1148,7 @@ struct NowPlayingView: View {
             RoutePickerButton(diameter: 36, glyphSize: 14)
                 #if os(macOS)
                 .opacity(heroFlight.active[HeroID.nowPlayingAirPlay] != nil ? 0 : 1)
-                .animation(AppAnimation.smooth, value: heroFlight.active[HeroID.nowPlayingAirPlay] != nil)
+                .animation(nil, value: heroFlight.active[HeroID.nowPlayingAirPlay] != nil)
                 .heroAnchor(HeroID.nowPlayingAirPlayTarget)
                 .nowPlayingHeroTarget(
                     id: HeroID.nowPlayingAirPlay,
@@ -1193,7 +1188,7 @@ struct NowPlayingView: View {
         .help("歌词")
         #if os(macOS)
         .opacity(isFlying ? 0 : 1)
-        .animation(AppAnimation.smooth, value: isFlying)
+        .animation(nil, value: isFlying)
         .heroAnchor(HeroID.nowPlayingLyricsTarget)
         .nowPlayingHeroTarget(
             id: HeroID.nowPlayingLyrics,
@@ -1270,7 +1265,7 @@ struct NowPlayingView: View {
             .accessibilityLabel("私人漫游")
             #if os(macOS)
             .opacity(isFlying ? 0 : 1)
-            .animation(AppAnimation.smooth, value: isFlying)
+            .animation(nil, value: isFlying)
             .heroAnchor(HeroID.nowPlayingRoamingTarget)
             .nowPlayingHeroTarget(
                 id: HeroID.nowPlayingRoaming,
@@ -1456,7 +1451,7 @@ struct NowPlayingView: View {
         .buttonStyle(.pressable)
         #if os(macOS)
         .opacity(isFlying ? 0 : 1)
-        .animation(AppAnimation.smooth, value: isFlying)
+        .animation(nil, value: isFlying)
         .heroAnchor(HeroID.nowPlayingPlayPauseTarget)
         .nowPlayingHeroTarget(
             id: HeroID.nowPlayingPlayPause,
@@ -1490,7 +1485,7 @@ struct NowPlayingView: View {
         .buttonStyle(.pressable)
         #if os(macOS)
         .opacity(isFlying ? 0 : 1)
-        .animation(AppAnimation.smooth, value: isFlying)
+        .animation(nil, value: isFlying)
         #endif
     }
 
