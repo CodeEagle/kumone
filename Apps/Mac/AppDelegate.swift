@@ -103,8 +103,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                         if frame.minY > 540 && frame.height < 120 {
                             return "bar"
                         }
-                        if frame.minY < 320 && frame.minX > 300 {
+                        // The detail header strip: the landing cover and the
+                        // stand-in's own layer cross it during the flight, so
+                        // the region covers the whole pane width, not just the
+                        // old minX>300 investigation window.
+                        if frame.minY < 350, frame.width > 80 {
                             return "detail"
+                        }
+                        // The page itself: the fading scroll view and its
+                        // frosted background are pane-sized layers.
+                        if frame.width > 300, frame.height > 300 {
+                            return "page"
                         }
                         return nil
                     }
@@ -126,6 +135,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                             node = current.superlayer
                         }
                         return sizes.joined(separator: ">")
+                    }
+                    /// One full snapshot of the layer tree — order, frame,
+                    /// opacity — so a flying stand-in's layer can be located
+                    /// relative to the detail page's layers: region-filtered
+                    /// samples cannot answer z-order questions.
+                    func snapshot(_ layer: CALayer, depth: Int, into out: inout String) {
+                        let frame = layer.frame
+                        let opacity = layer.presentation()?.opacity ?? layer.opacity
+                        let indent = String(repeating: "  ", count: depth)
+                        out += String(
+                            format: "%@%@ %0.fx%0.f@%0.f,%0.f op=%.2f\n",
+                            indent, String(describing: type(of: layer)),
+                            frame.width, frame.height, frame.minX, frame.minY, opacity
+                        )
+                        for sub in (layer.sublayers ?? []) {
+                            snapshot(sub, depth: depth + 1, into: &out)
+                        }
                     }
                     func walk(_ layer: CALayer, path: String, into now: inout [String: Float]) {
                         let opacity = layer.presentation()?.opacity ?? layer.opacity
@@ -162,6 +188,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 }
                 let probe = LayerProbe()
                 var index = 0
+                // One-shot ignition evidence: the probe fires on demand, so a
+                // silent run (no /tmp/probe.txt at all) is triageable from here.
+                let windowCount = NSApplication.shared.windows.count
+                let firstWindow = NSApplication.shared.windows.first
+                KumoneLogger.app.notice(
+                    "LAYER PROBE fired windows=\(windowCount, privacy: .public) title=\(firstWindow?.title ?? "nil", privacy: .public) rootLayer=\(firstWindow?.contentView?.layer != nil, privacy: .public)"
+                )
                 Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { timer in
                     index += 1
                     guard
@@ -171,6 +204,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     else { return }
                     var now: [String: Float] = [:]
                     probe.walk(root, path: "r", into: &now)
+                    // Two full-tree snapshots bookend the flight: mid-flight
+                    // (the stand-in should be up, the page mid-fade) and after
+                    // the landing (the page settled, the target revealed).
+                    if index == 5 || index == 11 {
+                        var tree = "t=\(index)\n"
+                        probe.snapshot(root, depth: 0, into: &tree)
+                        let url = URL(fileURLWithPath: "/tmp/tree.txt")
+                        if FileManager.default.fileExists(atPath: url.path),
+                           let handle = try? FileHandle(forWritingTo: url) {
+                            try? handle.seekToEnd()
+                            try? handle.write(contentsOf: Data(tree.utf8))
+                            try? handle.close()
+                        } else {
+                            try? Data(tree.utf8).write(to: url)
+                        }
+                    }
                     // Full dump of the bar strip every frame (not just
                     // changes): a frozen intermediate opacity — the actual
                     // flicker signature — only shows up this way.

@@ -78,6 +78,12 @@ public final class HeroVisualAcceptance {
                   let source = HeroFrameStore.shared.frame(for: HeroID.playlist(playlistID)) else { return }
             caseData["source"] = rectData(source)
             caseData["click"] = now
+            #if DEBUG
+            // Arm the layer probe so this real tap's push is captured:
+            // the probe's 2s window covers tap-to-landing plus the page's
+            // own fade, the exact window the push timing question lives in.
+            NotificationCenter.default.post(name: .kumoneDebugCapture, object: nil)
+            #endif
             // SwiftUI global coordinates have a top-left origin; AppKit event
             // coordinates are bottom-left in the full-size content view.
             let point = NSPoint(x: source.midX, y: window.contentView!.bounds.height - source.midY)
