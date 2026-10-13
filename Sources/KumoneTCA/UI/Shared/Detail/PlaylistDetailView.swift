@@ -12,11 +12,19 @@ struct PlaylistDetailView: View {
     @State private var showFullDescription = false
 
     @State private var hasStartedHeroFlight = false
-    /// Drives the page's own arrival fade. `onAppear` flips it inside a
-    /// plain `withAnimation`, so the fade runs purely in the view layer —
-    /// no reliance on the push's animation transaction reaching the
-    /// overlay's insertion transition (TCA + Observation state changes do
-    /// not reliably carry one).
+    /// Drives the page's own arrival fade. The page does **not** fade in on
+    /// `onAppear`: a tap armed a card flight whose launch waits for this
+    /// page's detail load to place the target, so fading in immediately puts
+    /// the frosted background over the feed's cover while the header target
+    /// still hides under the flight gate — the cover then pops into an
+    /// already-settled page. Instead the fade starts when the stand-in
+    /// launches (landing with the spring), or straight away when no arm
+    /// exists (sidebar/deep-link arrivals), or when the arm clears without a
+    /// flight. A bounded fallback keeps a stalled arm from trapping the page
+    /// invisible. Flipping inside a plain `withAnimation` does not animate
+    /// here (TCA + Observation state changes carry no transaction); the
+    /// implicit `.animation(value:)` below does, so every flip defers one
+    /// run loop to let the unfaded frame render first.
     @State private var hasAppeared = false
 
     #if os(macOS)
@@ -116,15 +124,14 @@ struct PlaylistDetailView: View {
         // detailStack in MainWindow): a frosted background replaces the
         // opaque system scroll background so the rooted feed behind it and
         // the window's shader read through, and the whole page — this glass
-        // included — fades in after the cover lands.
+        // included — fades in with the cover's flight (see `hasAppeared`).
         .scrollContentBackground(.hidden)
-        // The whole page — frosted background included — fades in from zero
-        // when the page appears: driven by the page's own state flipped
-        // from onAppear inside withAnimation, so it starts the moment the
-        // push mounts the page (while the cover is still flying) without
-        // depending on an animation transaction riding the TCA send. The
-        // cover target is hidden by its own heroTarget until the flight
-        // ends, so it stays out of this fade.
+        // The whole page — frosted background included — fades in from
+        // zero. The entry gate (see `hasAppeared`) starts the fade with the
+        // cover's flight, so the background never occludes the feed's card
+        // while the header target is still gated out; the fade lands with
+        // the spring instead. The cover target is hidden by its own
+        // heroTarget until the flight ends, so it stays out of this fade.
         .opacity(hasAppeared ? 1 : 0)
         .animation(AppAnimation.smooth, value: hasAppeared)
         .background(.ultraThinMaterial)
@@ -136,13 +143,34 @@ struct PlaylistDetailView: View {
         }
         .onAppear {
             KumoneLogger.app.notice("PAGE appear playlist")
-            // Set on the next run loop: the first frame renders the
-            // unfaded state, and the implicit .animation(value:) above
-            // (proven to run in this app — withAnimation does not) then
-            // fades it in. WithAnimation here would render the final
-            // value directly with no fade at all.
+            if !isFlying {
+                // Nothing armed: no cover will ever fly, so the page stands
+                // on its own.
+                DispatchQueue.main.async { hasAppeared = true }
+            } else {
+                // Armed: wait for the launch (or the disarm/fallback paths)
+                // before fading in, so the background arrives with the cover
+                // instead of occluding it.
+                Task { @MainActor in
+                    try? await Task.sleep(nanoseconds: 1_000_000_000)
+                    guard !hasAppeared else { return }
+                    KumoneLogger.app.notice("PAGE fade fallback playlist")
+                    hasAppeared = true
+                }
+            }
+        }
+        #if os(macOS)
+        .onChange(of: heroFlight.active[heroID] != nil) { _, launched in
+            guard launched, !hasAppeared else { return }
+            KumoneLogger.app.notice("PAGE fade launch playlist")
             DispatchQueue.main.async { hasAppeared = true }
         }
+        .onChange(of: heroProbe.armedIDs.contains(heroID)) { _, armed in
+            guard !armed, !hasAppeared else { return }
+            KumoneLogger.app.notice("PAGE fade disarm playlist")
+            DispatchQueue.main.async { hasAppeared = true }
+        }
+        #endif
         .onDisappear {
             hasStartedHeroFlight = false
             HeroFlightDirector.shared.end(id: heroID)

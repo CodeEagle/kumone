@@ -8,8 +8,10 @@ struct AlbumDetailView: View {
 
     @State private var showFullDescription = false
     @State private var hasStartedHeroFlight = false
-    /// See PlaylistDetailView: the page's own arrival fade, driven from
-    /// `onAppear` in the view layer.
+    /// See PlaylistDetailView: the page's own arrival fade, gated on the
+    /// cover's flight launching (not on `onAppear`) so the frosted
+    /// background arrives with the cover instead of occluding the feed's
+    /// card while the header target is still gated out.
     @State private var hasAppeared = false
 
     #if os(macOS)
@@ -113,11 +115,11 @@ struct AlbumDetailView: View {
         #if os(macOS)
         .navigationTitle(store.album?.name ?? String(localized: "专辑"))
         // See PlaylistDetailView: a frosted background over the overlay's
-        // transparency, fading in with the rest of the page after the cover
-        // lands.
+        // transparency, fading in with the rest of the page when the
+        // cover's flight launches.
         .scrollContentBackground(.hidden)
-        // See PlaylistDetailView: the page fades in from zero on its own
-        // onAppear-driven state, without needing an animation transaction
+        // See PlaylistDetailView: the page fades in from zero, gated on the
+        // cover's flight launching, without needing an animation transaction
         // on the TCA send.
         .opacity(hasAppeared ? 1 : 0)
         .animation(AppAnimation.smooth, value: hasAppeared)
@@ -130,8 +132,29 @@ struct AlbumDetailView: View {
         }
         .onAppear {
             KumoneLogger.app.notice("PAGE appear album")
+            if !isFlying {
+                DispatchQueue.main.async { hasAppeared = true }
+            } else {
+                Task { @MainActor in
+                    try? await Task.sleep(nanoseconds: 1_000_000_000)
+                    guard !hasAppeared else { return }
+                    KumoneLogger.app.notice("PAGE fade fallback album")
+                    hasAppeared = true
+                }
+            }
+        }
+        #if os(macOS)
+        .onChange(of: heroFlight.active[heroID] != nil) { _, launched in
+            guard launched, !hasAppeared else { return }
+            KumoneLogger.app.notice("PAGE fade launch album")
             DispatchQueue.main.async { hasAppeared = true }
         }
+        .onChange(of: heroProbe.armedIDs.contains(heroID)) { _, armed in
+            guard !armed, !hasAppeared else { return }
+            KumoneLogger.app.notice("PAGE fade disarm album")
+            DispatchQueue.main.async { hasAppeared = true }
+        }
+        #endif
         .onDisappear {
             hasStartedHeroFlight = false
             HeroFlightDirector.shared.end(id: heroID)
