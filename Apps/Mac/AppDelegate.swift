@@ -204,10 +204,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     else { return }
                     var now: [String: Float] = [:]
                     probe.walk(root, path: "r", into: &now)
-                    // Two full-tree snapshots bookend the flight: mid-flight
-                    // (the stand-in should be up, the page mid-fade) and after
-                    // the landing (the page settled, the target revealed).
-                    if index == 5 || index == 11 {
+                    // Two full-tree snapshots: mid-flight (the stand-in should
+                    // be up and mid-fade: the flight launches ~565ms after
+                    // the armed tap once the detail loads) and post-landing.
+                    if index == 13 || index == 19 {
                         var tree = "t=\(index)\n"
                         probe.snapshot(root, depth: 0, into: &tree)
                         let url = URL(fileURLWithPath: "/tmp/tree.txt")
