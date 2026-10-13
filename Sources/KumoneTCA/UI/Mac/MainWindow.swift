@@ -277,10 +277,16 @@ public struct MainWindow: View {
                         pathStore.scope(component: component),
                         appStore: store
                     )
-                    // The page fades in as a whole after the cover lands
-                    // (its content gates on `isFlying` inside the page) and
-                    // fades back out on pop like a normal dismissal.
-                    .transition(.detailFade)
+                    // Insertion carries *no* opacity animation of its own:
+                    // the transition engine drives the inserting view's
+                    // opacity directly (0→1) for the animation's duration,
+                    // which bypasses the page's own `hasAppeared` gate — the
+                    // page would flash visible at the push and snap back to
+                    // gated-invisible when the animation commits, before the
+                    // cover's flight has launched. The page's arrival fade is
+                    // owned entirely by that gated state, so insertion is
+                    // identity; only the pop keeps a fade.
+                    .transition(.asymmetric(insertion: .identity, removal: .detailFade))
                 }
             }
             .animation(AppAnimation.smooth, value: store.path.count)
