@@ -14,7 +14,7 @@ import KumoneCore
 /// never measures at all, so the wait costs one line in the log and nothing
 /// in the flight, because no flight was possible.
 @MainActor
-enum HeroTrigger {
+public enum HeroTrigger {
     /// How long a missing source frame is waited for. A card anchored
     /// on-screen measures within a couple of layout passes; anything still
     /// absent after this was never visible, and an invisible source has no
@@ -88,5 +88,60 @@ enum HeroTrigger {
         )
         let tail = waited.map { " waited=\(Int(1000 * $0))ms" } ?? ""
         KumoneLogger.hero.notice("HERO ARM \(heroID, privacy: .public) source\(tail, privacy: .public)")
+    }
+
+    /// The reverse of the card→detail flight: the cover flies back from the
+    /// detail header to its card on the feed while the page fades out
+    /// underneath it. Both frames are already measured — the feed card's
+    /// anchor under the push's hero id, the header's under its `-target`
+    /// anchor — so the flight reads the frames as they currently stand. A
+    /// `-back` id keeps the detail page's own `onDisappear` cleanup (which
+    /// ends the armed id and clears its frame records) from taking the
+    /// return flight down with it.
+    public static func flyBack(top: AppFeature.Path.State) {
+        let heroID: String
+        var artworkURL: URL?
+        var cornerRadius: CGFloat = Theme.Radius.large
+        switch top {
+        case let .playlist(state):
+            heroID = HeroID.playlist(state.playlistID)
+            artworkURL = state.detail?.coverImgUrl?.resizedImageURL(384)
+            cornerRadius = Theme.Radius.large
+        case let .album(state):
+            heroID = HeroID.album(state.albumID)
+            artworkURL = state.album?.picUrl?.resizedImageURL(384)
+            cornerRadius = Theme.Radius.large
+        case let .artist(state):
+            heroID = HeroID.artist(state.artistID)
+            artworkURL = state.artist?.picUrl?.resizedImageURL(384)
+            cornerRadius = 90
+        default:
+            return
+        }
+        let anchorID = HeroID.detailTarget(heroID)
+        guard let detailFrame = HeroFrameStore.shared.frame(for: anchorID),
+              let feedFrame = HeroFrameStore.shared.frame(for: heroID) else {
+            KumoneLogger.hero.notice(
+                "HERO BACK skip \(heroID, privacy: .public) detail=\(HeroFrameStore.shared.frame(for: anchorID) != nil, privacy: .public) feed=\(HeroFrameStore.shared.frame(for: heroID) != nil, privacy: .public)"
+            )
+            return
+        }
+        let flyID = "\(heroID)-back"
+        HeroProbe.shared.begin(flyID)
+        HeroProbe.shared.recordSource(
+            id: flyID, frame: detailFrame, scale: 1, cornerRadius: cornerRadius,
+            imageURL: artworkURL
+        )
+        HeroProbe.shared.recordTarget(
+            id: flyID, frame: feedFrame, scale: 1, cornerRadius: Theme.Radius.standard
+        )
+        HeroFlightDirector.shared.start(
+            id: flyID,
+            content: .artwork(url: artworkURL, cornerRadius: cornerRadius),
+            targetFrame: feedFrame,
+            targetScale: 1,
+            targetAnchorID: nil
+        )
+        KumoneLogger.hero.notice("HERO BACK launch \(heroID, privacy: .public)")
     }
 }

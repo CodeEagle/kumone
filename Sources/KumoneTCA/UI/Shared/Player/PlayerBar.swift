@@ -24,7 +24,12 @@ struct PlayerBar: View {
             .padding(.horizontal, 14)
         }
         .frame(height: Theme.Layout.playerBarHeight)
-        .compatGlass(interactive: true, in: Capsule())
+        // ultraThinMaterial, not Liquid Glass: the bar's title sits inside
+        // the capsule, and glassEffect's refraction blurs the text under it
+        // (verified by A/B — the text reads sharp on the plain material,
+        // soft once the glass comes back). The material still tints what is
+        // behind the bar, just without a refraction step over the text.
+        .background(.ultraThinMaterial, in: Capsule())
         // The Liquid Glass effect layer does not participate in hit testing, so
         // the capsule itself has to claim the area: without this, clicks and
         // hover on the bar's empty stretches fall through to whatever is

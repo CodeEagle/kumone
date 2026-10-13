@@ -440,9 +440,11 @@ final class MainContainerViewController: NSViewController, NSToolbarDelegate {
 
     @objc private func navigateBack() {
         guard let id = store.path.ids.last else { return }
-        // Wrapped in withAnimation so the overlay's removal fades out (see
-        // animateOpen on the push side): a bare pop snaps the page away.
-        // AppAnimation.smooth is module-internal to KumoneTCA; same curve.
+        // The return flight reads both frames before the pop mutates the
+        // stack; the removal fade then runs in parallel with the flight.
+        if let top = store.path.last {
+            HeroTrigger.flyBack(top: top)
+        }
         withAnimation(.easeInOut(duration: 0.35)) {
             store.send(.path(.popFrom(id: id)))
         }
