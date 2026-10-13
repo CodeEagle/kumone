@@ -105,15 +105,19 @@ public enum HeroTrigger {
         switch top {
         case let .playlist(state):
             heroID = HeroID.playlist(state.playlistID)
-            artworkURL = state.detail?.coverImgUrl?.resizedImageURL(384)
+            // 512 matches the detail header's own artwork URL, so the
+            // return flight renders the bitmap the user was looking at —
+            // a differently-sized URL is a different cache key and paints
+            // the stand-in's placeholder for the whole flight.
+            artworkURL = state.detail?.coverImgUrl?.resizedImageURL(512)
             cornerRadius = Theme.Radius.large
         case let .album(state):
             heroID = HeroID.album(state.albumID)
-            artworkURL = state.album?.picUrl?.resizedImageURL(384)
+            artworkURL = state.album?.picUrl?.resizedImageURL(512)
             cornerRadius = Theme.Radius.large
         case let .artist(state):
             heroID = HeroID.artist(state.artistID)
-            artworkURL = state.artist?.picUrl?.resizedImageURL(384)
+            artworkURL = state.artist?.picUrl?.resizedImageURL(512)
             cornerRadius = 90
         default:
             return

@@ -169,13 +169,15 @@ struct ArtistDetailView: View {
         .onAppear {
             KumoneLogger.app.notice("PAGE appear artist")
             if !isFlying {
-                DispatchQueue.main.async { hasAppeared = true }
+                DispatchQueue.main.async {
+                    withAnimation(AppAnimation.smooth) { hasAppeared = true }
+                }
             } else {
                 Task { @MainActor in
                     try? await Task.sleep(nanoseconds: 1_000_000_000)
                     guard !hasAppeared else { return }
                     KumoneLogger.app.notice("PAGE fade fallback artist")
-                    hasAppeared = true
+                    withAnimation(AppAnimation.smooth) { hasAppeared = true }
                 }
             }
         }
@@ -183,12 +185,16 @@ struct ArtistDetailView: View {
         .onChange(of: heroFlight.active[heroID] != nil) { _, launched in
             guard launched, !hasAppeared else { return }
             KumoneLogger.app.notice("PAGE fade launch artist")
-            DispatchQueue.main.async { hasAppeared = true }
+            DispatchQueue.main.async {
+                withAnimation(AppAnimation.smooth) { hasAppeared = true }
+            }
         }
         .onChange(of: heroProbe.armedIDs.contains(heroID)) { _, armed in
             guard !armed, !hasAppeared else { return }
             KumoneLogger.app.notice("PAGE fade disarm artist")
-            DispatchQueue.main.async { hasAppeared = true }
+            DispatchQueue.main.async {
+                withAnimation(AppAnimation.smooth) { hasAppeared = true }
+            }
         }
         #endif
         .onDisappear {
@@ -209,7 +215,10 @@ struct ArtistDetailView: View {
                     .shadow(color: .black.opacity(0.2), radius: 10, y: 4)
                     .heroTarget(
                         id: heroID,
-                        artworkURL: artist.picUrl?.resizedImageURL(384),
+                        // Same URL the header above displays (see
+                    // PlaylistDetailView): the flight's stand-in reuses the
+                    // exact cached bitmap instead of an uncached placeholder.
+                    artworkURL: artist.picUrl?.resizedImageURL(512),
                         cornerRadius: 50,
                         hasStarted: $hasStartedHeroFlight
                     )
@@ -276,7 +285,10 @@ struct ArtistDetailView: View {
                 .animation(nil, value: isFlying)
                 .heroTarget(
                     id: heroID,
-                    artworkURL: artist.picUrl?.resizedImageURL(384),
+                    // Same URL the header above displays (see
+                    // PlaylistDetailView): the flight's stand-in reuses the
+                    // exact cached bitmap instead of an uncached placeholder.
+                    artworkURL: artist.picUrl?.resizedImageURL(512),
                     cornerRadius: 90,
                     hasStarted: $hasStartedHeroFlight
                 )

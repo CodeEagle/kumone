@@ -146,7 +146,9 @@ struct PlaylistDetailView: View {
             if !isFlying {
                 // Nothing armed: no cover will ever fly, so the page stands
                 // on its own.
-                DispatchQueue.main.async { hasAppeared = true }
+                DispatchQueue.main.async {
+                    withAnimation(AppAnimation.smooth) { hasAppeared = true }
+                }
             } else {
                 // Armed: wait for the launch (or the disarm/fallback paths)
                 // before fading in, so the background arrives with the cover
@@ -155,7 +157,7 @@ struct PlaylistDetailView: View {
                     try? await Task.sleep(nanoseconds: 1_000_000_000)
                     guard !hasAppeared else { return }
                     KumoneLogger.app.notice("PAGE fade fallback playlist")
-                    hasAppeared = true
+                    withAnimation(AppAnimation.smooth) { hasAppeared = true }
                 }
             }
         }
@@ -163,12 +165,16 @@ struct PlaylistDetailView: View {
         .onChange(of: heroFlight.active[heroID] != nil) { _, launched in
             guard launched, !hasAppeared else { return }
             KumoneLogger.app.notice("PAGE fade launch playlist")
-            DispatchQueue.main.async { hasAppeared = true }
+            DispatchQueue.main.async {
+                withAnimation(AppAnimation.smooth) { hasAppeared = true }
+            }
         }
         .onChange(of: heroProbe.armedIDs.contains(heroID)) { _, armed in
             guard !armed, !hasAppeared else { return }
             KumoneLogger.app.notice("PAGE fade disarm playlist")
-            DispatchQueue.main.async { hasAppeared = true }
+            DispatchQueue.main.async {
+                withAnimation(AppAnimation.smooth) { hasAppeared = true }
+            }
         }
         #endif
         .onDisappear {
@@ -192,7 +198,11 @@ struct PlaylistDetailView: View {
                     .shadow(color: .black.opacity(0.2), radius: 10, y: 4)
                     .heroTarget(
                         id: heroID,
-                        artworkURL: detail.coverImgUrl?.resizedImageURL(384),
+                        // Same URL the header above displays: the flight's
+                    // stand-in — and the return flight launched from this
+                    // page — reuses the exact cached bitmap instead of an
+                    // uncached placeholder.
+                    artworkURL: detail.coverImgUrl?.resizedImageURL(512),
                         cornerRadius: Theme.Radius.standard,
                         hasStarted: $hasStartedHeroFlight
                     )
@@ -316,7 +326,11 @@ struct PlaylistDetailView: View {
                 .animation(nil, value: isFlying)
                 .heroTarget(
                     id: heroID,
-                    artworkURL: detail.coverImgUrl?.resizedImageURL(384),
+                    // Same URL the header above displays: the flight's
+                    // stand-in — and the return flight launched from this
+                    // page — reuses the exact cached bitmap instead of an
+                    // uncached placeholder.
+                    artworkURL: detail.coverImgUrl?.resizedImageURL(512),
                     cornerRadius: Theme.Radius.large,
                     hasStarted: $hasStartedHeroFlight
                 )
