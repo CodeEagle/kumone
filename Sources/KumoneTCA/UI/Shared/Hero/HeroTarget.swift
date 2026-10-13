@@ -55,6 +55,7 @@ struct HeroTargetModifier: ViewModifier {
                 )
                 hasStarted = true
                 KumoneLogger.hero.notice("HERO TARGET launched \(id, privacy: .public)")
+                HeroProbe.writeTimed("TARGET launched", id)
             }
             .onDisappear {
                 HeroFrameStore.shared.clearTarget(anchorID)

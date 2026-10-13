@@ -143,6 +143,7 @@ struct PlaylistDetailView: View {
         }
         .onAppear {
             KumoneLogger.app.notice("PAGE appear playlist")
+            HeroProbe.writeTimed("PAGE appear")
             if !isFlying {
                 // Nothing armed: no cover will ever fly, so the page stands
                 // on its own.
@@ -157,6 +158,7 @@ struct PlaylistDetailView: View {
                     try? await Task.sleep(nanoseconds: 1_000_000_000)
                     guard !hasAppeared else { return }
                     KumoneLogger.app.notice("PAGE fade fallback playlist")
+            HeroProbe.writeTimed("PAGE fade fallback")
                     withAnimation(AppAnimation.smooth) { hasAppeared = true }
                 }
             }
@@ -165,6 +167,7 @@ struct PlaylistDetailView: View {
         .onChange(of: heroFlight.active[heroID] != nil) { _, launched in
             guard launched, !hasAppeared else { return }
             KumoneLogger.app.notice("PAGE fade launch playlist")
+            HeroProbe.writeTimed("PAGE fade launch")
             DispatchQueue.main.async {
                 withAnimation(AppAnimation.smooth) { hasAppeared = true }
             }

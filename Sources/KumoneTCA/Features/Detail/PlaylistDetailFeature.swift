@@ -102,6 +102,7 @@ public struct PlaylistDetailFeature {
                 KumoneLogger.api.notice(
                     "PLAYLIST DETAIL onAppear id=\(playlistID, privacy: .public) loadState=\(loadState, privacy: .public)"
                 )
+                HeroProbe.writeTimed("DETAIL onAppear", "id=\(playlistID)")
                 guard state.loadState == .idle else { return .none }
                 return startLoad(state: &state)
 
@@ -117,6 +118,7 @@ public struct PlaylistDetailFeature {
                 KumoneLogger.api.notice(
                     "PLAYLIST DETAIL loaded id=\(playlistID, privacy: .public) tracks=\(playlist.tracks.count, privacy: .public)"
                 )
+                HeroProbe.writeTimed("DETAIL loaded", "id=\(playlistID)")
                 state.detail = playlist
                 state.tracks = playlist.tracks.filter {
                     !state.reducedRecommendationIDs.contains($0.id)

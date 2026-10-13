@@ -94,7 +94,7 @@ final class HeroProbe: ObservableObject {
         }
     }
 
-    static let logFilePath = "/tmp/kumone-hero.log"
+    nonisolated static let logFilePath = "/tmp/kumone-hero.log"
 
     /// How many finished flights the audit trail keeps before the oldest
     /// are dropped. The self-test suites read verdicts back; a long running
@@ -367,9 +367,27 @@ final class HeroProbe: ObservableObject {
         }
     }
 
+    /// One line with the timestamp baked in, for entry points whose own
+    /// logging goes only to the system log (page appear, detail load,
+    /// flight launch): `log show` on a remote machine needs elevated
+    /// privileges, while this file is readable over plain ssh.
+    nonisolated static func writeTimed(_ tag: String, _ detail: String = "") {
+        let stamp = ISO8601DateFormatter.string(from: Date(), timeZone: .current, formatOptions: [
+            .withInternetDateTime, .withFractionalSeconds,
+        ])
+        let line = "TIMING \(stamp) \(tag)\(detail.isEmpty ? "" : " \(detail)")"
+        let url = URL(fileURLWithPath: logFilePath)
+        writeQueue.async {
+            BoundedLogFile.append(line, to: url)
+        }
+    }
+
     /// One writer at a time, in call order, so a flight's phases and verdict
     /// stay whole lines even when ten flights report in the same frame.
-    private static let writeQueue = DispatchQueue(
+    /// Nonisolated: reducers (nonisolated contexts that actually run on the
+    /// main thread) also write timing lines; the serial queue is the
+    /// synchronization boundary.
+    private nonisolated static let writeQueue = DispatchQueue(
         label: "im.missuo.Kumone.hero-probe-log", qos: .utility
     )
 }
