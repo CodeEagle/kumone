@@ -631,6 +631,17 @@ struct MainWindowConfigurator: NSViewRepresentable {
             return false
         }
 
+        // Activation must not restore keyboard focus to the toolbar's search
+        // capsule: AppKit brings the window back as key and reinstates its
+        // saved first responder, so a field the user once typed into lights
+        // up (focused stroke, caret) without any click. The same applies to
+        // any text field in the content; only an explicit click should
+        // focus one.
+        func windowDidBecomeKey(_ notification: Notification) {
+            guard let window, window.firstResponder is NSTextView else { return }
+            window.makeFirstResponder(nil)
+        }
+
         // Transparently forward every other delegate callback to SwiftUI.
         override func responds(to aSelector: Selector!) -> Bool {
             super.responds(to: aSelector) || (forwardee?.responds(to: aSelector) ?? false)
