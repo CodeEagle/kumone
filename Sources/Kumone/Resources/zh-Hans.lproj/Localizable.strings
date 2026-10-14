@@ -498,3 +498,8 @@
 /* Shader overlay */
 "Shader 遮罩透明度" = "Shader 遮罩透明度";
 "调整正在播放页面上方的黑色遮罩，100% 时完全透明" = "调整正在播放页面上方的黑色遮罩，100% 时完全透明";
+
+/* MiuMiu application menus */
+"关于 MiuMiu" = "关于 MiuMiu";
+"隐藏 MiuMiu" = "隐藏 MiuMiu";
+"退出 MiuMiu" = "退出 MiuMiu";

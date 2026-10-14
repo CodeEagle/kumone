@@ -33,16 +33,16 @@ enum MainMenu {
         let mainMenu = NSMenu()
         NSApp.mainMenu = mainMenu
 
-        let appItem = NSMenuItem(title: "Kumone", action: nil, keyEquivalent: "")
-        let appMenu = NSMenu(title: "Kumone")
+        let appItem = NSMenuItem(title: "MiuMiu", action: nil, keyEquivalent: "")
+        let appMenu = NSMenu(title: "MiuMiu")
         appItem.submenu = appMenu
         mainMenu.addItem(appItem)
-        appMenu.addItem(NSMenuItem(title: String(localized: "关于 Kumone"),
+        appMenu.addItem(NSMenuItem(title: String(localized: "关于 MiuMiu"),
                                   action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)), keyEquivalent: ""))
         appMenu.addItem(.separator())
         add(to: appMenu, title: String(localized: "设置…"), keyEquivalent: ",", action: showSettings)
         appMenu.addItem(.separator())
-        let hide = NSMenuItem(title: String(localized: "隐藏 Kumone"),
+        let hide = NSMenuItem(title: String(localized: "隐藏 MiuMiu"),
                               action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
         hide.keyEquivalentModifierMask = [.command]
         appMenu.addItem(hide)
@@ -53,7 +53,7 @@ enum MainMenu {
         appMenu.addItem(NSMenuItem(title: String(localized: "显示全部"),
                                   action: #selector(NSApplication.unhideAllApplications(_:)), keyEquivalent: ""))
         appMenu.addItem(.separator())
-        let quit = NSMenuItem(title: String(localized: "退出 Kumone"),
+        let quit = NSMenuItem(title: String(localized: "退出 MiuMiu"),
                               action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         quit.keyEquivalentModifierMask = [.command]
         appMenu.addItem(quit)

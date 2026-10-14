@@ -1,4 +1,4 @@
-name: Kumone
+name: MiuMiu
 options:
   minimumXcodeGenVersion: "2.44.1"
   xcodeVersion: "27.0"
@@ -44,7 +44,7 @@ targetTemplates:
     info:
       path: Config/Generated/${target_name}-Info.plist
       properties:
-        CFBundleDisplayName: Kumone
+        CFBundleDisplayName: MiuMiu
         CFBundleLocalizations: [zh-Hans, en]
         NSAppTransportSecurity:
           NSAllowsArbitraryLoads: true
@@ -81,7 +81,7 @@ targets:
         product: Sparkle
     settings:
       base:
-        PRODUCT_NAME: Kumone
+        PRODUCT_NAME: MiuMiu
         PRODUCT_BUNDLE_IDENTIFIER: im.missuo.Kumone
         ENABLE_APP_SANDBOX: NO
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon

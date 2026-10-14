@@ -6,176 +6,265 @@
 
 <div align="center">
 
-<img src="docs/icon.png" width="140" alt="Kumone" />
+<img src="docs/icon.png" width="140" alt="MiuMiu" />
 
-# Kumone
+# MiuMiu
 
-**雲の音 — Native macOS client for NetEase Cloud Music**
+**A native macOS music client, forked from [Kumone](https://github.com/missuo/kumone).**
 
-Built with SwiftUI · Talks directly to NetEase's real API · Sparkle auto-updates
+AppKit + SwiftUI · TCA · APlay · Metal backgrounds
 
-[![Platform](https://img.shields.io/badge/platform-macOS%2015%2B-blue?logo=apple)](#building)
+[![Platform](https://img.shields.io/badge/platform-macOS%2015%2B-blue?logo=apple)](#build-and-run)
 [![Swift](https://img.shields.io/badge/Swift-6.2-F05138?logo=swift&logoColor=white)](Package.swift)
 [![License](https://img.shields.io/badge/license-LGPL--3.0--only-orange)](LICENSE)
 
-<table>
-  <tr>
-    <td><img src="docs/screenshot-home.png" alt="Home" /></td>
-    <td><img src="docs/screenshot-nowplaying.png" alt="Now Playing" /></td>
-  </tr>
-  <tr>
-    <td><img src="docs/screenshot-daily.png" alt="Daily Recommendations" /></td>
-    <td><img src="docs/screenshot-lyrics.png" alt="Lyrics Panel" /></td>
-  </tr>
-</table>
+[Source branch](https://github.com/CodeEagle/kumone/tree/rewrite/appkit) · [Configuration guide](docs/config-ui.md)
 
 </div>
 
-## About the Name
+MiuMiu builds on Kumone's NetEase Cloud Music client and reworks the macOS
+application around a native AppKit shell, explicit state management, a new
+playback engine, and continuous artwork transitions. This branch focuses on
+the experience of browsing, listening, and moving between the mini player and
+now playing.
 
-**Kumone** comes from the Japanese **雲の音** (*kumo no ne*, "the sound of clouds"), contracted into one word — **雲音** (くもね, *kumone*). It is a nod to the "cloud" in NetEase **Cloud** Music: the music drifting down to you from the cloud.
+The public application name is **MiuMiu**. The repository, Swift module names,
+bundle identifiers, and `~/.config/kumone` configuration directory retain their
+existing names for compatibility.
 
-## Features
+## Changes since the fork
 
-- 🔐 **QR code login** — scan with the NetEase Cloud Music app; cookies are persisted locally and auto-refreshed
-- 🏠 **Home** — daily recommendations, Personal FM, Heartbeat Mode, recommended playlists, radar playlists (Personal Radar family, personalized per account), charts, new albums, recommended artists
-- 🧭 **Explore** — category playlists (curated / official / charts / mood) with infinite scrolling
-- 🎵 **Playback** — AVPlayer engine, Standard to Hi-Res quality (lossless with 黑胶 VIP, automatic fallback), shuffle / repeat one / repeat all, play-next queue, gray track detection
-- 🚗 **CarPlay (iOS, opt-in)** — Now Playing, tabbed library, queue, and search templates ship in the binary; activation requires an [Apple CarPlay audio entitlement](https://developer.apple.com/contact/carplay/), which is not granted to most accounts. Build defaults to disabled so the source tree stays open-source-friendly; see [Enabling CarPlay](#enabling-carplay-ios) below
-- 🔓 **Gray track unblocking** — native implementation of UnblockNeteaseMusic's core sources (pyncmd / Kuwo / Kugou); unavailable or trial-only tracks automatically resolve from third-party sources
-- 🖼 **Immersive now-playing page** — artwork-tinted gradient backdrop, large artwork, big synced lyrics (click the player-bar artwork to open, Esc to close)
-- 📻 **Personal FM** — immersive roaming page with trash / skip
-- 📝 **Lyrics** — glass side panel with line-synced lyrics + translation, click to seek
-- 🪟 **Desktop lyrics** — LyricsX-style floating always-on-top lyric line with translation; draggable, persisted position, visible across Spaces and full-screen apps
-- 📚 **Library** — liked songs, created / subscribed playlists, saved albums, followed artists, recently played, cloud disk
-- ✏️ **Playlist management** — create / delete / subscribe playlists, add / remove tracks, heart songs
-- 🔍 **Search** — aggregate / songs / artists / albums / playlists, trending keyword placeholder
-- ⌨️ **System integration** — media keys / Control Center (Now Playing), scrobbling, playback queue restored across launches
-- 🌐 **Localization** — English and Simplified Chinese, following the system language; bilingual release notes in Sparkle updates
+| Area | Changes in this branch |
+| --- | --- |
+| Architecture | AppKit window and menu lifecycle; shared TCA store; separate Core, TCA, UI, and Shaders modules |
+| Playback | APlay engine; cache-aware streaming; CDN host failover; clearer loading, buffering, and source fallback behavior |
+| Music sources | Provider abstraction; partial anonymous QQ and Kuwo integrations; configurable self-hosted LX URL resolver |
+| Now playing | Classic, immersive, vinyl, and minimal modes; Zen behavior; revised normal/FM controls and metadata layout |
+| Motion | Bidirectional Hero transitions for covers, metadata, badges, and controls; consistent scale press feedback |
+| Backgrounds | Shared window-level Metal rendering; artwork palettes; optional audio response; shader import and transparency controls |
+| macOS integration | Menu bar player, desktop lyrics, native toolbar, configurable local/global shortcuts, media keys and Control Center |
+| Customization | YAML screens, themes, bindings, actions, and keymaps with live reload |
+| Reliability | Bounded caches and resource lifetimes; navigation, rendering, transport, and native-window regression checks |
+| Localization | English and Simplified Chinese coverage for features added in the fork |
 
-## Installation
+### Native application structure
 
-Requires macOS 15+ (Universal: Apple Silicon and Intel).
+- Replace the macOS SwiftUI scene shell with AppKit-managed windows, toolbars,
+  menus, and controllers, while keeping SwiftUI for content.
+- Move application and feature state into TCA reducers with dependency clients
+  and a shared store. Playback, navigation, settings, and system actions use
+  the same state and action flow.
+- Separate API/models/playback/storage, feature reducers/views, configurable UI,
+  and Metal shaders into independent SwiftPM modules.
+- Put search in the native toolbar, refine sidebar and back-button behavior,
+  and enforce a minimum main-window size.
+- Preserve standard window closing with ⌘W while immersive playback hides the
+  traffic lights.
 
-### Homebrew
+### Playback and streaming
+
+- Replace the original AVPlayer playback path with
+  [APlay](https://github.com/CodeEagle/APlay), currently pinned to **2.2.3**.
+- Integrate its streaming cache so completed cached audio can be replayed
+  without another network fetch. Add storage usage and cache-cleanup controls.
+- Add bounded NetEase CDN twin-host failover while preserving signed URLs,
+  range requests, and the original cache identity.
+- Refine buffering and end-of-stream handling, publish now-playing metadata
+  during loading, and pause the outgoing track when a new track is selected.
+- Keep configurable audio-source fallback and expose a source badge for
+  fallback streams.
+- Add a configurable recently-played filter for Personal FM and Heartbeat Mode.
+
+Some transport improvements were adapted from upstream to the APlay/AppKit
+architecture. Their scope and validation are recorded in
+[upstream macOS ports](docs/upstream-macos-ports.md).
+
+### Music provider abstraction
+
+Features now access music through a provider protocol rather than depending
+on NetEase directly. Provider-specific IDs and optional capabilities make
+unsupported operations explicit.
+
+| Provider | Implemented scope | Current boundaries |
+| --- | --- | --- |
+| NetEase | Main account, discovery, library, search, playback, lyrics, FM and playlist workflows | Availability and quality depend on the account and upstream service |
+| QQ Music | Anonymous hot keywords, charts, recommended playlists, and lyrics | Login, search, and direct playback are not implemented |
+| Kuwo | Anonymous song search, suggestions, selected charts, and playback URL conversion | Playback conversion exposes standard MP3; no account/library management or lyrics |
+| LX | Playback URL resolution through a configured self-hosted LX-Source endpoint; also used in the unblock fallback chain | Requires your own endpoint; not a full discovery or account provider |
+
+The QQ, Kuwo, and LX integrations are partial implementations, not feature
+parity with NetEase. NetEase requests still use native Swift weapi/eapi
+handling; the optional LX resolver uses the service configured by the user.
+
+### Now playing and mini player
+
+- Refine the Liquid Glass mini player into a two-row layout with aligned text,
+  status badges, transport controls, and utility buttons.
+- Keep VIP and quality badges present, with consistent borders and muted
+  unavailable states. Place Like at the far right of the mini player.
+- Center the main play/pause button horizontally in both normal playback and
+  Personal FM, regardless of the number of surrounding controls.
+- Keep title text centered independently of its trailing VIP, quality, and FM
+  tags; reserve room for the tags. Allow long artist/album metadata to wrap,
+  with links to the corresponding detail pages.
+- Refine vinyl presentation and Zen behavior: chrome fades while artwork and
+  metadata move toward the center without rebuilding the controls.
+- Use translucent black backgrounds for operation buttons to preserve contrast
+  on bright shaders.
+
+### Hero transitions and navigation
+
+- Fly artwork between the mini player and now playing, and between cards or
+  track artwork and playlist, album, or artist detail headers, in both directions.
+- Animate related titles, artists, VIP/quality badges, playback buttons, lyrics
+  controls, AirPlay, and FM status alongside the artwork where applicable.
+- Hide the appropriate source and destination endpoints during a flight to
+  avoid duplicate covers and background flashes.
+- Reuse live cached artwork for card transitions; retain progressive
+  higher-resolution artwork upgrades for the expanding player cover.
+- Interpolate text length, clipping, color, and typography during the return to
+  the mini player instead of switching at landing.
+- Defer mounting playlist rows until the entering artwork transition finishes
+  to avoid blocking its animation with list layout.
+- Unify card press feedback with scale animations, and correct return geometry
+  for radar playlists and recommended artists.
+
+### Metal backgrounds and readability
+
+- Render a shared Metal backdrop at window level, visible through the sidebar
+  and content surfaces, instead of mounting duplicate full-window renderers.
+- Build and ease color palettes from track artwork. Imported shaders can react
+  to live PCM spectrum and beat information; bundled ShipSwift presets retain
+  their original independent animation and colors.
+- Support shader selection and import, readable shader names, and a fresh
+  presentation host when backgrounds are enabled again.
+- Add a 0–100% now-playing shader transparency setting. At 100%, the shader is
+  shown without the previous full-page darkening.
+- Blur the live shader behind metadata, lyrics, and the whole operation area
+  without the gray tint of dark materials. Metadata blur fades gradually into
+  the surrounding background.
+
+### System integration and customization
+
+- Provide a menu bar player, floating desktop lyrics, media-key handling,
+  Control Center metadata, and a native AirPlay route picker.
+- Add configurable local and global shortcuts, native menu key equivalents,
+  conflict handling, and shortcut recording.
+- Add a configuration-driven UI engine with reusable components, live state
+  bindings, parameterized actions, collection rendering, and custom windows.
+- Load screen, theme, and keymap overrides from `~/.config/kumone`; reload
+  edited files without recompiling. See [the configuration guide](docs/config-ui.md)
+  for supported components and examples.
+
+### Reliability and localization
+
+- Bound image caches and diagnostic logs, reuse retained artwork, and release
+  shader resources and window-owned state when their owners disappear.
+- Improve request cancellation, stale search-result handling, pagination,
+  decoding, and atomic shader imports.
+- Add tests for cache/transport lifetimes, provider behavior, reducer actions,
+  Hero navigation, playback layout, actual GPU blur output, and native window
+  commands.
+- Localize fork-added settings, shortcuts, source errors, player controls, and
+  other UI in English and Simplified Chinese; package both catalogs into app
+  targets and validate matching keys and interpolation placeholders.
+- Record debugging findings in [lessons learned](docs/lessons-learned.md).
+
+## Everyday features
+
+MiuMiu retains Kumone's core NetEase workflows: QR login, daily recommendations,
+Personal FM, Heartbeat Mode, radar and category playlists, charts, new albums,
+recommended artists, search, liked songs, saved playlists/albums/artists,
+recent playback, cloud disk, playlist management, synchronized lyrics and
+translations, quality selection, shuffle/repeat, queue management, scrobbling,
+and playback-state restoration.
+
+## Build and run
+
+The primary development target is **macOS 15+**, using **Xcode 26+** with a
+Swift 6.2-compatible toolchain. Source builds are the documented installation
+path for this fork; upstream Homebrew packages and releases install Kumone.
 
 ```bash
-brew install owo-network/brew/kumone --cask
+git clone --branch rewrite/appkit https://github.com/CodeEagle/kumone.git
+cd kumone
+swift build
+Scripts/build-app.sh debug
+open .build/app/MiuMiu.app
 ```
 
-### Manual download
-
-Download the latest `Kumone-x.y.z.zip` from
-[Releases](https://github.com/missuo/kumone/releases/latest), unzip, and drag
-it into Applications.
-
-The app is signed with a Developer ID certificate and notarized by Apple, with
-built-in Sparkle automatic updates (menu bar: Kumone → Check for Updates…).
-
-### iOS / iPadOS (sideload)
-
-Every release ships an **unsigned** `Kumone-iOS-x.y.z.ipa` (iOS 16+). Kumone
-is an unofficial client and will not be on the App Store or TestFlight, so
-install it with a sideloading tool that signs the IPA with your own Apple ID —
-[AltStore](https://altstore.io), [SideStore](https://sidestore.io),
-[Sideloadly](https://sideloadly.io) or Xcode all work. On iOS 26+ the tab bar is the system’s native Liquid Glass; on iOS 16–25 it falls back to a simulated glass bar.
-
-Updating: iOS apps can't replace themselves. Settings → About → **Check for
-Updates** tells you when a newer release exists and links to it; download the
-new IPA and reinstall with the same tool — sign-in state and settings are kept.
-AltStore / SideStore can also track the release automatically via a source.
-
-#### In-app auto-update (TrollStore only)
-
-On a device with **[TrollStore](https://github.com/opa334/TrollStore)** (巨魔),
-Kumone updates itself: Settings → About → **Check for Updates** (it also checks
-on launch) downloads the new IPA with a progress ring and hands it to TrollStore
-via `apple-magnifier://install?url=…` for a one-tap, fully automatic install —
-the same mechanism Dopamine uses. This works **only under TrollStore**: a plain
-AltStore/SideStore sideload is signed with a personal certificate and has no way
-to install an IPA on-device, so there it degrades to opening the release page
-for a manual re-sideload.
-
-### Enabling CarPlay (iOS)
-
-CarPlay support is fully implemented in `Sources/Kumone/Core/CarPlay/`, but the
-**default build ships none of it**: no `com.apple.developer.carplay-audio`
-entitlement, no `UISupportsCarPlay`, and no CarPlay scene declaration. Apple
-only grants that entitlement after you submit a CarPlay audio app
-[application](https://developer.apple.com/contact/carplay/), and building with
-it unapproved fails to sign with:
-
-> Entitlement com.apple.developer.carplay-audio not found and could not be
-> included in profile.
-
-So CarPlay is a one-command opt-in instead:
+For a release bundle:
 
 ```bash
-make configure-carplay   # enable
-make configure           # back to the default, CarPlay-free build
+Scripts/build-app.sh release
 ```
 
-`make configure-carplay` derives a CarPlay copy of `Config/Info.plist` and
-`Config/KumoneIOS.entitlements` into `ios/Config/Generated/`, then writes
-`ios/Config/CarPlay.local.xcconfig` to point the build at them. All three files
-are untracked, and the Xcode project itself is never modified — so enabling
-CarPlay leaves `git status` clean and produces nothing to review.
+The default build uses the host architecture. Set `ARCHES="arm64 x86_64"` when
+packaging a Universal build. `Scripts/compile_and_run.sh debug` rebuilds and
+relaunches the local app.
 
-Once your developer account has the entitlement approved:
+The existing update infrastructure still references upstream Kumone releases;
+this branch does not yet document an independent MiuMiu update feed, signed
+release, or notarization pipeline.
 
-1. Apply for and obtain the **CarPlay (Audio)** capability for your App ID in
-   [Apple Developer → Identifiers](https://developer.apple.com/account/resources/identifiers/list).
-2. Regenerate the provisioning profile so it carries the new capability.
-3. Run `make configure-carplay`.
-4. `Cmd + Shift + K` and rebuild on a device.
+### Xcode and other Apple platforms
 
-To test without a car, use the CarPlay Simulator: Xcode ▸ Open Developer Tool ▸
-Simulator, then I/O ▸ External Displays ▸ CarPlay.
-
-## Building
-
-Requires macOS 15+ and Xcode 26+.
+The root XcodeGen specification also includes iOS 17+ and visionOS 1.0+ targets.
+The detailed UI work described above is centered on macOS; inclusion of other
+platform targets does not imply identical presentation or release readiness.
 
 ```bash
-swift build                    # compile
-Scripts/build-app.sh           # package the .app (outputs .build/app/MiuMiu.app)
-Scripts/compile_and_run.sh     # kill → repackage → relaunch
+xcodegen generate --spec project.yml
+open MiuMiu.xcodeproj
 ```
+
+Choose `KumoneMac`, `KumoneiOS`, or `KumoneVision`. Internal target names are
+retained. Shared CarPlay code is in `Sources/KumoneTCA/iOS/CarPlay`; the legacy
+`ios/` build setup provides `make configure` / `make configure-carplay` for its
+optional capability. CarPlay remains disabled by default and requires the
+appropriate Apple entitlement and signing profile.
 
 ## Architecture
 
+```text
+Apps/
+├── Mac/                 # AppKit application, windows, menus, toolbar, integrations
+├── iOS/                 # UIKit scene entry point
+├── UIKitCommon/         # Shared UIKit application plumbing
+└── Vision/              # visionOS entry point
+Sources/
+├── KumoneCore/          # Providers, APIs, models, APlay integration, caches, rendering
+├── KumoneTCA/           # Reducers, dependency clients, SwiftUI screens, Hero system
+├── KumoneUI/            # YAML UI engine, bindings, actions, themes, components
+├── KumoneShaders/       # Metal shaders, shared uniforms, bundled presets
+└── Kumone/Resources/    # English and Simplified Chinese catalogs
+Tests/                   # Core, TCA, UI-engine, and native macOS checks
 ```
-Sources/Kumone/
-├── Core/
-│   ├── API/            # NeteaseCrypto (weapi/eapi encryption), NeteaseClient (transport + cookies), NeteaseAPI (~50 endpoints)
-│   ├── Models/         # unified Track model (tolerates both JSON shapes), lyrics parser
-│   ├── Player/         # PlayerService (queue / shuffle / repeat / FM / URL resolution), UnblockService, NowPlayingManager
-│   └── Storage/        # AccountStore, SettingsManager, two-tier image cache
-├── DesignSystem/       # design tokens, button styles (hover scale / row highlight / chips), skeletons, cards, marquee, artwork palette
-└── Features/           # pages + player bar + immersive now-playing + lyrics/queue panels
+
+## Development checks
+
+```bash
+swift test
+python3 Scripts/check-localizations.py
 ```
 
-No third-party API server involved: weapi (double AES-CBC + RSA) and eapi
-(AES-ECB + MD5 digest) encryption are implemented natively in Swift, and
-requests go straight to `music.163.com` / `interface.music.163.com`.
+Run the localization check after a build so compiler-extracted strings are
+available. Native window and Metal checks need the corresponding macOS runtime.
 
-## Related projects
+## Credits and license
 
-Want a **tvOS** build? Check out [Sonimbus](https://github.com/gee1k/sonimbus), a NetEase Cloud Music client for Apple TV maintained by my friend Svend.
+MiuMiu is a fork of **[Kumone](https://github.com/missuo/kumone)** by **missuo**,
+not a from-scratch implementation. Thanks to the upstream project and its
+contributors for the client and the continuing improvements adapted here.
 
-## Credits
+- [APlay](https://github.com/CodeEagle/APlay) — playback engine and streaming cache.
+- [The Composable Architecture](https://github.com/pointfreeco/swift-composable-architecture) — application state and effects.
+- ShipSwift — original bundled shader presets.
+- [YesPlayMusic](https://github.com/qier222/YesPlayMusic) and [kaset](https://github.com/sozercan/kaset) — upstream references for music-client behavior, design, and packaging.
+- [UnblockNeteaseMusic/server](https://github.com/UnblockNeteaseMusic/server) — upstream reference for source matching and fallback.
+- [LyricsX](https://github.com/ddddxxx/LyricsX) — upstream reference for desktop lyrics.
+- [Sonimbus](https://github.com/gee1k/sonimbus) — a related NetEase client for Apple TV.
 
-Kumone is written from scratch in Swift. No code was copied from the projects
-below, but their design and implementation ideas were referenced extensively:
-
-- [YesPlayMusic](https://github.com/qier222/YesPlayMusic) (MIT, © qier222) — feature design, NetEase API endpoints and behavior
-- [kaset](https://github.com/sozercan/kaset) (MIT, © sozercan) — UI design system, motion, and SwiftPM packaging approach
-- [UnblockNeteaseMusic/server](https://github.com/UnblockNeteaseMusic/server) (LGPL-3.0-only) — third-party source endpoints and matching strategy for gray tracks (`UnblockService.swift` is an independent Swift reimplementation)
-- [LyricsX](https://github.com/ddddxxx/LyricsX) (MPL-2.0, © ddddxxx) — desktop lyrics window design reference (window configuration, screen-factor positioning; `DesktopLyrics.swift` is an independent SwiftUI implementation)
-
-## License
-
-Licensed under [LGPL-3.0-only](LICENSE) (the [GPL-3.0](COPYING) text is
-included alongside). For learning and personal use only — all music data and
-rights belong to NetEase Cloud Music and the respective source platforms. No
-downloading, no social features.
+The existing [LGPL-3.0-only license](LICENSE) is retained, with [GPL-3.0](COPYING)
+text included alongside it. Music data and rights belong to their respective
+platforms and rights holders.

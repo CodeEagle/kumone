@@ -13,7 +13,7 @@ final class MainWindowController: NSWindowController {
             backing: .buffered,
             defer: false)
         super.init(window: window)
-        window.title = "Kumone"
+        window.title = "MiuMiu"
         window.titlebarAppearsTransparent = true
         window.titleVisibility = .hidden
         window.isOpaque = false

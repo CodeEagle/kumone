@@ -12,7 +12,7 @@ public struct KumoneApp: App {
     }
 
     public var body: some Scene {
-        Window("Kumone", id: "main") {
+        Window("MiuMiu", id: "main") {
             MainWindow(store: store)
                 .tint(Theme.accent)
                 .preferredColorScheme(store.settings.appearance.brightnessIntent.colorScheme)

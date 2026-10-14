@@ -1,4 +1,4 @@
-# Kumone — developer entry points.
+# MiuMiu — developer entry points.
 #
 # `make configure` selects which capabilities the iOS build ships with. CarPlay is
 # opt-in because its entitlement needs per-app approval from Apple, so the default
@@ -12,7 +12,7 @@
 .PHONY: help configure configure-carplay project build test app ios-test ios-uitest clean
 
 help: ## Show this help
-	@echo "Kumone make targets:"
+	@echo "MiuMiu make targets:"
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
 		| awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-20s\033[0m %s\n", $$1, $$2}'
 

@@ -310,7 +310,7 @@ public struct SettingsView: View {
         let info = Bundle.main.infoDictionary
         return (info?["CFBundleDisplayName"] as? String)
             ?? (info?["CFBundleName"] as? String)
-            ?? "Kumone"
+            ?? "MiuMiu"
     }
 
     /// Marketing version with the build number in brackets, e.g. `0.1.0 (1)`.
