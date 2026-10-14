@@ -125,9 +125,11 @@ struct AlbumDetailView: View {
         // See PlaylistDetailView: the page fades in from zero, gated on the
         // cover's flight launching, without needing an animation transaction
         // on the TCA send.
+        // Background must be inside the opacity gate too; adding it after
+        // opacity leaves the material visible while the content is hidden.
+        .background(.ultraThinMaterial)
         .opacity(hasAppeared ? 1 : 0)
         .animation(AppAnimation.smooth, value: hasAppeared)
-        .background(.ultraThinMaterial)
         #else
         .navigationBarTitleDisplayMode(.inline)
         #endif

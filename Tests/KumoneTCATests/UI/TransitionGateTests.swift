@@ -30,22 +30,27 @@ struct TransitionGateTests {
         // The page mounts asynchronously; poll for its layer, then sample
         // mid-push and after the push animation commits.
         for _ in 0..<40 {
-            if GateProbe.view?.superview?.layer != nil { break }
+            if GateProbe.view?.layer != nil, GateProbe.backgroundView?.layer != nil { break }
             try await Task.sleep(nanoseconds: 16_000_000)
         }
-        let midOpacity = effectiveOpacity()
+        let midOpacity = effectiveOpacity(of: GateProbe.view)
+        let midBackgroundOpacity = effectiveOpacity(of: GateProbe.backgroundView)
         try await Task.sleep(nanoseconds: 600_000_000)
-        let endOpacity = effectiveOpacity()
+        let endOpacity = effectiveOpacity(of: GateProbe.view)
+        let endBackgroundOpacity = effectiveOpacity(of: GateProbe.backgroundView)
 
         #expect(midOpacity != nil, "probe view mounted")
+        #expect(midBackgroundOpacity != nil, "background probe mounted")
+        #expect((midBackgroundOpacity ?? 1) < 0.05, "background gate holds during push")
+        #expect((endBackgroundOpacity ?? 1) < 0.05, "background gate holds after push")
         #expect((midOpacity ?? 1) < 0.05, "gate holds during the push: \(midOpacity ?? -1)")
         #expect((endOpacity ?? 1) < 0.05, "gate holds after the push: \(endOpacity ?? -1)")
     }
 
     /// The minimum presented opacity along the probe's ancestor chain —
     /// SwiftUI applies page-level opacity on an ancestor layer.
-    private func effectiveOpacity() -> Float? {
-        guard let layer = GateProbe.view?.superview?.layer ?? GateProbe.view?.layer else { return nil }
+    private func effectiveOpacity(of view: NSView?) -> Float? {
+        guard let layer = view?.layer else { return nil }
         var node: CALayer? = layer
         var minOpacity: Float = 1
         while let current = node {
@@ -65,14 +70,20 @@ private final class GateModel: ObservableObject {
 
 private enum GateProbe {
     static weak var view: NSView?
+    static weak var backgroundView: NSView?
 }
 
 private struct LayerProbeView: NSViewRepresentable {
+    var isBackground = false
     func makeNSView(context: Context) -> NSView {
         let view = NSView()
         view.wantsLayer = true
         view.layer?.backgroundColor = NSColor.red.cgColor
-        GateProbe.view = view
+        if isBackground {
+            GateProbe.backgroundView = view
+        } else {
+            GateProbe.view = view
+        }
         return view
     }
     func updateNSView(_ nsView: NSView, context: Context) {}
@@ -88,6 +99,10 @@ private struct GateFixture: View {
             if model.showDetail {
                 LayerProbeView()
                     .frame(width: 400, height: 400)
+                    // Probe the background separately: a content-only probe
+                    // cannot detect a background added outside the gate.
+                    .background(.ultraThinMaterial)
+                    .background { LayerProbeView(isBackground: true) }
                     .opacity(model.pageVisible ? 1 : 0)
                     .animation(.easeInOut(duration: 0.35), value: model.pageVisible)
                     // Same shape as the detail stack: identity insertion so

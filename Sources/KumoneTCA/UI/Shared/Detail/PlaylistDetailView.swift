@@ -21,10 +21,8 @@ struct PlaylistDetailView: View {
     /// launches (landing with the spring), or straight away when no arm
     /// exists (sidebar/deep-link arrivals), or when the arm clears without a
     /// flight. A bounded fallback keeps a stalled arm from trapping the page
-    /// invisible. Flipping inside a plain `withAnimation` does not animate
-    /// here (TCA + Observation state changes carry no transaction); the
-    /// implicit `.animation(value:)` below does, so every flip defers one
-    /// run loop to let the unfaded frame render first.
+    /// invisible. Explicit `withAnimation` starts the fade after a deferred
+    /// run loop lets the unfaded frame render first.
     @State private var hasAppeared = false
 
     #if os(macOS)
@@ -135,10 +133,12 @@ struct PlaylistDetailView: View {
         // cover's flight, so the background never occludes the feed's card
         // while the header target is still gated out; the fade lands with
         // the spring instead. The cover target is hidden by its own
-        // heroTarget until the flight ends, so it stays out of this fade.
+        // flight gate until hand-off, so the stand-in supplies the visible cover.
+        // Background must be inside the opacity gate too; adding it after
+        // opacity leaves the material visible while the content is hidden.
+        .background(.ultraThinMaterial)
         .opacity(hasAppeared ? 1 : 0)
         .animation(AppAnimation.smooth, value: hasAppeared)
-        .background(.ultraThinMaterial)
         #else
         .navigationBarTitleDisplayMode(.inline)
         #endif
