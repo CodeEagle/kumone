@@ -71,6 +71,14 @@ struct HeroFlight: View {
         } action: { global in
             // The rendered frame, not the animated one, is what gets verified.
             measuredFrame = global
+            // The stand-in has arrived on the target: release the landing
+            // page's cover gate now, while the spring's tail settles, so the
+            // real cover is already under the stand-in when the page fade
+            // completes (otherwise the cover pops into a fully-opaque page a
+            // beat late — the "background covers the cover" gap).
+            if !finished, global.approximately(flight.target, tolerance: 8) {
+                HeroFlightDirector.shared.release(id: flight.id)
+            }
             // The first geometry pass is the only honest reading of where the
             // proxy starts: every later pass is already mid-flight, and the
             // pre-animation `flight.source` value would merely re-assert the

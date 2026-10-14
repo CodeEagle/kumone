@@ -41,7 +41,11 @@ struct PlaylistDetailView: View {
     /// the union spans tap through landing.
     private var isFlying: Bool {
         #if os(macOS)
-        heroProbe.armedIDs.contains(heroID) || heroFlight.active[heroID] != nil
+        // `released` marks a stand-in sitting on the target while its spring
+        // settles: the real cover can already take over underneath it, so the
+        // gate lets go before the flight fully ends.
+        (heroProbe.armedIDs.contains(heroID) || heroFlight.active[heroID] != nil)
+            && !heroFlight.released.contains(heroID)
         #else
         false
         #endif

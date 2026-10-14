@@ -66,6 +66,22 @@ final class HeroFlightDirector: ObservableObject {
 
     @Published var active: [String: Flight] = [:]
 
+    /// Ids whose flight has arrived within a hair of the target but is
+    /// still settling. Views gating on the armed/active pair (a detail
+    /// page's header target) use this to reveal the real cover the moment
+    /// the stand-in sits on top of it, instead of waiting for the spring's
+    /// full settle — which trails the page fade by ~150ms and leaves the
+    /// header empty under a fully-opaque page ("the cover pops in late").
+    @Published var released: Set<String> = []
+
+    /// Idempotent: marks the flight as visually landed. The spring keeps
+    /// running untouched; only the reveal gate flips.
+    func release(id: String) {
+        guard active[id] != nil, !released.contains(id) else { return }
+        released.insert(id)
+        KumoneLogger.hero.notice("HERO DIR release \(id, privacy: .public)")
+    }
+
     /// Retargets in-flight present flights to their live anchor frames. Keyed
     /// by the anchor ids the landing views report; only flights carrying that
     /// anchor move.
@@ -135,6 +151,7 @@ final class HeroFlightDirector: ObservableObject {
 
     func end(id: String) {
         active.removeValue(forKey: id)
+        released.remove(id)
         settleWatchers.removeValue(forKey: id)?.invalidate()
         KumoneLogger.hero.info("HERO DIR end \(id, privacy: .public) count=\(self.active.count, privacy: .public)")
     }
@@ -200,6 +217,7 @@ final class HeroFlightDirector: ObservableObject {
             "HERO SETTLE \(id, privacy: .public) reason=watcher frame=\(HeroProbe.frameDescription(frame), privacy: .public)"
         )
         HeroProbe.writeFile("HERO SETTLE \(id) reason=watcher frame=\(HeroProbe.frameDescription(frame))")
+        release(id: id)
         HeroProbe.shared.recordLanding(
             id: id, frame: frame,
             scale: flight.targetScale, cornerRadius: flight.cornerRadius
