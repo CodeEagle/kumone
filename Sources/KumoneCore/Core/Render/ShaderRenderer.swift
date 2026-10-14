@@ -36,6 +36,7 @@ public final class ShaderRenderer: NSObject, MTKViewDelegate {
     private let device: any MTLDevice
     private let commandQueue: any MTLCommandQueue
 
+    private var regionBlur: ShaderRegionBlur?
     private var pipelineState: (any MTLRenderPipelineState)?
     private var uniformBuffer: any MTLBuffer?
     private var needsPixelProbe = false
@@ -100,14 +101,14 @@ public final class ShaderRenderer: NSObject, MTKViewDelegate {
             if pipelineState == nil { releasePipelineResources() }
         }
         guard let library = ShaderDiscovery.shared.library(for: descriptor, owner: libraryOwner) else {
-            lastError = "无法编译 shader：\(descriptor.name)"
+            lastError = String(localized: "无法编译 shader：\(descriptor.name)")
             pipelineState = nil
             return false
         }
 
         let fragmentName = ShaderDiscovery.shared.fragmentFunctionName(for: descriptor)
         guard let fragment = library.makeFunction(name: fragmentName) else {
-            lastError = "shader \(descriptor.name) 缺少入口函数 \(fragmentName)"
+            lastError = String(localized: "shader \(descriptor.name) 缺少入口函数 \(fragmentName)")
             pipelineState = nil
             return false
         }
@@ -115,12 +116,12 @@ public final class ShaderRenderer: NSObject, MTKViewDelegate {
         // The vertex stage always comes from the shared types library, so every
         // shader — bundled or user-supplied — gets the same UV contract.
         guard let vertexLibrary = ShaderDiscovery.shared.library(for: sharedTypesDescriptor, owner: libraryOwner) else {
-            lastError = "无法加载宿主 vertex stage"
+            lastError = String(localized: "无法加载宿主 vertex stage")
             pipelineState = nil
             return false
         }
         guard let vertex = vertexLibrary.makeFunction(name: "kumone_vertex") else {
-            lastError = "宿主缺少 kumone_vertex"
+            lastError = String(localized: "宿主缺少 kumone_vertex")
             pipelineState = nil
             return false
         }
@@ -152,7 +153,7 @@ public final class ShaderRenderer: NSObject, MTKViewDelegate {
             lastError = nil
             return true
         } catch {
-            lastError = "管线创建失败：\(error.localizedDescription)"
+            lastError = String(localized: "管线创建失败：\(error.localizedDescription)")
             pipelineState = nil
             return false
         }
@@ -169,6 +170,7 @@ public final class ShaderRenderer: NSObject, MTKViewDelegate {
     private func releasePipelineResources() {
         pipelineState = nil
         uniformBuffer = nil
+        regionBlur = nil
         ShaderDiscovery.shared.releaseLibraries(ownedBy: libraryOwner)
     }
 
@@ -269,11 +271,29 @@ public final class ShaderRenderer: NSObject, MTKViewDelegate {
         uniforms.beatBirthTs = (beatBirthTs[0], beatBirthTs[1], beatBirthTs[2], beatBirthTs[3])
 
         buffer.contents().copyMemory(from: &uniforms, byteCount: MemoryLayout<ShaderUniforms>.stride)
+        #if os(macOS)
+        let blurRegions = ShaderBlurRegions.regions(in: view)
+        let regions = blurRegions.map(\.rectangle)
+        let feathers = blurRegions.map(\.feather)
+        #else
+        let regions: [SIMD4<Float>] = []
+        let feathers: [SIMD2<Float>] = []
+        #endif
+        var shaderPass = descriptor
+        if !regions.isEmpty {
+            if regionBlur == nil { regionBlur = try? ShaderRegionBlur(device: device) }
+            if let texture = regionBlur?.renderTarget(width: drawable.texture.width, height: drawable.texture.height),
+               let pass = descriptor.copy() as? MTLRenderPassDescriptor {
+                pass.colorAttachments[0].texture = texture
+                pass.colorAttachments[0].storeAction = .store
+                shaderPass = pass
+            }
+        }
         let targetMatches = descriptor.colorAttachments[0].texture === drawable.texture
         descriptor.colorAttachments[0].storeAction = .store
 
         guard let commandBuffer = commandQueue.makeCommandBuffer(),
-              let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: descriptor) else {
+              let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: shaderPass) else {
             return
         }
         encoder.label = "Kumone.shader"
@@ -283,6 +303,9 @@ public final class ShaderRenderer: NSObject, MTKViewDelegate {
         encoder.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)
         encoder.endEncoding()
 
+        if shaderPass !== descriptor {
+            regionBlur?.composite(command: commandBuffer, destination: descriptor, regions: regions, feathers: feathers)
+        }
         commandBuffer.present(drawable)
         if needsPixelProbe, !view.framebufferOnly, drawable.texture.width >= 600 {
             needsPixelProbe = false

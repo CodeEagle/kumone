@@ -122,19 +122,24 @@ struct ArtistDetailView: View {
                                 Spacer().frame(width: (isCompact ? 16 : Theme.Layout.contentInset) - 16)
                                 ForEach(store.similar) { sim in
                                     Button {
+                                        HeroTrigger.arm(HeroID.artist(sim.id),
+                                                        sourceImageURL: sim.picUrl?.resizedImageURL(256))
                                         appStore.animateOpen(.artist(sim.id))
                                     } label: {
                                         VStack(spacing: 8) {
                                             CachedAsyncImage(url: sim.picUrl?.resizedImageURL(256))
                                                 .frame(width: isCompact ? 80 : 100, height: isCompact ? 80 : 100)
                                                 .clipShape(Circle())
+                                                .modifier(CardEnvironmentPressFeedback())
+                                                .heroAnchor(HeroID.artist(sim.id))
+                                                .heroCardArtworkGate(heroID: HeroID.artist(sim.id))
                                             Text(sim.name)
                                                 .font(.system(size: 12, weight: .medium))
                                                 .lineLimit(1)
                                         }
                                         .frame(width: isCompact ? 80 : 100)
                                     }
-                                    .buttonStyle(.interactiveCard)
+                                    .buttonStyle(.scaleCard)
                                 }
                                 Spacer().frame(width: (isCompact ? 16 : Theme.Layout.contentInset) - 16)
                             }
@@ -362,7 +367,7 @@ struct ArtistDetailView: View {
 
     private func albumCard(_ album: AlbumSummary) -> some View {
         Button {
-            HeroTrigger.arm(HeroID.album(album.id))
+            HeroTrigger.arm(HeroID.album(album.id), sourceImageURL: album.picUrl?.resizedImageURL(384))
             appStore.animateOpen(.album(album.id))
         } label: {
             CoverCardBody(
@@ -372,7 +377,7 @@ struct ArtistDetailView: View {
                 heroID: HeroID.album(album.id)
             )
         }
-        .buttonStyle(.interactiveCard)
+        .buttonStyle(.scaleCard)
     }
 
     private var loadingHeader: some View {

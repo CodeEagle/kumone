@@ -44,7 +44,7 @@ public struct UserShortcut: Codable, Equatable {
         }
     }
     public var displayString: String {
-        guard !key.isEmpty else { return "无" }
+        guard !key.isEmpty else { return String(localized: "无") }
         var prefix = ""
         if modifiers.contains(.control) { prefix += "⌃" }
         if modifiers.contains(.option) { prefix += "⌥" }
@@ -70,17 +70,17 @@ public enum ShortcutAction: String, CaseIterable, Identifiable {
     public var id: String { rawValue }
     public var displayName: String {
         switch self {
-        case .togglePlayPause: "播放 / 暂停"
-        case .nextTrack: "下一首"
-        case .previousTrack: "上一首"
-        case .cycleQueueOrder: "切换播放顺序"
-        case .cycleRepeatMode: "切换循环模式"
-        case .toggleLike: "收藏 / 取消收藏"
-        case .toggleLyrics: "切换歌词面板"
-        case .toggleQueue: "切换播放队列"
-        case .closeImmersive: "收起播放详情"
-        case .volumeUp: "增加音量"
-        case .volumeDown: "减少音量"
+        case .togglePlayPause: String(localized: "播放 / 暂停")
+        case .nextTrack: String(localized: "下一首")
+        case .previousTrack: String(localized: "上一首")
+        case .cycleQueueOrder: String(localized: "切换播放顺序")
+        case .cycleRepeatMode: String(localized: "切换循环模式")
+        case .toggleLike: String(localized: "收藏 / 取消收藏")
+        case .toggleLyrics: String(localized: "切换歌词面板")
+        case .toggleQueue: String(localized: "切换播放队列")
+        case .closeImmersive: String(localized: "收起播放详情")
+        case .volumeUp: String(localized: "增加音量")
+        case .volumeDown: String(localized: "减少音量")
         }
     }
     public var actionName: String {
@@ -159,14 +159,14 @@ public final class ShortcutManager: ObservableObject {
     public func setShortcut(_ shortcut: UserShortcut, for action: ShortcutAction, isGlobal: Bool) -> Bool {
         errorMessage = nil
         guard shortcut.key.count <= 1, shortcut.modifiers.rawValue & ~15 == 0 else {
-            errorMessage = "无效的快捷键"; return false
+            errorMessage = String(localized: "无效的快捷键"); return false
         }
         let bindings = isGlobal ? globalShortcuts : appShortcuts
         if !shortcut.key.isEmpty, bindings.contains(where: {
             $0.key != action && $0.value.key == shortcut.key && $0.value.modifiers == shortcut.modifiers
-        }) { errorMessage = "快捷键已被其他操作使用"; return false }
+        }) { errorMessage = String(localized: "快捷键已被其他操作使用"); return false }
         if !isGlobal && Self.isReserved(shortcut) {
-            errorMessage = "请保留系统窗口和应用快捷键"; return false
+            errorMessage = String(localized: "请保留系统窗口和应用快捷键"); return false
         }
         if isGlobal {
             if shortcut.key.isEmpty { GlobalHotKeyManager.shared.unregister(action) }

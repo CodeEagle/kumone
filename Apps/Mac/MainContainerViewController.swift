@@ -176,13 +176,17 @@ final class MainContainerViewController: NSViewController, NSToolbarDelegate {
         }
     }
 
-    private func fadeTrafficLights(on window: NSWindow, presented: Bool) {
+    func fadeTrafficLights(on window: NSWindow, presented: Bool) {
         guard trafficLightsPresented != presented else { return }
         trafficLightsPresented = presented
+        (window as? KumoneWindow)?.isImmersiveChromeHidden = presented
         let buttons = [NSWindow.ButtonType.closeButton, .miniaturizeButton, .zoomButton]
             .compactMap { window.standardWindowButton($0) }
             + (sidebarToggleButton.map { [$0] } ?? [])
-        for button in buttons {
+        // Native window buttons stay enabled: AppKit validates Cmd+W/Cmd+M
+        // through their enabled state even when their visuals are faded out.
+        // Only the app's hidden sidebar toggle should stop accepting actions.
+        if let button = sidebarToggleButton {
             if presented {
                 trafficLightsEnabled[ObjectIdentifier(button)] = button.isEnabled
                 button.isEnabled = false
@@ -264,13 +268,13 @@ final class MainContainerViewController: NSViewController, NSToolbarDelegate {
         guard let window = view.window,
               let closeButton = window.standardWindowButton(.closeButton),
               let container = closeButton.superview else { return }
-        let symbol = NSImage(systemSymbolName: "sidebar.left", accessibilityDescription: "边栏")?
+        let symbol = NSImage(systemSymbolName: "sidebar.left", accessibilityDescription: String(localized: "边栏"))?
             .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 13, weight: .regular))
         let button = NSButton(image: symbol ?? NSImage(),
                               target: self, action: #selector(toggleSidebar))
         button.isBordered = false
         button.imagePosition = .imageOnly
-        button.toolTip = "边栏"
+        button.toolTip = String(localized: "边栏")
         // The container shares the system buttons' bottom-left origin, so
         // aligning on the close button keeps the glyph on their row whatever
         // the titlebar height; the leading offset parks it one gap past the
@@ -300,7 +304,7 @@ final class MainContainerViewController: NSViewController, NSToolbarDelegate {
     /// it in both column states.
     private func makeBackItem() -> NSToolbarItem {
         let item = NSToolbarItem(itemIdentifier: Self.backItemIdentifier)
-        item.label = "返回"
+        item.label = String(localized: "返回")
         // NSToolbar re-lays out a custom item's view to its standard height
         // (22pt inside a 38pt row, origin y=8) — measured live via lldb as
         // frame={0,8,62,22} — so the container cannot assume its own 38pt
@@ -309,7 +313,7 @@ final class MainContainerViewController: NSViewController, NSToolbarDelegate {
         // centering happens both here and on every later layout pass.
         let container = BackItemContainer(frame: NSRect(x: 0, y: 0, width: 62, height: 38))
         let button = NSButton(
-            image: NSImage(systemSymbolName: "chevron.backward", accessibilityDescription: "返回")!,
+            image: NSImage(systemSymbolName: "chevron.backward", accessibilityDescription: String(localized: "返回"))!,
             target: self, action: #selector(navigateBack)
         )
         button.isBordered = false
@@ -428,7 +432,7 @@ final class MainContainerViewController: NSViewController, NSToolbarDelegate {
     /// toolbar cannot stretch the capsule.
     private func makeSearchItem() -> NSToolbarItem {
         let item = NSToolbarItem(itemIdentifier: Self.searchItemIdentifier)
-        item.label = "搜索"
+        item.label = String(localized: "搜索")
         let hosting = NSHostingView(rootView: SearchFieldView { [weak self] query in
             self?.store.animateOpen(.search(query))
         })
@@ -480,7 +484,7 @@ final class MainContainerViewController: NSViewController, NSToolbarDelegate {
         case let .search(search):
             return search.query.isEmpty
                 ? String(localized: "搜索")
-                : "搜索：\(search.query)"
+                : String(localized: "搜索：\(search.query)")
         case .daily:
             return String(localized: "每日推荐")
         case .toplists:

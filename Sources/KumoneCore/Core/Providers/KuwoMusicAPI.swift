@@ -7,15 +7,15 @@ public enum KuwoAPIError: Error, LocalizedError, Equatable {
 
     public var errorDescription: String? {
         switch self {
-        case .httpStatus(let code): return "酷我请求失败（HTTP \(code)）"
-        case .business(let code): return "酷我接口返回错误（\(code)）"
-        case .invalidResponse: return "酷我响应缺少有效数据"
-        case .invalidIdentifier: return "酷我需要本源的数字歌曲 RID"
-        case .invalidPagination: return "酷我分页参数无效（最多读取前 1000 条）"
-        case .lyricUnavailable: return "酷我匿名歌词接口暂不可用"
-        case .playlistUnavailable: return "酷我匿名歌单接口暂不可用"
-        case .searchCategoryUnavailable: return "酷我匿名搜索暂只支持歌曲类目"
-        case .unavailable: return "酷我匿名接口暂不可用"
+        case .httpStatus(let code): return String(localized: "酷我请求失败（HTTP \(code)）")
+        case .business(let code): return String(localized: "酷我接口返回错误（\(code)）")
+        case .invalidResponse: return String(localized: "酷我响应缺少有效数据")
+        case .invalidIdentifier: return String(localized: "酷我需要本源的数字歌曲 RID")
+        case .invalidPagination: return String(localized: "酷我分页参数无效（最多读取前 1000 条）")
+        case .lyricUnavailable: return String(localized: "酷我匿名歌词接口暂不可用")
+        case .playlistUnavailable: return String(localized: "酷我匿名歌单接口暂不可用")
+        case .searchCategoryUnavailable: return String(localized: "酷我匿名搜索暂只支持歌曲类目")
+        case .unavailable: return String(localized: "酷我匿名接口暂不可用")
         }
     }
 }
@@ -82,7 +82,7 @@ public struct KuwoMusicAPI: Sendable {
     /// Fetch content for current artwork and publication date rather than freezing a probe date.
     public func bangList() async throws -> [Chart] {
         var charts: [Chart] = []
-        for (id, name) in [("93", "酷我飙升榜"), ("16", "酷我热歌榜"), ("17", "酷我新歌榜")] {
+        for (id, name) in [("93", String(localized: "酷我飙升榜")), ("16", String(localized: "酷我热歌榜")), ("17", String(localized: "酷我新歌榜"))] {
             let content = try await bangContent(id: id, offset: 0, num: 1)
             let coverURL = content.pic.flatMap { pic -> URL? in
                 guard !pic.isEmpty, !pic.hasSuffix("/"),

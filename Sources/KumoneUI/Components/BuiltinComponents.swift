@@ -343,7 +343,7 @@ struct ActionButton: View {
                 .padding(6)
                 .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(ScalePressButtonStyle())
         .disabled(name == nil || dispatcher == nil)
     }
 

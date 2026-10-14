@@ -136,15 +136,15 @@ enum ImportError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .noFileSelected:
-            return "没有选择文件"
+            return String(localized: "没有选择文件")
         case .notMetalFile:
-            return "请选择 .metal 文件"
+            return String(localized: "请选择 .metal 文件")
         case .cancelled:
-            return "已取消导入"
+            return String(localized: "已取消导入")
         case .directoryUnavailable:
-            return "无法访问 Shader 目录"
+            return String(localized: "无法访问 Shader 目录")
         case .copyFailed(let detail):
-            return "导入失败：\(detail)"
+            return String(localized: "导入失败：\(detail)")
         }
     }
 }

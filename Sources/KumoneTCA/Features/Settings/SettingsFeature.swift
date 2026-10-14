@@ -33,6 +33,9 @@ public struct SettingsFeature {
         public var desktopLyricsCentered = false
         public var showMainWindowAmbientBackground = true
         public var mainWindowAmbientBackgroundIntensity = 1.0
+        /// Reveal the existing shader through the dark window backdrop.
+        /// This drives the renderer's existing alpha, not a second overlay.
+        public var shaderScrimTransparency = 1.0
         /// Diagnostic only; deliberately not persisted across app launches.
         public var disableImageLoading = false
         /// Flips once `onAppear` has rehydrated from disk.
@@ -57,6 +60,7 @@ public struct SettingsFeature {
         case setShowMainWindowAmbientBackground(Bool)
         case setEnableAudioSourceFallback(Bool)
         case setMainWindowAmbientBackgroundIntensity(Double)
+        case setShaderScrimTransparency(Double)
         case setDisableImageLoading(Bool)
         /// The app menu / Settings "检查更新…" button.
         case checkForUpdates
@@ -104,6 +108,11 @@ public struct SettingsFeature {
                     max(stored.isZero ? 1 : stored, Self.intensityRange.lowerBound),
                     Self.intensityRange.upperBound
                 )
+                if let stored = p.stringForKey(Keys.shaderScrimTransparency).flatMap(Double.init) {
+                    state.shaderScrimTransparency = Self.clampedScrimTransparency(stored)
+                } else {
+                    state.shaderScrimTransparency = min(state.mainWindowAmbientBackgroundIntensity, 1)
+                }
                 return .none
 
             case let .setAudioQuality(value):
@@ -190,6 +199,11 @@ public struct SettingsFeature {
                 state.disableImageLoading = value
                 return .none
 
+            case let .setShaderScrimTransparency(value):
+                state.shaderScrimTransparency = Self.clampedScrimTransparency(value)
+                persistence.setDouble(state.shaderScrimTransparency, Keys.shaderScrimTransparency)
+                return .none
+
             case let .setMainWindowAmbientBackgroundIntensity(value):
                 state.mainWindowAmbientBackgroundIntensity = min(
                     max(value, Self.intensityRange.lowerBound),
@@ -224,6 +238,11 @@ extension SettingsFeature {
         public static let desktopLyricsCentered = "settings.desktopLyricsCentered"
         public static let mainWindowAmbientBackground = "settings.showMainWindowAmbientBackground"
         public static let mainWindowAmbientBackgroundIntensity = "settings.mainWindowAmbientBackgroundIntensity"
+        public static let shaderScrimTransparency = "settings.shaderScrimTransparency"
+    }
+
+    static func clampedScrimTransparency(_ value: Double) -> Double {
+        value.isFinite ? min(max(value, 0), 1) : 1
     }
 
     public static let intensityRange = 0.5...1.5

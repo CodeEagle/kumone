@@ -41,7 +41,7 @@ struct LoginSheet: View {
             Button("取消") {
                 appStore.send(.dismissLogin)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.scalePress)
             .font(.system(size: 12.5))
             .foregroundStyle(.secondary)
             .padding(.bottom, 20)
@@ -220,7 +220,7 @@ struct LoginSheet: View {
                         .font(.system(size: 13, weight: .medium))
                         .foregroundStyle(canSendCode ? Theme.accent : .secondary)
                     }
-                    .buttonStyle(.plain).disabled(!canSendCode)
+                    .buttonStyle(.scalePress).disabled(!canSendCode)
                 }
                 .fieldChrome()
             }

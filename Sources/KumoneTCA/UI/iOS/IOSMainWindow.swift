@@ -333,11 +333,11 @@ enum IOSTab: Hashable {
 
 extension IOSMainWindow {
     static let tabItems: [GlassTabBar.Item] = [
-        .init(tab: .home, title: "推荐", icon: "house"),
-        .init(tab: .explore, title: "精选", icon: "square.grid.2x2"),
-        .init(tab: .fm, title: "漫游", icon: "dot.radiowaves.left.and.right"),
-        .init(tab: .search, title: "搜索", icon: "magnifyingglass"),
-        .init(tab: .library, title: "我的", icon: "person.crop.circle"),
+        .init(tab: .home, title: String(localized: "推荐"), icon: "house"),
+        .init(tab: .explore, title: String(localized: "精选"), icon: "square.grid.2x2"),
+        .init(tab: .fm, title: String(localized: "漫游"), icon: "dot.radiowaves.left.and.right"),
+        .init(tab: .search, title: String(localized: "搜索"), icon: "magnifyingglass"),
+        .init(tab: .library, title: String(localized: "我的"), icon: "person.crop.circle"),
     ]
 }
 
@@ -449,7 +449,7 @@ struct IOSMiniPlayerBar: View {
             Button(action: { appStore?.send(.presentNowPlaying) }) {
                 trackSummary
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.scalePress)
             .accessibilityLabel(nowPlayingAccessibilityLabel)
             .accessibilityHint("打开正在播放")
 

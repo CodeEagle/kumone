@@ -173,11 +173,16 @@ struct SearchView: View {
     private func artistCards(_ items: some Collection<ArtistSummary>) -> some View {
         ForEach(Array(items)) { artist in
             Button {
+                HeroTrigger.arm(HeroID.artist(artist.id),
+                                sourceImageURL: artist.picUrl?.resizedImageURL(256))
                 appStore.animateOpen(.artist(artist.id))
             } label: {
                 VStack(spacing: 10) {
                     CachedAsyncImage(url: artist.picUrl?.resizedImageURL(256))
                         .frame(width: 128, height: 128)
+                        .modifier(CardEnvironmentPressFeedback())
+                        .heroAnchor(HeroID.artist(artist.id))
+                        .heroCardArtworkGate(heroID: HeroID.artist(artist.id))
                         .clipShape(Circle())
                     Text(artist.name)
                         .font(.system(size: 13, weight: .medium))
@@ -186,7 +191,7 @@ struct SearchView: View {
                 }
                 .frame(width: 140)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.scaleCard)
         }
     }
 
@@ -204,7 +209,7 @@ struct SearchView: View {
                     heroID: HeroID.album(album.id)
                 )
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.scaleCard)
         }
     }
 
@@ -222,7 +227,7 @@ struct SearchView: View {
                     heroID: HeroID.playlist(playlist.id)
                 )
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.scaleCard)
         }
     }
 }

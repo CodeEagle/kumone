@@ -43,14 +43,14 @@ public final class GlobalHotKeyManager {
         guard shortcut.key.count == 1, shortcut.modifiers.rawValue & ~15 == 0,
               shortcut.modifiers.intersection([.command, .control, .option]).isEmpty == false,
               let keyCode = shortcut.keyCode ?? Self.resolveKeyCode(shortcut.key) else {
-            return "全局快捷键需要 ⌘、⌃ 或 ⌥ 修饰键"
+            return String(localized: "全局快捷键需要 ⌘、⌃ 或 ⌥ 修饰键")
         }
         if let old = refs[action], old.shortcut.key == shortcut.key,
            old.shortcut.modifiers == shortcut.modifiers, old.shortcut.keyCode == shortcut.keyCode { return nil }
         if refs.contains(where: {
             $0.key != action && ($0.value.shortcut.keyCode ?? Self.resolveKeyCode($0.value.shortcut.key)) == keyCode
                 && $0.value.shortcut.modifiers == shortcut.modifiers
-        }) { return "快捷键已被其他操作使用" }
+        }) { return String(localized: "快捷键已被其他操作使用") }
         if eventHandler == nil {
             var type = EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed))
             let callback: EventHandlerUPP = { _, event, context in
@@ -71,15 +71,15 @@ public final class GlobalHotKeyManager {
             }
             let status = InstallEventHandler(GetApplicationEventTarget(), callback, 1, &type,
                                             Unmanaged.passUnretained(self).toOpaque(), &eventHandler)
-            guard status == noErr else { return "无法安装全局快捷键：\(status)" }
+            guard status == noErr else { return String(localized: "无法安装全局快捷键：\(status)") }
         }
-        guard nextID < UInt32.max else { return "全局快捷键编号耗尽" }
+        guard nextID < UInt32.max else { return String(localized: "全局快捷键编号耗尽") }
         nextID += 1
         var ref: EventHotKeyRef?
         let status = RegisterEventHotKey(keyCode, shortcut.modifiers.carbonFlags,
                                         EventHotKeyID(signature: signature, id: nextID),
                                         GetApplicationEventTarget(), 0, &ref)
-        guard status == noErr, let ref else { return "快捷键被系统或其他应用占用：\(status)" }
+        guard status == noErr, let ref else { return String(localized: "快捷键被系统或其他应用占用：\(status)") }
         // Commit only after the new registration succeeded, retaining the old
         // binding on any conflict/error, as in upstream #125.
         unregister(action)

@@ -105,7 +105,7 @@ struct VisualizerOverlay: View {
                 library.reload()
                 selected = library.available.first { $0.name == name }
                 onShaderChanged(selected)
-                importMessage = "已导入 \(name)"
+                importMessage = String(localized: "已导入 \(name.replacingOccurrences(of: "_", with: " "))")
             case .failure(let error):
                 importMessage = error.errorDescription
             }
@@ -166,7 +166,7 @@ struct ShaderPickerButton: View {
         } label: {
             HStack(spacing: 6) {
                 Image(systemName: "waveform.circle")
-                Text(selected?.name ?? "无")
+                Text(selected?.displayName ?? String(localized: "无"))
                     .lineLimit(1)
                 Image(systemName: "chevron.down")
                     .font(.system(size: 9, weight: .semibold))
@@ -175,9 +175,9 @@ struct ShaderPickerButton: View {
             .foregroundStyle(.white.opacity(0.85))
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
-            .background(.white.opacity(0.12), in: Capsule())
+            .background(.black.opacity(0.28), in: Capsule())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.scalePress)
         .popover(isPresented: $isPresented, arrowEdge: .top) {
             shaderPickerPanel
                 .preferredColorScheme(.dark)
@@ -207,8 +207,8 @@ struct ShaderPickerButton: View {
                     Text("音频响应")
                         .font(.system(size: 13, weight: .medium))
                     Text(selected?.usesOriginalAnimation == true
-                         ? "ShipSwift 原版 · 独立时序，不使用 PCM"
-                         : (settings.pcmSyncEnabled ? "实时 PCM 采样驱动渲染" : "脱机渲染 · 仅内置时序"))
+                         ? String(localized: "ShipSwift 原版 · 独立时序，不使用 PCM")
+                         : (settings.pcmSyncEnabled ? String(localized: "实时 PCM 采样驱动渲染") : String(localized: "脱机渲染 · 仅内置时序")))
                         .font(.system(size: 10))
                         .foregroundStyle(.white.opacity(0.45))
                 }
@@ -221,8 +221,8 @@ struct ShaderPickerButton: View {
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
         .help(selected?.usesOriginalAnimation == true
-              ? "内置 shader 保持 ShipSwift 原版颜色与动效"
-              : (settings.pcmSyncEnabled ? "关闭后渲染不再响应音频流" : "渲染由实时 PCM 数据驱动"))
+              ? String(localized: "内置 shader 保持 ShipSwift 原版颜色与动效")
+              : (settings.pcmSyncEnabled ? String(localized: "关闭后渲染不再响应音频流") : String(localized: "渲染由实时 PCM 数据驱动")))
     }
 
     private var shaderRows: some View {
@@ -264,7 +264,7 @@ struct ShaderPickerButton: View {
                                 .contentShape(Rectangle())
                             }
                             .id("none")
-                            .buttonStyle(.plain)
+                            .buttonStyle(.scalePress)
                             .accessibilityLabel("无效果")
                             .accessibilityAddTraits(selected == nil ? .isSelected : [])
                             ForEach(library.available) { shader in
@@ -275,7 +275,7 @@ struct ShaderPickerButton: View {
                                     HStack(spacing: 12) {
                                         ShaderPickerPreview(shader: shader, palette: palette,
                                                              pcmSync: settings.pcmSyncEnabled)
-                                        Text(shader.name)
+                                        Text(shader.displayName)
                                             .font(.system(size: 13, weight: .medium))
                                             .lineLimit(2)
                                             .frame(maxWidth: .infinity, alignment: .leading)
@@ -291,8 +291,8 @@ struct ShaderPickerButton: View {
                                     .contentShape(Rectangle())
                                 }
                                 .id(shader.id)
-                                .buttonStyle(.plain)
-                                .accessibilityLabel(shader.name)
+                                .buttonStyle(.scalePress)
+                                .accessibilityLabel(shader.displayName)
                                 .accessibilityAddTraits(selected?.id == shader.id ? .isSelected : [])
                             }
                         }

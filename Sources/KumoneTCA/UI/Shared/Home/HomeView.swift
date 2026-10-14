@@ -1,5 +1,6 @@
 import ComposableArchitecture
 import KumoneCore
+import KumoneUI
 import SwiftUI
 
 struct HomeView: View {
@@ -83,7 +84,7 @@ struct HomeView: View {
                                 store.send(.playPlaylist(radar.id))
                             }
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(.scaleCard)
                     }
                 }
             }
@@ -98,7 +99,7 @@ struct HomeView: View {
                         } label: {
                             toplistCard(toplist)
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(.scaleCard)
                     }
                 }
             }
@@ -143,7 +144,7 @@ struct HomeView: View {
                             showsDate: true
                         )
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.interactiveCard)
 
                     Button {
                         appStore.send(.player(.startFM))
@@ -196,7 +197,7 @@ struct HomeView: View {
                 store.send(.playPlaylist(playlist.id))
             }
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.scaleCard)
     }
 
     private func albumCard(_ album: AlbumSummary) -> some View {
@@ -214,7 +215,7 @@ struct HomeView: View {
                 store.send(.playAlbum(album))
             }
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.scaleCard)
     }
 
     private func artistCard(_ artist: ArtistSummary) -> some View {
@@ -227,6 +228,7 @@ struct HomeView: View {
                 CachedAsyncImage(url: artist.picUrl?.resizedImageURL(256))
                     .frame(width: 128, height: 128)
                     .clipShape(Circle())
+                    .modifier(CardEnvironmentPressFeedback())
                     .heroAnchor(HeroID.artist(artist.id))
                     .heroCardArtworkGate(heroID: HeroID.artist(artist.id))
                     .overlay(Circle().strokeBorder(.primary.opacity(0.08), lineWidth: 0.5))
@@ -237,7 +239,7 @@ struct HomeView: View {
             }
             .frame(width: 140)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.scaleCard)
     }
 
     private func toplistCard(_ toplist: ToplistItem) -> some View {
@@ -246,8 +248,6 @@ struct HomeView: View {
                 CachedAsyncImage(url: toplist.coverImgUrl?.resizedImageURL(384))
                     .frame(width: Theme.Layout.cardSize, height: Theme.Layout.cardSize)
                     .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.standard, style: .continuous))
-                    .heroAnchor(HeroID.playlist(toplist.id))
-                    .heroCardArtworkGate(heroID: HeroID.playlist(toplist.id))
                 LinearGradient(colors: [.clear, .black.opacity(0.55)], startPoint: .center, endPoint: .bottom)
                     .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.standard, style: .continuous))
                 Text(toplist.updateFrequency ?? "")
@@ -256,6 +256,9 @@ struct HomeView: View {
                     .padding(8)
             }
             .frame(width: Theme.Layout.cardSize, height: Theme.Layout.cardSize)
+            .modifier(CardEnvironmentPressFeedback())
+            .heroAnchor(HeroID.playlist(toplist.id))
+            .heroCardArtworkGate(heroID: HeroID.playlist(toplist.id))
             Text(toplist.name)
                 .font(.system(size: 13, weight: .medium))
                 .foregroundStyle(.primary)
@@ -335,28 +338,12 @@ struct CoverCardBody: View {
     var onPlay: (() -> Void)?
 
     @State private var isHovering = false
+    @Environment(\.isCardPressed) private var isPressed
     @Environment(\.flexibleCardWidth) private var flexibleWidth
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             anchoredArtwork
-                .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.standard, style: .continuous))
-                .overlay(
-                    RoundedRectangle(cornerRadius: Theme.Radius.standard, style: .continuous)
-                        .strokeBorder(.primary.opacity(0.08), lineWidth: 0.5)
-                )
-                .overlay(alignment: .topTrailing) {
-                    if playCount > 0 {
-                        PlayCountBadge(count: playCount)
-                            .padding(6)
-                    }
-                }
-                .overlay(alignment: .bottomLeading) {
-                    if let onPlay {
-                        PlayOverlayButton(visible: isHovering, action: onPlay)
-                            .padding(8)
-                    }
-                }
 
             Text(title)
                 .font(.system(size: 13, weight: .medium))
@@ -379,14 +366,36 @@ struct CoverCardBody: View {
         #endif
     }
 
+    private var decoratedArtwork: some View {
+        artwork
+            .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.standard, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: Theme.Radius.standard, style: .continuous)
+                    .strokeBorder(.primary.opacity(0.08), lineWidth: 0.5)
+            )
+            .overlay(alignment: .topTrailing) {
+                if playCount > 0 {
+                    PlayCountBadge(count: playCount)
+                        .padding(6)
+                }
+            }
+            .overlay(alignment: .bottomLeading) {
+                if let onPlay {
+                    PlayOverlayButton(visible: isHovering, action: onPlay)
+                        .padding(8)
+                }
+            }
+            .modifier(ScalePressFeedback(isPressed: isPressed))
+    }
+
     @ViewBuilder
     private var anchoredArtwork: some View {
         if let heroID {
-            artwork
+            decoratedArtwork
                 .heroAnchor(heroID)
                 .heroCardArtworkGate(heroID: heroID)
         } else {
-            artwork
+            decoratedArtwork
         }
     }
 

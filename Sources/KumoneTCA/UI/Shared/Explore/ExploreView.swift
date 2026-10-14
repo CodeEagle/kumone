@@ -32,7 +32,7 @@ struct ExploreView: View {
                                     store.send(.playPlaylist(playlist.id))
                                 }
                             }
-                            .buttonStyle(.plain)
+                            .buttonStyle(.scaleCard)
                             .staggeredAppearance(index: index % 10, id: "explore-\(playlist.id)")
                         }
                     }
@@ -95,12 +95,17 @@ struct ToplistGrid: View {
         ) {
             ForEach(toplists) { toplist in
                 Button {
+                    HeroTrigger.arm(HeroID.playlist(toplist.id),
+                                    sourceImageURL: toplist.coverImgUrl?.resizedImageURL(256))
                     appStore.animateOpen(.playlist(toplist.id))
                 } label: {
                     HStack(spacing: 14) {
                         CachedAsyncImage(url: toplist.coverImgUrl?.resizedImageURL(256))
                             .frame(width: 110, height: 110)
                             .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.standard, style: .continuous))
+                            .modifier(CardEnvironmentPressFeedback())
+                            .heroAnchor(HeroID.playlist(toplist.id))
+                            .heroCardArtworkGate(heroID: HeroID.playlist(toplist.id))
                         VStack(alignment: .leading, spacing: 5) {
                             Text(toplist.name)
                                 .font(.system(size: 14, weight: .semibold))
@@ -125,7 +130,7 @@ struct ToplistGrid: View {
                                 in: RoundedRectangle(cornerRadius: Theme.Radius.large, style: .continuous))
                     .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.scaleCard)
             }
         }
     }

@@ -157,7 +157,7 @@ struct LyricsPanel: View {
             .opacity(isActive ? 1 : 0.75)
             .blur(radius: isActive ? 0 : 0.3)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.scalePress)
         .animation(.spring(response: 0.4, dampingFraction: 0.8), value: isActive)
     }
 }

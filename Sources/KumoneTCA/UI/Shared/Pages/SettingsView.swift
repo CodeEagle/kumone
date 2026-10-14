@@ -128,6 +128,21 @@ public struct SettingsView: View {
                         maximumLabel: "150%"
                     )
                 }
+                SettingsValueSlider(
+                    title: "Shader 遮罩透明度",
+                    value: Binding(
+                        get: { store.shaderScrimTransparency },
+                        set: { store.send(.setShaderScrimTransparency($0)) }
+                    ),
+                    range: 0...1,
+                    step: 0.01,
+                    valueLabel: "\(Int((store.shaderScrimTransparency * 100).rounded()))%",
+                    minimumLabel: "0%",
+                    maximumLabel: "100%"
+                )
+                Text("调整正在播放页面上方的黑色遮罩，100% 时完全透明")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
                 #if os(macOS)
                 Toggle("菜单栏播放控制", isOn: Binding(
                     get: { store.showMenuBarPlayer },

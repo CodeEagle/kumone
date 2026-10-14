@@ -14,14 +14,19 @@ struct PlayerBar: View {
     var body: some View {
         GeometryReader { proxy in
             let compact = proxy.size.width < 860
+            // Equal-width wings keep play/pause and the scrubber on the
+            // minibar's actual midpoint, regardless of tool or title widths.
+            let sideWidth: CGFloat = compact ? 224 : 296
             HStack(spacing: 12) {
-                songInfoSection(compact: compact)
-                    .frame(width: compact ? 180 : 252, alignment: .leading)
+                songInfoSection
+                    .frame(width: sideWidth, alignment: .leading)
                 centerSection
                     .frame(maxWidth: .infinity)
-                optionsSection(compact: compact)
+                optionsSection
+                    .frame(width: sideWidth, alignment: .trailing)
             }
             .padding(.horizontal, 14)
+            .frame(height: Theme.Layout.playerBarHeight)
         }
         .frame(height: Theme.Layout.playerBarHeight)
         // ultraThinMaterial, not Liquid Glass: the bar's title sits inside
@@ -64,48 +69,50 @@ struct PlayerBar: View {
 
     // MARK: - Left: artwork + titles + like
 
-    private func songInfoSection(compact: Bool) -> some View {
+    private var songInfoSection: some View {
         HStack(spacing: 10) {
             artworkButton
-            VStack(alignment: .leading, spacing: 1) {
-                HStack(spacing: 6) {
-                    MarqueeText(
-                        text: player.currentTrack?.name ?? String(localized: "未在播放"),
-                        isPaused: appStore.isNowPlayingPresented
-                            || heroFlight.active[HeroID.nowPlayingTitle] != nil
-                    )
-                        .frame(height: 17)
-                        #if os(macOS)
-                        .heroAnchor(HeroID.nowPlayingTitle)
-                        // The flying stand-in owns the title for the whole
-                        // flight, in both directions.
-                        .opacity(heroFlight.active[HeroID.nowPlayingTitle] != nil ? 0 : 1)
-                        .animation(nil, value: heroFlight.active[HeroID.nowPlayingTitle] != nil)
-                        #endif
-                    if player.currentTrack?.fee == 1 {
-                        VIPBadge()
-                            #if os(macOS)
-                            .heroAnchor(HeroID.nowPlayingVIP)
-                            .opacity(heroFlight.active[HeroID.nowPlayingVIP] != nil ? 0 : 1)
-                            #endif
-                    }
-                }
+            VStack(alignment: .leading, spacing: 0) {
+                MarqueeText(
+                    text: player.currentTrack?.name ?? String(localized: "未在播放"),
+                    isPaused: appStore.isNowPlayingPresented
+                        || heroFlight.active[HeroID.nowPlayingTitle] != nil
+                )
+                .frame(height: 17)
+                #if os(macOS)
+                .heroAnchor(HeroID.nowPlayingTitle)
+                // The flying stand-in owns the title for the whole flight.
+                .opacity(heroFlight.active[HeroID.nowPlayingTitle] != nil ? 0 : 1)
+                .animation(nil, value: heroFlight.active[HeroID.nowPlayingTitle] != nil)
+                #endif
+                Spacer(minLength: 0)
                 Text(player.currentTrack?.artistNames ?? "miumiu")
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
+                    .frame(height: 14, alignment: .bottom)
                     #if os(macOS)
                     .heroAnchor(HeroID.nowPlayingArtist)
                     .opacity(heroFlight.active[HeroID.nowPlayingArtist] != nil ? 0 : 1)
+                    .animation(nil, value: heroFlight.active[HeroID.nowPlayingArtist] != nil)
                     #endif
             }
             .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(height: 38)
+        }
+    }
+
+    private var likeSection: some View {
+        Group {
             if let track = player.currentTrack {
-                LikeButton(trackID: track.id, appStore: appStore)
-                #if os(macOS)
-                .heroAnchor(HeroID.nowPlayingLike)
-                .opacity(heroFlight.active[HeroID.nowPlayingLike] != nil ? 0 : 1)
-                #endif
+                LikeButton(trackID: track.id, size: 16.25, diameter: 38, weight: .regular, showsBackground: false, appStore: appStore)
+                    // The 38pt hero endpoint shares the cover/text alignment band and
+                    // the return stand-in's diameter and glyph size.
+                    .heroAnchor(HeroID.nowPlayingLike)
+                    .opacity(heroFlight.active[HeroID.nowPlayingLike] != nil ? 0 : 1)
+                    .animation(nil, value: heroFlight.active[HeroID.nowPlayingLike] != nil)
+            } else {
+                Color.clear.frame(width: 38, height: 38)
             }
         }
     }
@@ -121,7 +128,7 @@ struct PlayerBar: View {
                     frame: sourceFrame,
                     scale: HeroFrameStore.shared.scale(for: pair.source) ?? 1,
                     cornerRadius: pair.source == HeroID.nowPlayingArtwork ? Theme.Radius.small
-                        : (pair.source == HeroID.nowPlayingPlayPause ? 15 : 0)
+                        : (pair.source == HeroID.nowPlayingPlayPause ? 13 : 0)
                 )
             }
             withAnimation(AppAnimation.smooth) {
@@ -150,10 +157,12 @@ struct PlayerBar: View {
     // MARK: - Center: transport + scrubber
 
     private var centerSection: some View {
-        VStack(spacing: 3) {
+        // Keep separate transport and progress rows inside the cover's 38pt
+        // band, with a real gap rather than overlapping hit regions.
+        VStack(spacing: 2) {
             HStack(spacing: 6) {
                 if player.isFMMode {
-                    PlayerIconButton(icon: "trash", size: 12) {
+                    PlayerIconButton(icon: "trash", size: 12, showsBackground: false) {
                         appStore.send(.player(.fmTrash))
                     }
                     #if os(macOS)
@@ -163,7 +172,7 @@ struct PlayerBar: View {
                     .help("不喜欢，换一首")
                 } else {
                     PlayerIconButton(
-                        icon: "shuffle", size: 12,
+                        icon: "shuffle", size: 12, showsBackground: false,
                         isActive: player.shuffleEnabled
                     ) {
                         appStore.send(.player(.toggleShuffle))
@@ -175,7 +184,7 @@ struct PlayerBar: View {
                     .help("随机播放")
                 }
 
-                PlayerIconButton(icon: "backward.fill", size: 14, disabled: player.isFMMode) {
+                PlayerIconButton(icon: "backward.fill", size: 14, showsBackground: false, disabled: player.isFMMode) {
                     appStore.send(.player(.previous))
                 }
                 #if os(macOS)
@@ -185,7 +194,7 @@ struct PlayerBar: View {
 
                 playPauseButton
 
-                PlayerIconButton(icon: "forward.fill", size: 14) {
+                PlayerIconButton(icon: "forward.fill", size: 14, showsBackground: false) {
                     appStore.send(.player(.next))
                 }
                 #if os(macOS)
@@ -205,7 +214,7 @@ struct PlayerBar: View {
                         .help("私人漫游中")
                 } else {
                     PlayerIconButton(
-                        icon: player.repeatMode == .one ? "repeat.1" : "repeat", size: 12,
+                        icon: player.repeatMode == .one ? "repeat.1" : "repeat", size: 12, showsBackground: false,
                         isActive: player.repeatMode != .off
                     ) {
                         appStore.send(.player(.cycleRepeatMode))
@@ -219,7 +228,7 @@ struct PlayerBar: View {
             }
             ScrubberLane(appStore: appStore)
         }
-        .padding(.vertical, 5)
+        .frame(height: 38)
         .opacity(player.hasCurrentTrack ? 1 : 0.5)
     }
 
@@ -230,8 +239,8 @@ struct PlayerBar: View {
             ZStack {
                 Circle()
                     .fill(Theme.accentGradient)
-                    .frame(width: 30, height: 30)
-                    .shadow(color: Theme.accent.opacity(0.35), radius: 5, y: 1)
+                    .frame(width: 26, height: 26)
+                    .shadow(color: Theme.accent.opacity(0.35), radius: 3, y: 1)
                 if player.isBuffering && player.isPlaying {
                     ProgressView()
                         .controlSize(.small)
@@ -255,64 +264,93 @@ struct PlayerBar: View {
 
     // MARK: - Right: quality / panels / volume
 
-    private func optionsSection(compact: Bool) -> some View {
-        HStack(spacing: 4) {
-            // Reserve a constant-width slot for the quality/source tag: tags
-            // are swapped on every track change (servedQuality is cleared
-            // while resolving the next URL), which would otherwise widen/narrow
-            // this section and visibly shift the transport. A native stream
-            // shows no source tag — only third-party sources are named.
-            if !compact {
-                Group {
-                    if let source = player.unblockSource {
-                        SourceTag(source: source)
-                            .help("来自 \(source)")
-                    } else if let level = player.servedQuality,
-                              let quality = AudioQuality(rawValue: level) {
-                        QualityTag(text: quality.badge)
-                    } else {
-                        // An empty `if let` inside a fixed frame does NOT hold
-                        // its width in an HStack (verified: the slot collapses to
-                        // 0 and the whole right section jumps the first time a
-                        // quality badge appears). Color.clear keeps the 56pt.
-                        Color.clear
+    private var optionsSection: some View {
+        HStack(spacing: 12) {
+            statusSection
+            VStack(spacing: 0) {
+                HStack(spacing: 10) {
+                    PlayerIconButton(
+                        icon: "quote.bubble", size: 13, diameter: 19, showsBackground: false,
+                        isActive: player.activePanel == .lyrics
+                    ) {
+                        appStore.send(.player(.togglePanel(.lyrics)))
                     }
+                    .help("歌词")
+                    .heroAnchor(HeroID.nowPlayingLyrics)
+                    .opacity(heroFlight.active[HeroID.nowPlayingLyrics] != nil ? 0 : 1)
+                    .animation(nil, value: heroFlight.active[HeroID.nowPlayingLyrics] != nil)
+                    PlayerIconButton(
+                        icon: "list.bullet", size: 13, diameter: 19, showsBackground: false,
+                        isActive: player.activePanel == .queue,
+                        disabled: player.isFMMode
+                    ) {
+                        appStore.send(.player(.togglePanel(.queue)))
+                    }
+                    .help("播放队列")
+                    // Keep the grid aligned with the volume column below;
+                    // this slot is layout space, not another toolbar action.
+                    Color.clear.frame(width: 19, height: 19)
+
                 }
-                .frame(width: 56, alignment: .leading)
-                .padding(.trailing, 2)
+                HStack(spacing: 10) {
+                    PlayerIconButton(
+                        icon: "inset.filled.bottomthird.square", size: 13, diameter: 19, showsBackground: false,
+                        isActive: appStore.settings.showDesktopLyrics
+                    ) {
+                        appStore.send(.settings(.setShowDesktopLyrics(!appStore.settings.showDesktopLyrics)))
+                    }
+                    .help("桌面歌词")
+                    #if os(macOS)
+                    RoutePickerButton(diameter: 19, glyphSize: 13,
+                                      tint: .secondary, background: .clear)
+                        .modifier(PlayerGlyphHoverFeedback())
+                        .heroAnchor(HeroID.nowPlayingAirPlay)
+                        .opacity(heroFlight.active[HeroID.nowPlayingAirPlay] != nil ? 0 : 1)
+                        .animation(nil, value: heroFlight.active[HeroID.nowPlayingAirPlay] != nil)
+                    #else
+                    Color.clear.frame(width: 19, height: 19)
+                    #endif
+                    VolumeControl(appStore: appStore, diameter: 19)
+                }
             }
-            PlayerIconButton(
-                icon: "quote.bubble", size: 13,
-                isActive: player.activePanel == .lyrics
-            ) {
-                appStore.send(.player(.togglePanel(.lyrics)))
-            }
-            .help("歌词")
-            .heroAnchor(HeroID.nowPlayingLyrics)
-            .opacity(heroFlight.active[HeroID.nowPlayingLyrics] != nil ? 0 : 1)
-            PlayerIconButton(
-                icon: "inset.filled.bottomthird.square", size: 13,
-                isActive: appStore.settings.showDesktopLyrics
-            ) {
-                appStore.send(.settings(.setShowDesktopLyrics(!appStore.settings.showDesktopLyrics)))
-            }
-            .help("桌面歌词")
-            PlayerIconButton(
-                icon: "list.bullet", size: 13,
-                isActive: player.activePanel == .queue,
-                disabled: player.isFMMode
-            ) {
-                appStore.send(.player(.togglePanel(.queue)))
-            }
-            .help("播放队列")
-            #if os(macOS)
-            RoutePickerButton(diameter: 26, glyphSize: 13,
-                              tint: .secondary, background: .clear)
-                .heroAnchor(HeroID.nowPlayingAirPlay)
-                .opacity(heroFlight.active[HeroID.nowPlayingAirPlay] != nil ? 0 : 1)
-            #endif
-            VolumeControl(appStore: appStore)
+            likeSection
+                .frame(width: 38, height: 38)
         }
+        .fixedSize()
+    }
+
+    private var statusSection: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            // The badge stays mounted even for non-VIP tracks. Its default
+            // styling and intrinsic hero frame remain unchanged for VIP songs.
+            VIPBadge(isAvailable: player.currentTrack?.fee == 1)
+                .heroAnchor(HeroID.nowPlayingVIP)
+                .opacity(heroFlight.active[HeroID.nowPlayingVIP] != nil ? 0 : 1)
+                .animation(nil, value: heroFlight.active[HeroID.nowPlayingVIP] != nil)
+                .frame(width: 56, height: 16, alignment: .topLeading)
+                .help(player.currentTrack?.fee == 1 ? "VIP 歌曲" : "非 VIP 歌曲")
+            QualityTag(text: servedQuality?.badge ?? "HQ", isAvailable: servedQuality != nil)
+                .heroAnchor(HeroID.nowPlayingQuality)
+                .opacity(heroFlight.active[HeroID.nowPlayingQuality] != nil ? 0 : 1)
+                .animation(nil, value: heroFlight.active[HeroID.nowPlayingQuality] != nil)
+                .frame(width: 56, height: 16, alignment: .bottomLeading)
+                .help(qualityDescription)
+        }
+        // Inset the badge outlines to match visible title/artist ink, which
+        // sits inside the text line boxes rather than on the cover edges.
+        .frame(width: 56, height: 32)
+        .frame(height: 38)
+    }
+
+    private var servedQuality: AudioQuality? {
+        guard player.hasCurrentTrack, let level = player.servedQuality else { return nil }
+        return AudioQuality(rawValue: level)
+    }
+
+    private var qualityDescription: String {
+        let quality = servedQuality?.displayName ?? String(localized: "音质暂不可用")
+        if let source = player.unblockSource { return "\(quality) · \(String(localized: "来自 \(source)"))" }
+        return quality
     }
 
     private var bottomFade: some View {
@@ -333,6 +371,9 @@ struct PlayerBar: View {
 struct PlayerIconButton: View {
     let icon: String
     var size: CGFloat = 14
+    var diameter: CGFloat = 26
+    var weight: Font.Weight = .medium
+    var showsBackground = true
     var isActive = false
     var disabled = false
     let action: () -> Void
@@ -343,9 +384,11 @@ struct PlayerIconButton: View {
     var body: some View {
         Button(action: action) {
             Image(systemName: icon)
-                .font(.system(size: size, weight: .medium))
+                .font(.system(size: size, weight: weight))
                 .foregroundStyle(isActive ? AnyShapeStyle(Theme.accent) : AnyShapeStyle(.primary))
-                .frame(width: 26, height: 26)
+                // Scale only the glyph, inside the stable hero/click frame.
+                .scaleEffect(!showsBackground && isHovering && !disabled ? 1.08 : 1)
+                .frame(width: diameter, height: diameter)
                 .background(
                     RoundedRectangle(cornerRadius: 7, style: .continuous)
                         .fill(backgroundColor)
@@ -356,14 +399,30 @@ struct PlayerIconButton: View {
         .disabled(disabled)
         .opacity(disabled ? 0.35 : 1)
         .onHover { isHovering = $0 }
-        .animation(AppAnimation.quick, value: isHovering)
+        .animation(showsBackground ? AppAnimation.quick : .easeOut(duration: 0.14), value: isHovering)
     }
 
     private var backgroundColor: Color {
+        guard showsBackground else { return .clear }
         let base: Color = colorScheme == .dark ? .white : .black
         if isHovering, !disabled { return base.opacity(0.08) }
         if isActive { return base.opacity(0.05) }
         return .clear
+    }
+}
+
+/// Native route controls use the same hover feedback without changing
+/// their measured hero frame or drawing another background.
+private struct PlayerGlyphHoverFeedback: ViewModifier {
+    @State private var isHovering = false
+
+    func body(content: Content) -> some View {
+        content
+            .visualEffect { effect, _ in
+                effect.scaleEffect(isHovering ? 1.08 : 1)
+            }
+            .onHover { isHovering = $0 }
+            .animation(.easeOut(duration: 0.14), value: isHovering)
     }
 }
 
@@ -372,13 +431,16 @@ struct PlayerIconButton: View {
 struct LikeButton: View {
     let trackID: Int
     var size: CGFloat = 13
+    var diameter: CGFloat = 26
+    var weight: Font.Weight = .medium
+    var showsBackground = true
     let appStore: StoreOf<AppFeature>
 
     var body: some View {
         let liked = appStore.account.isLiked(trackID)
         PlayerIconButton(
-            icon: liked ? "heart.fill" : "heart", size: size,
-            isActive: liked
+            icon: liked ? "heart.fill" : "heart", size: size, diameter: diameter, weight: weight,
+            showsBackground: showsBackground, isActive: liked
         ) {
             appStore.send(.account(.toggleLike(trackID)))
         }
@@ -415,9 +477,9 @@ struct ScrubberLane: View {
 
     private func timeLabel(_ value: TimeInterval) -> some View {
         Text(Formatters.duration(value))
-            .font(.system(size: 10).monospacedDigit())
+            .font(.system(size: 9).monospacedDigit())
             .foregroundStyle(.secondary)
-            .frame(width: 34)
+            .frame(width: 34, height: 10)
     }
 
     private var track: some View {
@@ -460,7 +522,7 @@ struct ScrubberLane: View {
                     }
             )
         }
-        .frame(height: 14)
+        .frame(height: 10)
         .onHover { hovering in
             withAnimation(AppAnimation.quick) { isHovering = hovering }
         }
@@ -476,13 +538,14 @@ struct ScrubberLane: View {
 
 struct VolumeControl: View {
     let appStore: StoreOf<AppFeature>
+    var diameter: CGFloat = 26
 
     @State private var showPopover = false
 
     private var volume: Float { appStore.player.volume }
 
     var body: some View {
-        PlayerIconButton(icon: volumeIcon, size: 13) {
+        PlayerIconButton(icon: volumeIcon, size: 13, diameter: diameter, showsBackground: false) {
             showPopover.toggle()
         }
         .popover(isPresented: $showPopover, arrowEdge: .top) {

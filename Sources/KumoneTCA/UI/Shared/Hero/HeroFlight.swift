@@ -18,6 +18,7 @@ struct HeroFlight: View {
     /// the probe for the visibility check.
     let containerFrame: CGRect
 
+    @ObservedObject private var imageLoading = ImageLoadingControl.shared
     @ObservedObject private var frameStore = HeroFrameStore.shared
     @State private var animationGeneration = UUID()
     @State private var shadowProgress: CGFloat = 0
@@ -71,14 +72,9 @@ struct HeroFlight: View {
         } action: { global in
             // The rendered frame, not the animated one, is what gets verified.
             measuredFrame = global
-            // The stand-in has arrived on the target: release the landing
-            // page's cover gate now, while the spring's tail settles, so the
-            // real cover is already under the stand-in when the page fade
-            // completes (otherwise the cover pops into a fully-opaque page a
-            // beat late — the "background covers the cover" gap).
-            if !finished, global.approximately(flight.target, tolerance: 8) {
-                HeroFlightDirector.shared.release(id: flight.id)
-            }
+            // Geometry reports the layout destination before the rendered
+            // spring arrives. Keep the real endpoint hidden until completion;
+            // the stand-in supplies the cover throughout the page fade.
             // The first geometry pass is the only honest reading of where the
             // proxy starts: every later pass is already mid-flight, and the
             // pre-animation `flight.source` value would merely re-assert the
@@ -132,7 +128,7 @@ struct HeroFlight: View {
         if flight.targetAnchorID != nil || flight.liveAnchorID != nil {
             HeroProbe.shared.recordTarget(
                 id: flight.id, frame: target, scale: flight.targetScale,
-                cornerRadius: flight.cornerRadius
+                cornerRadius: flight.targetCornerRadius
             )
         }
         let startLine = "HERO SPRING start \(flight.id)"
@@ -142,7 +138,7 @@ struct HeroFlight: View {
         KumoneLogger.hero.notice("\(startLine, privacy: .public)")
         HeroProbe.writeFile(startLine)
         HeroFlightDirector.shared.watchSettle(flight.id)
-        withAnimation(AppAnimation.heroSpring, completionCriteria: .removed) {
+        withAnimation(flight.animation, completionCriteria: .removed) {
             frame = target
             scale = flight.targetScale
             shadowProgress = 1
@@ -173,7 +169,7 @@ struct HeroFlight: View {
             }
             HeroProbe.shared.recordLanding(
                 id: flight.id, frame: measuredFrame ?? target,
-                scale: flight.targetScale, cornerRadius: flight.cornerRadius
+                scale: flight.targetScale, cornerRadius: flight.targetCornerRadius
             )
             HeroFlightDirector.shared.end(id: flight.id)
         }
@@ -194,19 +190,32 @@ struct HeroFlight: View {
     private var flightContent: some View {
         switch flight.content {
         case let .artwork(url, cornerRadius):
-            CachedAsyncImage(url: url, animated: false,
-                             rendition: flight.id == HeroID.nowPlayingArtwork ? .playback : nil) {
-                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                    // Opaque while the artwork loads, as in the original flight.
-                    .fill(.secondary)
+            if let image = flight.artworkImage, !imageLoading.isDisabled {
+                Image(platformImage: image)
+                    .resizable()
+                    .aspectRatio(contentMode: .fill)
+            } else {
+                CachedAsyncImage(url: url, animated: false,
+                                 rendition: flight.id == HeroID.nowPlayingArtwork ? .playback : nil) {
+                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                        // Opaque while the artwork loads, as in the original flight.
+                        .fill(.secondary)
+                }
             }
         case let .playerTitle(text):
             HeroTitleStandIn(
                 text: text,
                 pageProgress: flight.targetAnchorID == nil ? shadowProgress : 1 - shadowProgress
             )
+        case let .playerArtist(track):
+            HeroArtistStandIn(
+                track: track,
+                pageProgress: flight.targetAnchorID == nil ? shadowProgress : 1 - shadowProgress
+            )
         case .vipBadge:
             VIPBadge()
+        case let .qualityBadge(text, isAvailable):
+            QualityTag(text: text, isAvailable: isAvailable)
         case let .text(text, color, fontSize, weight):
             Text(text)
                 .font(.system(size: fontSize, weight: weight))
@@ -225,6 +234,8 @@ struct HeroFlight: View {
                 diameter: diameter, fontSize: fontSize, weight: weight,
                 isNowPlaying: HeroID.nowPlayingPairs.contains { $0.source == flight.id },
                 isPlayPause: flight.id == HeroID.nowPlayingPlayPause,
+                isLike: flight.id == HeroID.nowPlayingLike,
+                isRoaming: flight.id == HeroID.nowPlayingRoaming,
                 isReturning: flight.targetAnchorID != nil,
                 progress: shadowProgress
             )
@@ -258,6 +269,8 @@ private struct HeroIconStandIn: View, Animatable {
     let weight: Font.Weight
     let isNowPlaying: Bool
     let isPlayPause: Bool
+    let isLike: Bool
+    let isRoaming: Bool
     let isReturning: Bool
     var progress: CGFloat
 
@@ -270,27 +283,32 @@ private struct HeroIconStandIn: View, Animatable {
         let amount = min(max(progress, 0), 1)
         let sourceFill: HeroFill = isNowPlaying
             ? (isReturning
-                ? (isPlayPause ? .white : .translucentWhite)
+                ? (isPlayPause ? .white : (isRoaming ? .none : .translucentBlack))
                 : (isPlayPause ? .accent : .none))
             : background
         let sourceTint: Color = isNowPlaying && isPlayPause
             ? (isReturning ? .black.opacity(0.85) : .white)
-            : tint
+            : (isNowPlaying && isLike
+                ? (name == "heart.fill" ? Theme.accent : (isReturning ? .white.opacity(0.8) : .primary))
+                : tint)
         GeometryReader { proxy in
+            let glyphSize = isLike
+                ? (isReturning ? 15 + 1.25 * amount : 16.25 - 1.25 * amount)
+                : (isRoaming
+                    ? (isReturning ? 14 - amount : 13 + amount)
+                    : fontSize * min(proxy.size.width, proxy.size.height) / diameter)
             ZStack {
                 Circle().fill(sourceFill.style).opacity(1 - Double(amount))
                 Circle().fill(background.style).opacity(Double(amount))
                 Image(systemName: name)
+                    .font(.system(size: glyphSize, weight: isLike ? (isReturning ? .medium : .regular) : weight))
                     .foregroundStyle(sourceTint)
                     .opacity(1 - Double(amount))
                 Image(systemName: name)
+                    .font(.system(size: glyphSize, weight: isLike ? (isReturning ? .regular : .medium) : weight))
                     .foregroundStyle(tint)
                     .opacity(Double(amount))
             }
-            .font(.system(
-                size: fontSize * min(proxy.size.width, proxy.size.height) / diameter,
-                weight: weight
-            ))
             .frame(width: proxy.size.width, height: proxy.size.height)
         }
     }
@@ -319,7 +337,7 @@ private struct RoutePickerCrossfade: View, Animatable {
     var body: some View {
         let amount = min(max(progress, 0), 1)
         let liftOffTint = isReturning ? Color.white.opacity(0.8) : Color.secondary
-        let liftOffBackground = isReturning ? Color.white.opacity(0.1) : Color.clear
+        let liftOffBackground = isReturning ? Color.black.opacity(0.28) : Color.clear
         ZStack {
             RoutePickerButton(diameter: diameter, glyphSize: glyphSize,
                               tint: liftOffTint, background: liftOffBackground)
@@ -355,6 +373,7 @@ private struct HeroTitleStandIn: View, Animatable {
                 Text(text)
                     .font(.system(size: size, weight: .bold))
                     .foregroundStyle(.white)
+                    .shadow(color: .black.opacity(0.35), radius: 1.5, y: 1)
                     .lineLimit(1)
                     .truncationMode(.tail)
                     .frame(width: proxy.size.width, height: proxy.size.height)
@@ -363,6 +382,54 @@ private struct HeroTitleStandIn: View, Animatable {
             .frame(width: proxy.size.width, height: proxy.size.height)
             .clipped()
         }
+    }
+}
+
+/// Use the real endpoint renderers: detail links wrap to show all metadata,
+/// whereas the minibar truncates a single artist string from its leading edge. Finish
+/// the crossfade during flight, so the landing never switches text or color.
+struct HeroArtistStandIn: View, Animatable {
+    let track: Track
+    var pageProgress: CGFloat
+
+    var animatableData: CGFloat {
+        get { pageProgress }
+        set { pageProgress = newValue }
+    }
+
+    static func detailOpacity(at progress: CGFloat) -> Double {
+        let amount = min(max((progress - 0.25) / 0.5, 0), 1)
+        return Double(amount * amount * (3 - 2 * amount))
+    }
+
+    var body: some View {
+        let progress = min(max(pageProgress, 0), 1)
+        let opacity = Self.detailOpacity(at: progress)
+        let fontSize = 11 + 2.5 * progress
+        GeometryReader { proxy in
+            ZStack {
+                Text(track.artistNames)
+                    .font(.system(size: fontSize))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .frame(width: proxy.size.width, height: proxy.size.height,
+                           alignment: .bottomLeading)
+                    .opacity(1 - opacity)
+                NowPlayingTrackDestinationLinks(
+                    track: track,
+                    font: .system(size: fontSize),
+                    color: .white.opacity(0.65),
+                    onOpenDestination: { _ in },
+                    allowsWrapping: true
+                )
+                .frame(width: proxy.size.width, height: proxy.size.height)
+                .opacity(opacity)
+            }
+            .frame(width: proxy.size.width, height: proxy.size.height)
+            .clipped()
+        }
+        .allowsHitTesting(false)
     }
 }
 

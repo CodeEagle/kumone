@@ -55,7 +55,7 @@ struct SidebarView: View {
                                     .frame(width: 16, height: 16)
                                     .contentShape(Rectangle())
                             }
-                            .buttonStyle(.plain)
+                            .buttonStyle(.scalePress)
                             .foregroundStyle(.secondary)
                             // Align with the trailing edge of the playlist rows
                             // (rows carry 6pt list inset + 8pt inner padding).
@@ -194,7 +194,7 @@ struct SidebarView: View {
                         .frame(width: 40, height: 40)
                         .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.scalePress)
                 .accessibilityLabel(Text("搜索"))
 
                 Button {
@@ -206,7 +206,7 @@ struct SidebarView: View {
                         .frame(width: 40, height: 40)
                         .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.scalePress)
                 .padding(.trailing, 6)
                 .accessibilityLabel(Text("设置"))
 #endif
@@ -256,7 +256,7 @@ struct SidebarView: View {
                 }
                 .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.scalePress)
             .padding(.horizontal, 14)
             .padding(.vertical, 10)
         }
@@ -303,7 +303,7 @@ private struct AccountChip: View {
             )
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.scalePress)
         .onHover { hovering in
             withAnimation(AppAnimation.quick) { isHovering = hovering }
         }
@@ -390,7 +390,7 @@ private struct SidebarRow: View {
             .background(selectionBackground)
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.scalePress)
         .listRowInsets(EdgeInsets(top: 1, leading: 0, bottom: 1, trailing: 6))
     }
 
@@ -426,7 +426,7 @@ private struct SidebarPlaylistRow: View {
             .background(selectionBackground)
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.scalePress)
         .listRowInsets(EdgeInsets(top: 1, leading: 0, bottom: 1, trailing: 6))
     }
 

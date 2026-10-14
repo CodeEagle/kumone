@@ -39,7 +39,7 @@ final class ConfigPreviewWindow: NSWindow {
             styleMask: [.titled, .closable, .miniaturizable, .resizable],
             backing: .buffered,
             defer: false)
-        title = screenWindow.title ?? "配置预览 — \(name)"
+        title = screenWindow.title ?? String(localized: "配置预览 — \(name)")
         contentView = hosting.view
         // Closing drops the window from the owner's registry (its
         // willClose observer), which is what releases it — reopening the

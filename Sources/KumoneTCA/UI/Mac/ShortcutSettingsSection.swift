@@ -21,7 +21,7 @@ struct ShortcutSettingsSection: View {
                 HStack {
                     Text(action.displayName)
                     Spacer()
-                    Button(recording == action ? "请按下按键…" : manager.shortcut(for: action, isGlobal: global).displayString) {
+                    Button(recording == action ? String(localized: "请按下按键…") : manager.shortcut(for: action, isGlobal: global).displayString) {
                         recording = action
                         manager.isRecording = true
                     }
@@ -36,8 +36,8 @@ struct ShortcutSettingsSection: View {
                     }
                 }
             }
-            Text(global ? "全局默认关闭。设置 ⌘、⌃ 或 ⌥ 组合后，在其他应用中也能控制播放。"
-                        : "点击按键录制，Esc 清除。系统窗口快捷键保持不变。")
+            Text(global ? String(localized: "全局默认关闭。设置 ⌘、⌃ 或 ⌥ 组合后，在其他应用中也能控制播放。")
+                        : String(localized: "点击按键录制，Esc 清除。系统窗口快捷键保持不变。"))
                 .font(.caption).foregroundStyle(.secondary)
             if let error = manager.errorMessage { Text(error).foregroundStyle(.red).font(.caption) }
             Button("重置所有快捷键") {

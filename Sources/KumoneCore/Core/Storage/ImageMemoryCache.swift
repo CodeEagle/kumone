@@ -21,6 +21,7 @@ final class ImageMemoryCache: @unchecked Sendable {
     }
     private let lock = NSLock()
     private var entries: [String: Entry] = [:]
+    private var liveEntries: [String: DecodedImage] = [:]
     private var transientEntries: [String: DecodedImage] = [:]
     // Weak bookkeeping sees covers still held by UI/Now Playing after eviction,
     // without extending their lifetimes. Pixel bytes, not process footprint.
@@ -38,7 +39,7 @@ final class ImageMemoryCache: @unchecked Sendable {
     func setLoadingDisabled(_ value: Bool) {
         lock.withLock {
             disabled = value
-            if value { entries.removeAll(); transientEntries.removeAll(); bytes = 0 }
+            if value { entries.removeAll(); transientEntries.removeAll(); liveEntries.removeAll(); bytes = 0 }
         }
     }
 
@@ -70,6 +71,19 @@ final class ImageMemoryCache: @unchecked Sendable {
         }
     }
 
+    /// Reuse an evicted bitmap still held by a visible image view, without
+    /// extending its lifetime or charging a second cache against the budget.
+    func liveImage(for key: String) -> PlatformImage? {
+        lock.withLock {
+            guard !disabled else { return nil }
+            guard let image = liveEntries[key]?.image else {
+                liveEntries[key] = nil
+                return nil
+            }
+            return image
+        }
+    }
+
     func insert(_ image: PlatformImage, for key: String, cost: Int, transient: Bool = false) {
         lock.withLock {
             guard !disabled else { return }
@@ -77,6 +91,11 @@ final class ImageMemoryCache: @unchecked Sendable {
             if cost > 0 {
                 decodedImages[ObjectIdentifier(image)] = DecodedImage(image: image, cost: cost)
             }
+            liveEntries = liveEntries.filter { $0.value.image != nil }
+            if liveEntries.count >= 600, let oldestKey = liveEntries.keys.first {
+                liveEntries.removeValue(forKey: oldestKey)
+            }
+            liveEntries[key] = DecodedImage(image: image, cost: cost)
             if let old = entries.removeValue(forKey: key) { bytes -= old.cost }
             transientEntries = transientEntries.filter { $0.value.image != nil }
             if transient {

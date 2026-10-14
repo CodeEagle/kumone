@@ -18,19 +18,19 @@ public enum UnimplementedProviderError: Error, LocalizedError {
 
     public var errorDescription: String? {
         switch self {
-        case .auth: return "该源未实现认证能力域"
-        case .login: return "该源未实现登录能力域"
-        case .library: return "该源未实现音乐库能力域"
-        case .playlist: return "该源未实现歌单能力域"
-        case .playback: return "该源未实现播放能力域"
-        case .search: return "该源未实现搜索能力域"
-        case .discovery: return "该源未实现发现能力域"
-        case .album: return "该源未实现专辑能力域"
-        case .artist: return "该源未实现歌手能力域"
-        case .playHistory: return "该源未实现播放记录能力域"
-        case .personalFM: return "该源未实现私人电台能力域"
-        case .cloudStorage: return "该源未实现云盘能力域"
-        case .intelligence: return "该源未实现心动模式能力域"
+        case .auth: return String(localized: "该源未实现认证能力域")
+        case .login: return String(localized: "该源未实现登录能力域")
+        case .library: return String(localized: "该源未实现音乐库能力域")
+        case .playlist: return String(localized: "该源未实现歌单能力域")
+        case .playback: return String(localized: "该源未实现播放能力域")
+        case .search: return String(localized: "该源未实现搜索能力域")
+        case .discovery: return String(localized: "该源未实现发现能力域")
+        case .album: return String(localized: "该源未实现专辑能力域")
+        case .artist: return String(localized: "该源未实现歌手能力域")
+        case .playHistory: return String(localized: "该源未实现播放记录能力域")
+        case .personalFM: return String(localized: "该源未实现私人电台能力域")
+        case .cloudStorage: return String(localized: "该源未实现云盘能力域")
+        case .intelligence: return String(localized: "该源未实现心动模式能力域")
         }
     }
 }

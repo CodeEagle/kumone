@@ -221,14 +221,18 @@ public struct MainWindow: View {
         // An external MTKView can draw successfully beneath an opaque SwiftUI
         // hosting surface without any of its pixels reaching the window.
         .background {
-            ShaderContainerView(
+            ShaderBackdropView(
                 shader: store.settings.showMainWindowAmbientBackground
                     ? shaderLibrary.available.first(where: { $0.id == store.shaderID }) : nil,
                 isPlaying: store.player.isPlaying,
                 palette: ShaderPaletteBuilder.make(from: artworkStore.colors),
-                pcmSync: shaderSettings.pcmSyncEnabled
+                pcmSync: shaderSettings.pcmSyncEnabled,
+                // Reveal or cover the existing dark window backdrop through
+                // the shader's own compositing alpha, without a second veil.
+                intensity: store.isNowPlayingPresented
+                    ? store.settings.shaderScrimTransparency
+                    : store.settings.mainWindowAmbientBackgroundIntensity
             )
-            .opacity(min(max(store.settings.mainWindowAmbientBackgroundIntensity, 0), 1))
             .ignoresSafeArea()
             .allowsHitTesting(false)
         }
@@ -319,7 +323,7 @@ public struct MainWindow: View {
                 content = .artwork(url: store.player.currentTrack?.album.picUrl?.resizedImageURL(768), cornerRadius: Theme.Radius.small)
             case HeroID.nowPlayingPlayPause:
                 content = .icon(name: store.player.isPlaying ? "pause.fill" : "play.fill",
-                                tint: .white, background: .accent, diameter: 30, fontSize: 12.5)
+                                tint: .white, background: .accent, diameter: 26, fontSize: 12.5)
             case HeroID.nowPlayingPrevious:
                 guard !store.player.isFMMode else { continue }
                 content = .icon(name: "backward.fill", tint: .primary, background: .none, diameter: 26, fontSize: 14, weight: .medium)
@@ -329,7 +333,7 @@ public struct MainWindow: View {
                 guard let track = store.player.currentTrack else { continue }
                 let liked = store.account.isLiked(track.id)
                 content = .icon(name: liked ? "heart.fill" : "heart", tint: liked ? Theme.accent : .primary,
-                                background: .none, diameter: 26, fontSize: 13, weight: .medium)
+                                background: .none, diameter: 38, fontSize: 16.25, weight: .regular)
             case HeroID.nowPlayingShuffle:
                 guard !store.player.isFMMode else { continue }
                 content = .icon(name: "shuffle", tint: store.player.shuffleEnabled ? Theme.accent : .primary,
@@ -346,22 +350,23 @@ public struct MainWindow: View {
                 content = .playerTitle(
                     store.player.currentTrack?.name ?? String(localized: "未在播放")
                 )
+            case HeroID.nowPlayingQuality:
+                let quality = store.player.servedQuality.flatMap(AudioQuality.init(rawValue:))
+                content = .qualityBadge(quality?.badge ?? "HQ", isAvailable: quality != nil)
             case HeroID.nowPlayingVIP:
                 guard store.player.currentTrack?.fee == 1 else { continue }
                 content = .vipBadge
             case HeroID.nowPlayingArtist:
-                content = .text(
-                    store.player.currentTrack?.artistNames ?? "miumiu",
-                    color: .secondary, fontSize: 11
-                )
+                guard let track = store.player.currentTrack else { continue }
+                content = .playerArtist(track)
             case HeroID.nowPlayingLyrics:
                 content = .icon(
                     name: "quote.bubble",
                     tint: store.player.activePanel == .lyrics ? Theme.accent : .primary,
-                    background: .none, diameter: 26, fontSize: 13, weight: .medium
+                    background: .none, diameter: 19, fontSize: 13, weight: .medium
                 )
             case HeroID.nowPlayingAirPlay:
-                content = .routePicker(diameter: 26, glyphSize: 13,
+                content = .routePicker(diameter: 19, glyphSize: 13,
                                        tint: .secondary, background: .clear)
             case HeroID.nowPlayingRoaming:
                 content = .icon(

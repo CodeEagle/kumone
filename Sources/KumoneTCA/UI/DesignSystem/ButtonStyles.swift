@@ -1,11 +1,41 @@
 import KumoneCore
+import KumoneUI
 import SwiftUI
+
+private struct CardPressedKey: EnvironmentKey {
+    static let defaultValue = false
+}
+
+extension EnvironmentValues {
+    var isCardPressed: Bool {
+        get { self[CardPressedKey.self] }
+        set { self[CardPressedKey.self] = newValue }
+    }
+}
+
+struct CardEnvironmentPressFeedback: ViewModifier {
+    @Environment(\.isCardPressed) private var isPressed
+
+    func body(content: Content) -> some View {
+        content.modifier(ScalePressFeedback(isPressed: isPressed))
+    }
+}
+
+struct ScaleCardButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label.environment(\.isCardPressed, configuration.isPressed)
+    }
+}
+
+extension ButtonStyle where Self == ScaleCardButtonStyle {
+    static var scaleCard: ScaleCardButtonStyle { ScaleCardButtonStyle() }
+}
 
 /// Cards that scale up on hover, scale down on press, with a soft shadow.
 struct InteractiveCardStyle: ButtonStyle {
     var showShadow = true
     var hoverScale: CGFloat = 1.02
-    var pressScale: CGFloat = 0.98
+    var pressScale: CGFloat = 0.97
 
     #if os(macOS)
     @State private var isHovering = false
@@ -14,19 +44,21 @@ struct InteractiveCardStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         #if os(macOS)
         configuration.label
-            .scaleEffect(configuration.isPressed ? pressScale : (isHovering ? hoverScale : 1.0))
+            .visualEffect { effect, _ in
+                effect.scaleEffect(configuration.isPressed ? pressScale : (isHovering ? hoverScale : 1.0))
+            }
             .shadow(
                 color: showShadow && isHovering ? .black.opacity(0.15) : .clear,
                 radius: isHovering ? 12 : 0,
                 x: 0,
                 y: isHovering ? 4 : 0
             )
-            .animation(AppAnimation.spring, value: configuration.isPressed)
+            .animation(.spring(response: 0.18, dampingFraction: 1), value: configuration.isPressed)
             .animation(AppAnimation.spring, value: isHovering)
             .onHover { isHovering = $0 }
         #else
         configuration.label
-            .opacity(configuration.isPressed ? 0.8 : 1.0)
+            .modifier(ScalePressFeedback(isPressed: configuration.isPressed, pressedScale: pressScale))
         #endif
     }
 }
@@ -45,20 +77,14 @@ struct InteractiveRowStyle: ButtonStyle {
         configuration.label
             .background(
                 RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                    .fill(isHovering || configuration.isPressed ? hoverColor : .clear)
+                    .fill(isHovering ? hoverColor : .clear)
             )
-            .opacity(configuration.isPressed ? 0.8 : 1.0)
-            .animation(AppAnimation.quick, value: configuration.isPressed)
+            .modifier(ScalePressFeedback(isPressed: configuration.isPressed))
             .animation(AppAnimation.quick, value: isHovering)
             .onHover { isHovering = $0 }
         #else
         configuration.label
-            .background(
-                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                    .fill(configuration.isPressed ? hoverColor : .clear)
-            )
-            .opacity(configuration.isPressed ? 0.8 : 1.0)
-            .animation(AppAnimation.quick, value: configuration.isPressed)
+            .modifier(ScalePressFeedback(isPressed: configuration.isPressed))
         #endif
     }
 }
@@ -69,9 +95,7 @@ struct PressableButtonStyle: ButtonStyle {
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .scaleEffect(configuration.isPressed ? pressScale : 1.0)
-            .opacity(configuration.isPressed ? 0.7 : 1.0)
-            .animation(AppAnimation.quick, value: configuration.isPressed)
+            .modifier(ScalePressFeedback(isPressed: configuration.isPressed, pressedScale: pressScale))
     }
 }
 
@@ -130,6 +154,8 @@ extension ButtonStyle where Self == InteractiveRowStyle {
 
 extension ButtonStyle where Self == PressableButtonStyle {
     static var pressable: PressableButtonStyle { PressableButtonStyle() }
+    /// A replacement for native plain-button dimming on text and list actions.
+    static var scalePress: PressableButtonStyle { PressableButtonStyle(pressScale: 0.97) }
 }
 
 extension ButtonStyle where Self == ChipButtonStyle {

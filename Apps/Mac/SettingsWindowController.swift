@@ -13,7 +13,7 @@ final class SettingsWindowController: NSWindowController {
             defer: false)
         window.isReleasedWhenClosed = false
         super.init(window: window)
-        window.title = "设置"
+        window.title = String(localized: "设置")
         window.contentViewController = NSHostingController(
             rootView: SettingsView(
                 store: store.scope(state: \.settings, action: \.settings),

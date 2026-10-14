@@ -49,23 +49,27 @@ final class MenuBarPlayerController: NSObject {
         controls.forEach { $0.removeFromSuperview() }
         controls.removeAll()
         let hasTrack = title != nil
-        let info = NSButton(title: title ?? "未在播放", target: self, action: #selector(openWindow))
+        let info = NSButton(title: title ?? String(localized: "未在播放"), target: self, action: #selector(openWindow))
         info.isBordered = false
         info.font = .menuBarFont(ofSize: 12)
         info.lineBreakMode = .byTruncatingTail
-        info.toolTip = title ?? "打开 MiuMiu"
-        info.setAccessibilityLabel(title ?? "打开 MiuMiu")
+        info.toolTip = title ?? String(localized: "打开 MiuMiu")
+        info.setAccessibilityLabel(title ?? String(localized: "打开 MiuMiu"))
         host.addSubview(info)
         controls.append(info)
 
-        addSymbol(fm ? "trash" : "backward.fill", label: fm ? "不喜欢" : "上一曲",
-                  action: #selector(previousOrTrash), enabled: hasTrack, host: host)
-        addSymbol(playing ? "pause.fill" : "play.fill", label: playing ? "暂停" : "播放",
-                  action: #selector(togglePlayback), enabled: hasTrack, host: host)
-        addSymbol("forward.fill", label: "下一曲", action: #selector(next),
+        addSymbol(fm ? (liked ? "heart.fill" : "heart") : "backward.fill",
+                  label: fm ? (liked ? String(localized: "取消收藏") : String(localized: "收藏")) : String(localized: "上一曲"),
+                  action: fm ? #selector(toggleLike) : #selector(previousOrTrash),
                   enabled: hasTrack, host: host)
-        addSymbol(liked ? "heart.fill" : "heart", label: liked ? "取消收藏" : "收藏",
-                  action: #selector(toggleLike), enabled: hasTrack, host: host)
+        addSymbol(playing ? "pause.fill" : "play.fill", label: playing ? String(localized: "暂停") : String(localized: "播放"),
+                  action: #selector(togglePlayback), enabled: hasTrack, host: host)
+        addSymbol("forward.fill", label: String(localized: "下一曲"), action: #selector(next),
+                  enabled: hasTrack, host: host)
+        addSymbol(fm ? "trash" : (liked ? "heart.fill" : "heart"),
+                  label: fm ? String(localized: "不喜欢") : (liked ? String(localized: "取消收藏") : String(localized: "收藏")),
+                  action: fm ? #selector(previousOrTrash) : #selector(toggleLike),
+                  enabled: hasTrack, host: host)
 
         let height = NSStatusBar.system.thickness
         var x: CGFloat = 3

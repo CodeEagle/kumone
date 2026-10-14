@@ -5,6 +5,8 @@ import Metal
 public struct ShaderDescriptor: Identifiable, Hashable {
     public let id: String
     public let name: String
+    /// Presentation only: discovery, compilation and saved settings use `name`.
+    public var displayName: String { name.replacingOccurrences(of: "_", with: " ") }
     /// Where the MSL source came from.
     public let origin: Origin
 

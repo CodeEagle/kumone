@@ -104,7 +104,7 @@ struct TrackRow: View {
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.scalePress)
                     .accessibilityLabel("打开专辑：\(track.album.name)")
                     .frame(maxWidth: 220, alignment: .leading)
                 } else {
@@ -170,7 +170,7 @@ struct TrackRow: View {
         Button(action: onPlay) {
             artworkImage
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.scalePress)
         .disabled(!isPlayable)
         .accessibilityLabel("播放：\(track.name)")
         #else
@@ -184,7 +184,7 @@ struct TrackRow: View {
                     .heroAnchor(HeroID.album(track.album.id))
                     .heroCardArtworkGate(heroID: HeroID.album(track.album.id))
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.scalePress)
             .accessibilityLabel("打开专辑：\(track.album.name)")
         } else {
             artworkImage
@@ -240,13 +240,11 @@ struct TrackRow: View {
                         Text(" / ")
                     }
                     Button {
-                        HeroTrigger.arm(HeroID.artist(artist.id))
                         openDestination(.artist(artist.id))
                     } label: {
                         Text(artist.name)
-                            .heroAnchor(HeroID.artist(artist.id))
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.scalePress)
                     .accessibilityLabel("打开歌手：\(artist.name)")
                 }
             }
@@ -360,7 +358,6 @@ struct TrackRow: View {
         }
         ForEach(track.artists.filter { $0.id > 0 && !$0.name.isEmpty }.prefix(3)) { artist in
             Button("查看歌手：\(artist.name)") {
-                HeroTrigger.arm(HeroID.artist(artist.id))
                 openDestination(.artist(artist.id))
             }
         }

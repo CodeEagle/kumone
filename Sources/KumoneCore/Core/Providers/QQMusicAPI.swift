@@ -11,13 +11,13 @@ public enum QQMusicAPIError: Error, LocalizedError, Equatable {
 
     public var errorDescription: String? {
         switch self {
-        case .httpStatus(let code): return "QQ 音乐请求失败（HTTP \(code)）"
-        case .business(let code): return "QQ 音乐接口返回错误（\(code)）"
-        case .invalidResponse: return "QQ 音乐响应缺少有效数据"
-        case .invalidIdentifier: return "QQ 音乐需要本源的歌曲 MID"
-        case .invalidPagination: return "QQ 音乐分页参数无效"
-        case .searchUnavailable: return "QQ 音乐匿名搜索接口暂不可用"
-        case .loginRequired: return "QQ 音乐播放需要登录票据，当前尚不支持登录"
+        case .httpStatus(let code): return String(localized: "QQ 音乐请求失败（HTTP \(code)）")
+        case .business(let code): return String(localized: "QQ 音乐接口返回错误（\(code)）")
+        case .invalidResponse: return String(localized: "QQ 音乐响应缺少有效数据")
+        case .invalidIdentifier: return String(localized: "QQ 音乐需要本源的歌曲 MID")
+        case .invalidPagination: return String(localized: "QQ 音乐分页参数无效")
+        case .searchUnavailable: return String(localized: "QQ 音乐匿名搜索接口暂不可用")
+        case .loginRequired: return String(localized: "QQ 音乐播放需要登录票据，当前尚不支持登录")
         }
     }
 }

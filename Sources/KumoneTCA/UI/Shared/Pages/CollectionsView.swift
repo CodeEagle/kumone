@@ -52,7 +52,7 @@ struct CollectionsView: View {
                                         heroID: HeroID.album(album.id)
                                     )
                                 }
-                                .buttonStyle(.interactiveCard)
+                                .buttonStyle(.scaleCard)
                             }
                         }
                         .padding(.horizontal, Theme.Layout.contentInset)
@@ -65,11 +65,16 @@ struct CollectionsView: View {
                         CardGrid(minWidth: 140) {
                             ForEach(account.likedArtists) { artist in
                                 Button {
+                                    HeroTrigger.arm(HeroID.artist(artist.id),
+                                                    sourceImageURL: artist.picUrl?.resizedImageURL(256))
                                     appStore.animateOpen(.artist(artist.id))
                                 } label: {
                                     VStack(spacing: 10) {
                                         CachedAsyncImage(url: artist.picUrl?.resizedImageURL(256))
                                             .frame(width: 128, height: 128)
+                                            .modifier(CardEnvironmentPressFeedback())
+                                            .heroAnchor(HeroID.artist(artist.id))
+                                            .heroCardArtworkGate(heroID: HeroID.artist(artist.id))
                                             .clipShape(Circle())
                                         Text(artist.name)
                                             .font(.system(size: 13, weight: .medium))
@@ -79,7 +84,7 @@ struct CollectionsView: View {
                                     .frame(width: 140)
                                     .contentShape(Rectangle())
                                 }
-                                .buttonStyle(.interactiveCard)
+                                .buttonStyle(.scaleCard)
                             }
                         }
                         .padding(.horizontal, Theme.Layout.contentInset)

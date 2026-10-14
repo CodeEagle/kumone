@@ -6,24 +6,24 @@ public enum LXAPIError: Error, LocalizedError, Equatable {
 
     public var errorDescription: String? {
         switch self {
-        case .httpStatus(let code): return "LX 请求失败（HTTP \(code)）"
+        case .httpStatus(let code): return String(localized: "LX 请求失败（HTTP \(code)）")
         case .business(let code):
             switch code {
-            case -1: return "lx 解析源不提供搜索/发现能力或账号、资料库操作"
-            case -2: return "LX 不支持此歌曲平台"
-            case 1: return "LX IP 已被封禁"
-            case 2: return "LX 获取失败"
-            case 3: return "LX 验证失败"
-            case 4: return "LX 服务内部错误"
-            case 5: return "LX 请求被限流"
-            case 6: return "LX 参数错误"
-            default: return "LX 接口返回错误（\(code)）"
+            case -1: return String(localized: "lx 解析源不提供搜索/发现能力或账号、资料库操作")
+            case -2: return String(localized: "LX 不支持此歌曲平台")
+            case 1: return String(localized: "LX IP 已被封禁")
+            case 2: return String(localized: "LX 获取失败")
+            case 3: return String(localized: "LX 验证失败")
+            case 4: return String(localized: "LX 服务内部错误")
+            case 5: return String(localized: "LX 请求被限流")
+            case 6: return String(localized: "LX 参数错误")
+            default: return String(localized: "LX 接口返回错误（\(code)）")
             }
-        case .invalidResponse: return "LX 响应缺少有效数据"
-        case .notConfigured: return "请先填写自部署 LX-Source 服务地址"
-        case .unsupportedQuality: return "LX 不支持沉浸声音质"
-        case .parseFailed: return "LX 服务地址无效，请填写 HTTP 或 HTTPS 地址"
-        case .invalidIdentifier: return "LX 需要不含路径或查询参数的歌曲 ID"
+        case .invalidResponse: return String(localized: "LX 响应缺少有效数据")
+        case .notConfigured: return String(localized: "请先填写自部署 LX-Source 服务地址")
+        case .unsupportedQuality: return String(localized: "LX 不支持沉浸声音质")
+        case .parseFailed: return String(localized: "LX 服务地址无效，请填写 HTTP 或 HTTPS 地址")
+        case .invalidIdentifier: return String(localized: "LX 需要不含路径或查询参数的歌曲 ID")
         }
     }
 }

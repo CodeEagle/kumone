@@ -126,7 +126,8 @@ public actor ImageCache {
     /// `image(for:)` for disk/network loads.
     public nonisolated func cachedImage(for url: URL, rendition: ImageRendition? = nil) -> PlatformImage? {
         let rendition = rendition ?? .automatic(for: url)
-        return memory.image(for: Self.cacheKey(for: url) + rendition.cacheSuffix)
+        let key = Self.cacheKey(for: url) + rendition.cacheSuffix
+        return memory.image(for: key) ?? memory.liveImage(for: key)
     }
 
     /// Retain one decoded bitmap, not an NSImage holding compressed data plus

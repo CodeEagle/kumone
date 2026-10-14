@@ -21,11 +21,11 @@ public enum ReleaseChecker {
         public var errorDescription: String? {
             switch self {
             case .network:
-                return "网络连接失败，请检查网络后重试"
+                return String(localized: "网络连接失败，请检查网络后重试")
             case .http(let code):
-                return "服务器返回错误（\(code)）"
+                return String(localized: "服务器返回错误（\(code)）")
             case .decoding:
-                return "无法解析版本信息"
+                return String(localized: "无法解析版本信息")
             }
         }
     }

@@ -11,6 +11,7 @@ struct PlaylistDetailView: View {
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @State private var showFullDescription = false
 
+    @State private var sourceArtworkURL: URL?
     @State private var hasStartedHeroFlight = false
     /// Drives the page's own arrival fade. The page does **not** fade in on
     /// `onAppear`: a tap armed a card flight whose launch waits for this
@@ -24,6 +25,7 @@ struct PlaylistDetailView: View {
     /// invisible. Explicit `withAnimation` starts the fade after a deferred
     /// run loop lets the unfaded frame render first.
     @State private var hasAppeared = false
+    @State private var canMountTracks = false
 
     #if os(macOS)
     @ObservedObject private var heroFlight = HeroFlightDirector.shared
@@ -66,7 +68,13 @@ struct PlaylistDetailView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: isCompact ? 16 : 20) {
+                #if os(macOS)
+                regularHeader(store.detail)
+                    .padding(.horizontal, Theme.Layout.contentInset)
+                    .padding(.top, 16)
+                #endif
                 if let detail = store.detail {
+                    #if !os(macOS)
                     if isCompact {
                         compactHeader(detail)
                             .padding(.horizontal, 16)
@@ -77,40 +85,49 @@ struct PlaylistDetailView: View {
                             .padding(.top, 16)
                     }
 
-                    TrackListView(
-                        tracks: store.filteredTracks,
-                        privileges: store.privileges,
-                        removableFromPlaylistID: isOwnPlaylist ? store.playlistID : nil,
-                        onRemoved: { store.send(.trackRemoved($0)) },
-                        recommendationContext: recommendationContext,
-                        onRecommendationReduced: { rejected, replacement in
-                            store.send(.recommendationReduced(rejected: rejected, replacement: replacement))
-                        },
-                        onPlay: { tracks, startAt in
-                            store.send(.delegate(.play(
-                                tracks: tracks,
-                                source: .playlist(store.playlistID),
-                                startAt: startAt,
-                                context: .playlist(id: store.playlistID, name: detail.name))))
-                        },
-                        appStore: appStore
-                    )
-                    // No isFlying gate: with the push wrapped in
-                    // withAnimation (see openDestination), the track list
-                    // rides the overlay's own insertion fade and arrives
-                    // with the flight instead of waiting for the landing.
-                    .padding(.horizontal, isCompact ? 6 : Theme.Layout.contentInset - 10)
-
-                    if store.isLoadingMore {
-                        HStack {
-                            Spacer()
-                            ProgressView().controlSize(.small)
-                            Spacer()
+                    #endif
+                    // Constructing rows also mounts artwork requests and hero
+                    // anchors. Keep that work out of the cover flight; data
+                    // fetching continues independently in the feature.
+                    if canMountTracks {
+                        TrackListView(
+                            tracks: store.filteredTracks,
+                            privileges: store.privileges,
+                            removableFromPlaylistID: isOwnPlaylist ? store.playlistID : nil,
+                            onRemoved: { store.send(.trackRemoved($0)) },
+                            recommendationContext: recommendationContext,
+                            onRecommendationReduced: { rejected, replacement in
+                                store.send(.recommendationReduced(rejected: rejected, replacement: replacement))
+                            },
+                            onPlay: { tracks, startAt in
+                                store.send(.delegate(.play(
+                                    tracks: tracks,
+                                    source: .playlist(store.playlistID),
+                                    startAt: startAt,
+                                    context: .playlist(id: store.playlistID, name: detail.name))))
+                            },
+                            appStore: appStore
+                        )
+                        .padding(.horizontal, isCompact ? 6 : Theme.Layout.contentInset - 10)
+                        .onAppear {
+                            HeroProbe.writeTimed("PLAYLIST rows mounted", "id=\(store.playlistID) count=\(store.tracks.count)")
                         }
-                        .padding(.vertical, 12)
+
+                        if store.isLoadingMore {
+                            HStack {
+                                Spacer()
+                                ProgressView().controlSize(.small)
+                                Spacer()
+                            }
+                            .padding(.vertical, 12)
+                        }
                     }
                 } else if case .loading = store.loadState {
+                    #if os(macOS)
+                    ProgressView().frame(maxWidth: .infinity).padding(.vertical, 32)
+                    #else
                     loadingHeader
+                    #endif
                 } else if case let .error(message) = store.loadState {
                     ErrorStateView(message: message) {
                         store.send(.reload)
@@ -145,7 +162,17 @@ struct PlaylistDetailView: View {
         .task(id: store.playlistID) {
             store.send(.onAppear)
         }
+        .task(id: isFlying) {
+            guard !isFlying else { canMountTracks = false; return }
+            // Let the endpoint hand-off finish before mounting the list.
+            await Task.yield()
+            guard !Task.isCancelled else { return }
+            canMountTracks = true
+        }
         .onAppear {
+            #if os(macOS)
+            sourceArtworkURL = HeroProbe.shared.sourceImageURL(for: heroID)
+            #endif
             KumoneLogger.app.notice("PAGE appear playlist")
             HeroProbe.writeTimed("PAGE appear")
             if !isFlying {
@@ -168,6 +195,9 @@ struct PlaylistDetailView: View {
             }
         }
         #if os(macOS)
+        .onChange(of: hasStartedHeroFlight) { _, started in
+            if started { sourceArtworkURL = HeroProbe.shared.sourceImageURL(for: heroID) }
+        }
         .onChange(of: heroFlight.active[heroID] != nil) { _, launched in
             guard launched, !hasAppeared else { return }
             KumoneLogger.app.notice("PAGE fade launch playlist")
@@ -193,6 +223,8 @@ struct PlaylistDetailView: View {
         #endif
         .onDisappear {
             hasStartedHeroFlight = false
+            canMountTracks = false
+            sourceArtworkURL = nil
             HeroFlightDirector.shared.end(id: heroID)
             hasAppeared = false
         }
@@ -258,7 +290,7 @@ struct PlaylistDetailView: View {
                             .foregroundStyle(.tertiary)
                     }
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.scalePress)
                 .sheet(isPresented: $showFullDescription) {
                     NavigationStack {
                         ScrollView {
@@ -330,9 +362,10 @@ struct PlaylistDetailView: View {
 
     // MARK: - Regular (Desktop / iPad) Header
 
-    private func regularHeader(_ detail: PlaylistDetail) -> some View {
-        HStack(alignment: .bottom, spacing: 24) {
-            CachedAsyncImage(url: detail.coverImgUrl?.resizedImageURL(512), animated: false)
+    private func regularHeader(_ detail: PlaylistDetail?) -> some View {
+        let artworkURL = detail?.coverImgUrl?.resizedImageURL(512) ?? sourceArtworkURL
+        return HStack(alignment: .bottom, spacing: 24) {
+            CachedAsyncImage(url: artworkURL, animated: false, fallbackURL: sourceArtworkURL)
                 .frame(width: 200, height: 200)
                 .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.large, style: .continuous))
                 .shadow(color: .black.opacity(0.25), radius: 16, y: 8)
@@ -344,60 +377,69 @@ struct PlaylistDetailView: View {
                     // stand-in — and the return flight launched from this
                     // page — reuses the exact cached bitmap instead of an
                     // uncached placeholder.
-                    artworkURL: detail.coverImgUrl?.resizedImageURL(512),
+                    artworkURL: artworkURL,
                     cornerRadius: Theme.Radius.large,
                     hasStarted: $hasStartedHeroFlight
                 )
 
             VStack(alignment: .leading, spacing: 8) {
-                Text(isLikedList ? String(localized: "我喜欢的音乐") : String(localized: "歌单"))
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .textCase(.uppercase)
-                Text(detail.name)
-                    .font(.title.weight(.bold))
-                    .lineLimit(2)
+                if let detail {
+                    Text(isLikedList ? String(localized: "我喜欢的音乐") : String(localized: "歌单"))
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .textCase(.uppercase)
+                    Text(detail.name)
+                        .font(.title.weight(.bold))
+                        .lineLimit(2)
 
-                if let creator = detail.creator {
-                    HStack(spacing: 6) {
-                        CachedAsyncImage(url: creator.avatarUrl?.resizedImageURL(48), animated: false)
-                            .frame(width: 18, height: 18)
-                            .clipShape(Circle())
-                        Text(creator.nickname)
-                            .font(.system(size: 12.5, weight: .medium))
-                            .foregroundStyle(.secondary)
-                    }
-                }
-
-                Text("\(detail.trackCount) 首 · \(Formatters.playCount(detail.playCount)) 次播放 · 更新于 \(Formatters.date(fromMS: detail.updateTime))")
-                    .font(.system(size: 11.5))
-                    .foregroundStyle(.tertiary)
-
-                if let description = detail.description, !description.isEmpty {
-                    Button {
-                        showFullDescription = true
-                    } label: {
-                        Text(description.replacingOccurrences(of: "\n", with: " "))
-                            .font(.system(size: 12))
-                            .foregroundStyle(.secondary)
-                            .lineLimit(2)
-                            .multilineTextAlignment(.leading)
-                    }
-                    .buttonStyle(.plain)
-                    .popover(isPresented: $showFullDescription, arrowEdge: .bottom) {
-                        ScrollView {
-                            Text(description)
-                                .font(.system(size: 13))
-                                .padding(16)
-                                .frame(width: 380, alignment: .leading)
+                    if let creator = detail.creator {
+                        HStack(spacing: 6) {
+                            CachedAsyncImage(url: creator.avatarUrl?.resizedImageURL(48), animated: false)
+                                .frame(width: 18, height: 18)
+                                .clipShape(Circle())
+                            Text(creator.nickname)
+                                .font(.system(size: 12.5, weight: .medium))
+                                .foregroundStyle(.secondary)
                         }
-                        .frame(maxHeight: 400)
                     }
+
+                    Text("\(detail.trackCount) 首 · \(Formatters.playCount(detail.playCount)) 次播放 · 更新于 \(Formatters.date(fromMS: detail.updateTime))")
+                        .font(.system(size: 11.5))
+                        .foregroundStyle(.tertiary)
+
+                    if let description = detail.description, !description.isEmpty {
+                        Button {
+                            showFullDescription = true
+                        } label: {
+                            Text(description.replacingOccurrences(of: "\n", with: " "))
+                                .font(.system(size: 12))
+                                .foregroundStyle(.secondary)
+                                .lineLimit(2)
+                                .multilineTextAlignment(.leading)
+                        }
+                        .buttonStyle(.scalePress)
+                        .popover(isPresented: $showFullDescription, arrowEdge: .bottom) {
+                            ScrollView {
+                                Text(description)
+                                    .font(.system(size: 13))
+                                    .padding(16)
+                                    .frame(width: 380, alignment: .leading)
+                            }
+                            .frame(maxHeight: 400)
+                        }
+                    }
+
+                    Spacer(minLength: 4)
+
+                    actionRow(detail)
+                } else {
+                    VStack(alignment: .leading, spacing: 10) {
+                        SkeletonView(cornerRadius: 4).frame(width: 80, height: 14)
+                        SkeletonView(cornerRadius: 4).frame(width: 220, height: 24)
+                        SkeletonView(cornerRadius: 4).frame(width: 120, height: 14)
+                    }
+                    Spacer(minLength: 4)
                 }
-
-                Spacer(minLength: 4)
-
-                actionRow(detail)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             // No isFlying gate: see the track list note — this column rides

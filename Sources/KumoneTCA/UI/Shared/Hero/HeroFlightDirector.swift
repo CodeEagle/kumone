@@ -13,6 +13,9 @@ final class HeroFlightDirector: ObservableObject {
     struct Flight: Identifiable, Equatable {
         let id: String
         let content: HeroContent
+        /// Pin the already displayed bitmap only for this flight's lifetime.
+        /// The stand-in must not load or replace its image after lift-off.
+        var artworkImage: PlatformImage? = nil
         let source: CGRect
         /// The frame the flight was launched at. A present flight may later
         /// follow its live anchor (`liveAnchorID`) if the landing view moves
@@ -48,9 +51,19 @@ final class HeroFlightDirector: ObservableObject {
         let targetCornerRadius: CGFloat
         var cornerRadius: CGFloat { content.cornerRadius }
 
+        var animation: Animation {
+            // Card entry follows liveAnchorID; targetAnchorID belongs to
+            // return flights. Testing the latter silently selects the old spring.
+            if id.hasPrefix("hero-playlist-"), liveAnchorID != nil {
+                return .spring(response: 0.36, dampingFraction: 1)
+            }
+            return AppAnimation.heroSpring
+        }
+
         static func == (lhs: Flight, rhs: Flight) -> Bool {
             lhs.id == rhs.id
                 && lhs.content == rhs.content
+                && lhs.artworkImage === rhs.artworkImage
                 && lhs.source.approximately(rhs.source)
                 && lhs.target.approximately(rhs.target)
                 && lhs.targetScale == rhs.targetScale
@@ -120,9 +133,19 @@ final class HeroFlightDirector: ObservableObject {
             return
         }
         if targetAnchorID == nil { miniHomeFrames[id] = source }
+        let artworkImage: PlatformImage?
+        if id != HeroID.nowPlayingArtwork,
+           case let .artwork(url, _) = content, let url {
+            artworkImage = ImageCache.shared.cachedImage(for: url)
+        } else {
+            // Player artwork must keep its progressive thumbnail -> playback
+            // rendition path, including an upgrade while the flight is moving.
+            artworkImage = nil
+        }
         active[id] = Flight(
             id: id,
             content: content,
+            artworkImage: artworkImage,
             source: source,
             target: targetFrame,
             targetScale: targetScale,

@@ -9,6 +9,24 @@ private final class WeakImageReference {
 }
 
 final class ImageMemoryCacheTests: XCTestCase {
+    func testVisibleEvictedBitmapCanBeReusedWithoutExtendingItsLifetime() {
+        let cache = ImageMemoryCache(limit: 128)
+        var visibleImage: PlatformImage? = PlatformImage()
+        let reference = WeakImageReference(visibleImage)
+        cache.insert(visibleImage!, for: "visible-card", cost: 128)
+        cache.insert(PlatformImage(), for: "another-card", cost: 128)
+
+        XCTAssertNil(cache.image(for: "visible-card"), "strong cache obeys its budget")
+        XCTAssertTrue(cache.liveImage(for: "visible-card") === visibleImage,
+                      "hero reuses the bitmap the card still displays")
+        XCTAssertEqual(cache.retainedBytes, 128)
+        XCTAssertEqual(cache.count, 1)
+
+        visibleImage = nil
+        XCTAssertNil(reference.value, "weak lookup must not pin offscreen artwork")
+        XCTAssertNil(cache.liveImage(for: "visible-card"))
+    }
+
     func testDiagnosticClearsMemoryAndBlocksCacheHitsAndInserts() {
         let cache = ImageMemoryCache()
         let image = PlatformImage(size: CGSize(width: 2, height: 2))
@@ -17,6 +35,7 @@ final class ImageMemoryCacheTests: XCTestCase {
         cache.setLoadingDisabled(true)
         XCTAssertEqual(cache.retainedBytes, 0)
         XCTAssertEqual(cache.count, 0)
+        XCTAssertNil(cache.liveImage(for: "cover"))
         cache.insert(image, for: "blocked", cost: 16)
         XCTAssertNil(cache.image(for: "blocked"))
         cache.setLoadingDisabled(false)

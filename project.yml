@@ -28,6 +28,8 @@ targetTemplates:
   CommonApp:
     type: application
     sources:
+      - path: Sources/Kumone/Resources
+        buildPhase: resources
       - path: Sources/KumoneShaders/Shaders
         includes: ["*.metal"]
         buildPhase: sources

@@ -88,7 +88,7 @@ struct AlbumDetailView: View {
                                 Spacer().frame(width: (isCompact ? 16 : Theme.Layout.contentInset) - 16)
                                 ForEach(store.otherAlbums) { item in
                                     Button {
-                                        HeroTrigger.arm(HeroID.album(item.id))
+                                        HeroTrigger.arm(HeroID.album(item.id), sourceImageURL: item.picUrl?.resizedImageURL(384))
                                         appStore.animateOpen(.album(item.id))
                                     } label: {
                                         CoverCardBody(
@@ -98,7 +98,7 @@ struct AlbumDetailView: View {
                                             heroID: HeroID.album(item.id)
                                         )
                                     }
-                                    .buttonStyle(.interactiveCard)
+                                    .buttonStyle(.scaleCard)
                                 }
                                 Spacer().frame(width: (isCompact ? 16 : Theme.Layout.contentInset) - 16)
                             }
@@ -214,7 +214,7 @@ struct AlbumDetailView: View {
                                 .foregroundStyle(Theme.accent)
                                 .lineLimit(1)
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(.scalePress)
                     }
 
                     Text("\(store.tracks.count) 首 · \(Formatters.date(fromMS: album.publishTime))")
@@ -237,7 +237,7 @@ struct AlbumDetailView: View {
                             .foregroundStyle(.tertiary)
                     }
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.scalePress)
                 .sheet(isPresented: $showFullDescription) {
                     NavigationStack {
                         ScrollView {
@@ -329,7 +329,7 @@ struct AlbumDetailView: View {
                             .font(.system(size: 14, weight: .medium))
                             .foregroundStyle(Theme.accent)
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.scalePress)
                 }
 
                 Text("\(store.tracks.count) 首 · \(totalDuration) · \(Formatters.date(fromMS: album.publishTime))")
@@ -346,7 +346,7 @@ struct AlbumDetailView: View {
                             .lineLimit(2)
                             .multilineTextAlignment(.leading)
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.scalePress)
                     .popover(isPresented: $showFullDescription, arrowEdge: .bottom) {
                         ScrollView {
                             Text(description)

@@ -6,6 +6,7 @@ struct CachedAsyncImage<Placeholder: View>: View {
     let url: URL?
     var animated: Bool = true
     var rendition: ImageRendition?
+    var fallbackURL: URL?
     @ViewBuilder var placeholder: () -> Placeholder
 
     @State private var image: PlatformImage?
@@ -21,10 +22,11 @@ struct CachedAsyncImage<Placeholder: View>: View {
     }
 
     init(url: URL?, animated: Bool = true, rendition: ImageRendition? = nil,
-         @ViewBuilder placeholder: @escaping () -> Placeholder) {
+         fallbackURL: URL? = nil, @ViewBuilder placeholder: @escaping () -> Placeholder) {
         self.url = url
         self.animated = animated
         self.rendition = rendition
+        self.fallbackURL = fallbackURL
         self.placeholder = placeholder
         // Keep State's initial value empty: lazy lists can retain the view
         // value as well as its mounted State location. A strong image seed
@@ -43,6 +45,7 @@ struct CachedAsyncImage<Placeholder: View>: View {
         if rendition == .playback {
             return ImageCache.shared.cachedImage(for: url, rendition: .thumbnail)
         }
+        if let fallbackURL { return ImageCache.shared.cachedImage(for: fallbackURL) }
         return nil
     }
 
@@ -113,8 +116,8 @@ struct CachedAsyncImage<Placeholder: View>: View {
 
 extension CachedAsyncImage where Placeholder == AnyView {
     /// Default placeholder: a quiet neutral fill with a music note.
-    init(url: URL?, animated: Bool = true, rendition: ImageRendition? = nil) {
-        self.init(url: url, animated: animated, rendition: rendition) {
+    init(url: URL?, animated: Bool = true, rendition: ImageRendition? = nil, fallbackURL: URL? = nil) {
+        self.init(url: url, animated: animated, rendition: rendition, fallbackURL: fallbackURL) {
             AnyView(
                 ZStack {
                     Rectangle().fill(.quaternary.opacity(0.5))

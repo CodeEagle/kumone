@@ -219,9 +219,9 @@ struct IOSUpdaterSheet: View {
                 Text("已装 TrollStore（巨魔）将自动安装；否则用「下载 IPA」手动侧载")
                     .font(.caption).foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
-                primaryButton("自动安装（TrollStore）") { updater.installViaTrollStore(release) }
+                primaryButton(String(localized: "自动安装（TrollStore）")) { updater.installViaTrollStore(release) }
                 Button("下载 IPA 手动侧载") { updater.download(release) }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.scalePress)
                     .font(.system(size: 13, weight: .medium))
                     .foregroundStyle(Theme.accent)
                 laterButton
@@ -238,7 +238,7 @@ struct IOSUpdaterSheet: View {
                 Text("已保存到「文件」App ▸ 我的 iPhone ▸ Kumone。用下方按钮直接导入签名工具（全能签 / ESign 等），或在「文件」里手动打开。")
                     .font(.caption).foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
-                primaryButton("导入到签名工具") { updater.share(url) }
+                primaryButton(String(localized: "导入到签名工具")) { updater.share(url) }
                 doneButton
 
             case .handedOff:
@@ -279,7 +279,7 @@ struct IOSUpdaterSheet: View {
             IOSUpdater.shared.showSheet = false
             dismiss()
         }
-        .buttonStyle(.plain).font(.system(size: 13)).foregroundStyle(.secondary)
+        .buttonStyle(.scalePress).font(.system(size: 13)).foregroundStyle(.secondary)
     }
 
     private var doneButton: some View {

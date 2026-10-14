@@ -120,7 +120,7 @@ struct SectionHeader: View {
                             .offset(x: isHovering ? 2 : 0)
                     }
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.scalePress)
                 .onHover { hovering in
                     withAnimation(AppAnimation.quick) { isHovering = hovering }
                 }
@@ -158,35 +158,46 @@ struct PlayCountBadge: View {
     }
 }
 
+/// Shared badge geometry also used by the flying hero stand-ins.
+private struct PlayerStatusBadgeStyle: ViewModifier {
+    let isAvailable: Bool
+
+    // Use a subdued neutral grey rather than the bright adaptive secondary
+    // foreground on the artwork-tinted dark player background.
+    private var color: Color { isAvailable ? Theme.accent : .gray.opacity(0.65) }
+
+    func body(content: Content) -> some View {
+        content
+            .foregroundStyle(color)
+            .padding(.horizontal, 5)
+            .frame(height: 14)
+            .overlay(
+                RoundedRectangle(cornerRadius: 3, style: .continuous)
+                    .strokeBorder(color.opacity(isAvailable ? 0.8 : 0.6), lineWidth: 1)
+            )
+    }
+}
+
 struct VIPBadge: View {
+    var isAvailable = true
+
     var body: some View {
         Text("VIP")
             .font(.system(size: 8.5, weight: .bold))
-            .foregroundStyle(Theme.accent)
-            .padding(.horizontal, 4)
-            .padding(.vertical, 1)
-            .overlay(
-                RoundedRectangle(cornerRadius: 3, style: .continuous)
-                    .stroke(Theme.accent.opacity(0.8), lineWidth: 1)
-            )
+            .modifier(PlayerStatusBadgeStyle(isAvailable: isAvailable))
     }
 }
 
 struct QualityTag: View {
     let text: String
+    var isAvailable = true
 
     var body: some View {
         Text(text)
             .font(.system(size: 9, weight: .semibold))
             .lineLimit(1)
             .fixedSize(horizontal: true, vertical: false)
-            .foregroundStyle(Theme.accent)
-            .padding(.horizontal, 5)
-            .padding(.vertical, 2)
-            .overlay(
-                RoundedRectangle(cornerRadius: 3.5, style: .continuous)
-                    .stroke(Theme.accent.opacity(0.7), lineWidth: 1)
-            )
+            .modifier(PlayerStatusBadgeStyle(isAvailable: isAvailable))
     }
 }
 

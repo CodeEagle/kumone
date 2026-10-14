@@ -77,3 +77,24 @@ struct ShaderContainerView: PlatformViewRepresentable {
     final class Coordinator {
     }
 }
+
+/// Mount an enabled backdrop with a fresh native presentation host. Keeping a
+/// hidden, device-less Metal view in SwiftUI's background can leave its old
+/// composition cached when it is enabled again; startup already creates an
+/// active host, which is why restarting appears to repair that state.
+struct ShaderBackdropView: View {
+    let shader: ShaderDescriptor?
+    let isPlaying: Bool
+    let palette: ShaderPalette
+    var pcmSync: Bool = true
+    var intensity: Double = 1
+
+    var body: some View {
+        if let shader {
+            ShaderContainerView(shader: shader, isPlaying: isPlaying,
+                                palette: palette, pcmSync: pcmSync)
+                .id(shader.id)
+                .opacity(min(max(intensity, 0), 1))
+        }
+    }
+}

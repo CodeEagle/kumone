@@ -1,5 +1,6 @@
 import AppKit
 import ComposableArchitecture
+import KumoneCore
 import KumoneTCA
 
 @MainActor
@@ -20,6 +21,11 @@ final class MainWindowController: NSWindowController {
         window.hasShadow = true
         window.contentViewController = MainContainerViewController(store: store)
         window.setContentSize(NSSize(width: 1080, height: 703))
+        // This AppKit shell does not use KumoneApp's SwiftUI Window scene,
+        // so enforce its content minimum on the native window directly.
+        // Keep it stable when the sidebar or now-playing page changes.
+        window.contentMinSize = NSSize(width: ThemeTokens.Layout.minWindowWidth,
+                                       height: ThemeTokens.Layout.minWindowHeight)
         window.center()
     }
 
@@ -43,6 +49,33 @@ final class KumoneWindow: NSWindow {
     /// Maps an about-to-be-set title to the one that should actually show.
     /// `nil` passes the original through unchanged.
     var titleCorrection: ((String) -> String?)?
+    var isImmersiveChromeHidden = false
+
+    override func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
+        if isImmersiveChromeHidden,
+           menuItem.action == #selector(NSWindow.performClose(_:)),
+           styleMask.contains(.closable) {
+            return true
+        }
+        return super.validateMenuItem(menuItem)
+    }
+
+    override func performClose(_ sender: Any?) {
+        guard isImmersiveChromeHidden,
+              styleMask.contains(.closable),
+              let close = standardWindowButton(.closeButton) else {
+            super.performClose(sender)
+            return
+        }
+        // AppKit also rejects a fully transparent close button. Restore its
+        // alpha only during the synchronous command/delegate dispatch; no
+        // rendered frame exposes the button, and windowShouldClose still runs.
+        let alpha = close.alphaValue
+        close.alphaValue = 1
+        close.isEnabled = true
+        defer { close.alphaValue = alpha }
+        super.performClose(sender)
+    }
 
     override var title: String {
         get { super.title }

@@ -194,19 +194,19 @@ public final class CarPlayConnector: NSObject {
 
     /// Builds the CPTabBarTemplate (Recommend / Curated / Roaming / Library) — mirrors the App's IOSTab layout 1:1.
     private func makeRootTemplate() -> CPTabBarTemplate {
-        let recommend = CPListTemplate(title: "推荐", sections: [])
+        let recommend = CPListTemplate(title: String(localized: "推荐"), sections: [])
         recommend.tabImage = UIImage(systemName: "house")
-        recommend.emptyViewTitleVariants = ["正在加载推荐…"]
+        recommend.emptyViewTitleVariants = [String(localized: "正在加载推荐…")]
 
-        let curated = CPListTemplate(title: "精选", sections: [])
+        let curated = CPListTemplate(title: String(localized: "精选"), sections: [])
         curated.tabImage = UIImage(systemName: "square.grid.2x2")
-        curated.emptyViewTitleVariants = ["正在加载精选…"]
+        curated.emptyViewTitleVariants = [String(localized: "正在加载精选…")]
 
-        let fm = CPListTemplate(title: "漫游", sections: [])
+        let fm = CPListTemplate(title: String(localized: "漫游"), sections: [])
         fm.tabImage = UIImage(systemName: "dot.radiowaves.left.and.right")
         fm.emptyViewTitleVariants = [String(localized: "请先登录网易云音乐")]
 
-        let library = CPListTemplate(title: "我的", sections: [])
+        let library = CPListTemplate(title: String(localized: "我的"), sections: [])
         library.tabImage = UIImage(systemName: "person.crop.circle")
         library.emptyViewTitleVariants = [String(localized: "请先登录网易云音乐")]
 
@@ -233,7 +233,7 @@ public final class CarPlayConnector: NSObject {
         // Up Next: CarPlay leaves this button dead unless the app both enables it and pushes its
         // own template from the observer callback below.
         nowPlaying.isUpNextButtonEnabled = true
-        nowPlaying.upNextTitle = "播放队列"
+        nowPlaying.upNextTitle = String(localized: "播放队列")
         nowPlaying.isAlbumArtistButtonEnabled = true
         nowPlaying.add(self)
 
@@ -454,7 +454,7 @@ public final class CarPlayConnector: NSObject {
                 CarPlayTemplateFactory.fillArtwork(item, from: toplist.coverImgUrl)
                 return item
             }
-            sections.append(CPListSection(items: toplistItems, header: "排行榜", sectionIndexTitle: nil))
+            sections.append(CPListSection(items: toplistItems, header: String(localized: "排行榜"), sectionIndexTitle: nil))
         }
 
         // 5. New albums
@@ -475,7 +475,7 @@ public final class CarPlayConnector: NSObject {
 
         recommendTab.updateSections(sections)
         if sections.isEmpty {
-            recommendTab.emptyViewTitleVariants = ["暂无推荐歌单"]
+            recommendTab.emptyViewTitleVariants = [String(localized: "暂无推荐歌单")]
         }
     }
 
@@ -515,7 +515,7 @@ public final class CarPlayConnector: NSObject {
                 CarPlayTemplateFactory.fillArtwork(item, from: playlist.coverURL)
                 return item
             }
-            sections.append(CPListSection(items: hotItems, header: "热门歌单", sectionIndexTitle: nil))
+            sections.append(CPListSection(items: hotItems, header: String(localized: "热门歌单"), sectionIndexTitle: nil))
         }
         // Toplists get their own section below.
         if !content.toplists.isEmpty {
@@ -529,14 +529,14 @@ public final class CarPlayConnector: NSObject {
                 CarPlayTemplateFactory.fillArtwork(item, from: toplist.coverImgUrl)
                 return item
             }
-            sections.append(CPListSection(items: toplistItems, header: "排行榜", sectionIndexTitle: nil))
+            sections.append(CPListSection(items: toplistItems, header: String(localized: "排行榜"), sectionIndexTitle: nil))
         }
         // Official playlists — backs the "Official" chip in App ExploreView.
         if !content.officialPlaylists.isEmpty {
             sections.append(contentsOf: CarPlayTemplateFactory.playlistSections(
                 content.officialPlaylists,
                 onPlaylistTap: { [weak self] playlist in self?.pushPlaylistDetail(playlist) },
-                header: "官方歌单"
+                header: String(localized: "官方歌单")
             ))
         }
         // Chinese playlists — backs the "Chinese" chip in App ExploreView.
@@ -544,13 +544,13 @@ public final class CarPlayConnector: NSObject {
             sections.append(contentsOf: CarPlayTemplateFactory.playlistSections(
                 content.chinesePlaylists,
                 onPlaylistTap: { [weak self] playlist in self?.pushPlaylistDetail(playlist) },
-                header: "华语歌单"
+                header: String(localized: "华语歌单")
             ))
         }
         curatedTab.updateSections(sections)
         if content.highQualityPlaylists.isEmpty, content.hotPlaylists.isEmpty, content.toplists.isEmpty,
            content.officialPlaylists.isEmpty, content.chinesePlaylists.isEmpty {
-            curatedTab.emptyViewTitleVariants = ["暂无精选歌单"]
+            curatedTab.emptyViewTitleVariants = [String(localized: "暂无精选歌单")]
         }
     }
 
@@ -574,7 +574,7 @@ public final class CarPlayConnector: NSObject {
             onActionTap: { [weak self] in self?.handleFMTap() }
         )
         fmTab.updateSections(sections)
-        fmTab.emptyViewTitleVariants = ["正在加载…"]
+        fmTab.emptyViewTitleVariants = [String(localized: "正在加载…")]
     }
 
     /// What happens when the driver taps the FM tab's action button, depending
@@ -623,13 +623,13 @@ public final class CarPlayConnector: NSObject {
             onPlaylistTap: { [weak self] playlist in self?.pushPlaylistDetail(playlist) }
         )
         libraryTab.updateSections(sections)
-        libraryTab.emptyViewTitleVariants = ["暂无内容"]
+        libraryTab.emptyViewTitleVariants = [String(localized: "暂无内容")]
     }
 
     /// Tap handler for the four Library entries: pushes the tracks-list template, then renders it once tracks load.
     private func pushLibraryEntry(_ entry: CarPlayLibraryEntry, liked: PlaylistSummary?) {
         let loading = CPListTemplate(title: entry.title, sections: [])
-        loading.emptyViewTitleVariants = ["正在加载…"]
+        loading.emptyViewTitleVariants = [String(localized: "正在加载…")]
 
         interfaceController?.pushTemplate(loading, animated: true) { [weak self] _, _ in
             Task { @MainActor in
@@ -637,7 +637,7 @@ public final class CarPlayConnector: NSObject {
                 let tracks = await self.fetchTracks(for: entry, liked: liked)
                 guard !tracks.isEmpty else {
                     loading.updateSections([])
-                    loading.emptyViewTitleVariants = ["暂无曲目"]
+                    loading.emptyViewTitleVariants = [String(localized: "暂无曲目")]
                     return
                 }
                 let detail = CarPlayTemplateFactory.trackListTemplate(
@@ -771,14 +771,14 @@ public final class CarPlayConnector: NSObject {
         source: PlaySource
     ) {
         let loading = CPListTemplate(title: title, sections: [])
-        loading.emptyViewTitleVariants = ["正在加载…"]
+        loading.emptyViewTitleVariants = [String(localized: "正在加载…")]
 
         interfaceController?.pushTemplate(loading, animated: true) { [weak self] _, _ in
             Task { @MainActor in
                 guard let self else { return }
                 guard let tracks = await load(), !tracks.isEmpty else {
                     loading.updateSections([])
-                    loading.emptyViewTitleVariants = ["暂无曲目"]
+                    loading.emptyViewTitleVariants = [String(localized: "暂无曲目")]
                     return
                 }
                 let detail = CarPlayTemplateFactory.trackListTemplate(
@@ -804,7 +804,7 @@ public final class CarPlayConnector: NSObject {
     /// Pushes the playlist detail template: empty template with title first, then populated once tracks load.
     private func pushPlaylistDetail(_ playlist: PlaylistSummary) {
         let loading = CPListTemplate(title: playlist.name, sections: [])
-        loading.emptyViewTitleVariants = ["正在加载…"]
+        loading.emptyViewTitleVariants = [String(localized: "正在加载…")]
 
         interfaceController?.pushTemplate(loading, animated: true) { [weak self] _, _ in
             Task { @MainActor in
@@ -837,7 +837,7 @@ public final class CarPlayConnector: NSObject {
     /// Pushes the toplist detail template (toplists are just playlists under the hood).
     private func pushToplistDetail(_ toplist: ToplistItem) {
         let loading = CPListTemplate(title: toplist.name, sections: [])
-        loading.emptyViewTitleVariants = ["正在加载…"]
+        loading.emptyViewTitleVariants = [String(localized: "正在加载…")]
 
         interfaceController?.pushTemplate(loading, animated: true) { [weak self] _, _ in
             Task { @MainActor in

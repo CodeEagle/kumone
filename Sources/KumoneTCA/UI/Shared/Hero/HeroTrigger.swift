@@ -90,6 +90,7 @@ public enum HeroTrigger {
             id: heroID,
             frame: frame,
             scale: HeroFrameStore.shared.scale(for: heroID) ?? 1,
+            cornerRadius: heroID.hasPrefix("hero-artist-") ? min(frame.width, frame.height) / 2 : Theme.Radius.standard,
             imageURL: imageURL
         )
         let tail = waited.map { " waited=\(Int(1000 * $0))ms" } ?? ""
@@ -109,7 +110,7 @@ public enum HeroTrigger {
         var artworkURL: URL?
         var cornerRadius: CGFloat = Theme.Radius.large
         switch top {
-        case let .playlist(state):
+        case let .playlist(state), let .radarPlaylist(state):
             heroID = HeroID.playlist(state.playlistID)
             // 512 matches the detail header's own artwork URL, so the
             // return flight renders the bitmap the user was looking at —
@@ -128,6 +129,10 @@ public enum HeroTrigger {
         default:
             return
         }
+        // A quick return can precede the detail response. Reuse the card
+        // artwork that supplied the loading header instead of a nil placeholder.
+        artworkURL = artworkURL ?? HeroProbe.shared.sourceImageURL(for: heroID)
+            ?? HeroProbe.shared.records.last(where: { $0.id == heroID })?.sourceImageURL
         let anchorID = HeroID.detailTarget(heroID)
         guard let detailFrame = HeroFrameStore.shared.frame(for: anchorID),
               let feedFrame = HeroFrameStore.shared.frame(for: heroID) else {
@@ -143,7 +148,8 @@ public enum HeroTrigger {
             imageURL: artworkURL
         )
         HeroProbe.shared.recordTarget(
-            id: flyID, frame: feedFrame, scale: 1, cornerRadius: Theme.Radius.standard
+            id: flyID, frame: feedFrame, scale: 1,
+            cornerRadius: heroID.hasPrefix("hero-artist-") ? min(feedFrame.width, feedFrame.height) / 2 : Theme.Radius.standard
         )
         HeroFlightDirector.shared.start(
             id: flyID,

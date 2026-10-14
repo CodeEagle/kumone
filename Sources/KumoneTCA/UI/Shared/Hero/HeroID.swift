@@ -38,15 +38,16 @@ enum HeroID {
     static let nowPlayingRoamingTarget = "now-playing-roaming-target"
 
     /// Song title and artist: shared pure-text elements between the mini bar
-    /// and the Now Playing page. The stand-in carries the destination end's
-    /// string and styling (see `HeroContent.text`), so a present flight grows
-    /// the small bar text into the page headline and the return flight shrinks
-    /// it back.
+    /// and the Now Playing page. The stand-ins carry both endpoint renderers,
+    /// transitioning text, truncation and color before the landing handoff.
     static let nowPlayingTitle = "now-playing-title"
     static let nowPlayingTitleTarget = "now-playing-title-target"
 
     static let nowPlayingVIP = "now-playing-vip"
     static let nowPlayingVIPTarget = "now-playing-vip-target"
+
+    static let nowPlayingQuality = "now-playing-quality"
+    static let nowPlayingQualityTarget = "now-playing-quality-target"
 
     static let nowPlayingArtist = "now-playing-artist"
     static let nowPlayingArtistTarget = "now-playing-artist-target"
@@ -65,6 +66,7 @@ enum HeroID {
         (nowPlayingRoaming, nowPlayingRoamingTarget),
         (nowPlayingTitle, nowPlayingTitleTarget),
         (nowPlayingVIP, nowPlayingVIPTarget),
+        (nowPlayingQuality, nowPlayingQualityTarget),
         (nowPlayingArtist, nowPlayingArtistTarget),
     ]
 
