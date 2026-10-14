@@ -184,6 +184,13 @@ struct PlaylistDetailView: View {
             }
         }
         #endif
+        #if os(macOS)
+        .onChange(of: isFlying) { _, flying in
+            // The cover gate flips: pairs with the flight's `DIR release`
+            // line so the reveal-vs-fade timing is readable from the file.
+            if !flying { HeroProbe.writeTimed("TARGET reveal", heroID) }
+        }
+        #endif
         .onDisappear {
             hasStartedHeroFlight = false
             HeroFlightDirector.shared.end(id: heroID)

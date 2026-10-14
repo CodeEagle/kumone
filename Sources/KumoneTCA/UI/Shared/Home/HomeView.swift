@@ -380,7 +380,11 @@ struct CoverCardBody: View {
     @ViewBuilder
     private var anchoredArtwork: some View {
         if let heroID {
-            artwork.heroAnchor(heroID)
+            artwork
+                .heroAnchor(heroID)
+                // Hidden while a return flight homed in on this card, so the
+                // destination stays empty until the stand-in lands on it.
+                .heroBackTargetGate(heroID: heroID)
         } else {
             artwork
         }

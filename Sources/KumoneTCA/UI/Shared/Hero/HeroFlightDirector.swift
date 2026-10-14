@@ -79,6 +79,7 @@ final class HeroFlightDirector: ObservableObject {
     func release(id: String) {
         guard active[id] != nil, !released.contains(id) else { return }
         released.insert(id)
+        HeroProbe.writeTimed("DIR release", id)
         KumoneLogger.hero.notice("HERO DIR release \(id, privacy: .public)")
     }
 

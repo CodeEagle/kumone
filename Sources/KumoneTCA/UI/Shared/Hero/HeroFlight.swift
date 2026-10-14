@@ -401,3 +401,38 @@ private struct HeroFlightHost: View {
         }
     }
 }
+
+/// Hides a hero source while a return flight is targeting it. The flying
+/// stand-in is still on its way back, and a destination that is already
+/// visible underneath reads as a second cover waiting at the end ("the
+/// target's cover appears before the hero lands"): the stand-in arrives on
+/// the hidden view, and the removal of the flight is what reveals it.
+extension View {
+    func heroBackTargetGate(heroID: String) -> some View {
+        #if os(macOS)
+        modifier(HeroBackTargetGateModifier(heroID: heroID))
+        #else
+        self
+        #endif
+    }
+}
+
+#if os(macOS)
+private struct HeroBackTargetGateModifier: ViewModifier {
+    let heroID: String
+    @ObservedObject private var heroFlight = HeroFlightDirector.shared
+
+    private var isReturnTarget: Bool {
+        heroFlight.active["\(heroID)-back"] != nil
+    }
+
+    func body(content: Content) -> some View {
+        content
+            .opacity(isReturnTarget ? 0 : 1)
+            // Instant flip both ways: the stand-in lands on the exact frame
+            // this view occupies, so any fade here would dim the flying
+            // cover's pixels at the hand-off.
+            .animation(nil, value: isReturnTarget)
+    }
+}
+#endif
