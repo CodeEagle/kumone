@@ -228,6 +228,7 @@ struct HomeView: View {
                     .frame(width: 128, height: 128)
                     .clipShape(Circle())
                     .heroAnchor(HeroID.artist(artist.id))
+                    .heroCardArtworkGate(heroID: HeroID.artist(artist.id))
                     .overlay(Circle().strokeBorder(.primary.opacity(0.08), lineWidth: 0.5))
                 Text(artist.name)
                     .font(.system(size: 13, weight: .medium))
@@ -246,6 +247,7 @@ struct HomeView: View {
                     .frame(width: Theme.Layout.cardSize, height: Theme.Layout.cardSize)
                     .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.standard, style: .continuous))
                     .heroAnchor(HeroID.playlist(toplist.id))
+                    .heroCardArtworkGate(heroID: HeroID.playlist(toplist.id))
                 LinearGradient(colors: [.clear, .black.opacity(0.55)], startPoint: .center, endPoint: .bottom)
                     .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.standard, style: .continuous))
                 Text(toplist.updateFrequency ?? "")
@@ -382,9 +384,7 @@ struct CoverCardBody: View {
         if let heroID {
             artwork
                 .heroAnchor(heroID)
-                // Hidden while a return flight homed in on this card, so the
-                // destination stays empty until the stand-in lands on it.
-                .heroBackTargetGate(heroID: heroID)
+                .heroCardArtworkGate(heroID: heroID)
         } else {
             artwork
         }

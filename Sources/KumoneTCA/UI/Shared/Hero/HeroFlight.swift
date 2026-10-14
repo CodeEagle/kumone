@@ -402,15 +402,13 @@ private struct HeroFlightHost: View {
     }
 }
 
-/// Hides a hero source while a return flight is targeting it. The flying
-/// stand-in is still on its way back, and a destination that is already
-/// visible underneath reads as a second cover waiting at the end ("the
-/// target's cover appears before the hero lands"): the stand-in arrives on
-/// the hidden view, and the removal of the flight is what reveals it.
+/// Hides the card artwork while a stand-in flies from or back to it.
+/// Keep the source visible during the armed wait for detail data; once the
+/// director mounts the flight, the stand-in owns its pixels until landing.
 extension View {
-    func heroBackTargetGate(heroID: String) -> some View {
+    func heroCardArtworkGate(heroID: String) -> some View {
         #if os(macOS)
-        modifier(HeroBackTargetGateModifier(heroID: heroID))
+        modifier(HeroCardArtworkGateModifier(heroID: heroID))
         #else
         self
         #endif
@@ -418,21 +416,20 @@ extension View {
 }
 
 #if os(macOS)
-private struct HeroBackTargetGateModifier: ViewModifier {
+private struct HeroCardArtworkGateModifier: ViewModifier {
     let heroID: String
     @ObservedObject private var heroFlight = HeroFlightDirector.shared
 
-    private var isReturnTarget: Bool {
-        heroFlight.active["\(heroID)-back"] != nil
+    private var isFlying: Bool {
+        heroFlight.active[heroID] != nil || heroFlight.active["\(heroID)-back"] != nil
     }
 
     func body(content: Content) -> some View {
         content
-            .opacity(isReturnTarget ? 0 : 1)
-            // Instant flip both ways: the stand-in lands on the exact frame
-            // this view occupies, so any fade here would dim the flying
-            // cover's pixels at the hand-off.
-            .animation(nil, value: isReturnTarget)
+            .opacity(isFlying ? 0 : 1)
+            // Hide in the same update that mounts the stand-in. Neither the
+            // page fade nor early target release may reveal a second source.
+            .animation(nil, value: isFlying)
     }
 }
 #endif

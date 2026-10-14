@@ -182,6 +182,7 @@ struct TrackRow: View {
             } label: {
                 artworkImage
                     .heroAnchor(HeroID.album(track.album.id))
+                    .heroCardArtworkGate(heroID: HeroID.album(track.album.id))
             }
             .buttonStyle(.plain)
             .accessibilityLabel("打开专辑：\(track.album.name)")
