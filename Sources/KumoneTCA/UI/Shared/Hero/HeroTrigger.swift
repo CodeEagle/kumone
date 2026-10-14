@@ -31,6 +31,12 @@ public enum HeroTrigger {
     /// it mid-flight paints the stand-in gray for its entire run.
     static func arm(_ heroID: String?, sourceImageURL: URL? = nil) {
         guard let heroID else { return }
+        #if DEBUG
+        // Ignite the layer probe at the tap itself: the push, the detail
+        // load, the flight and the page fade all follow within a second,
+        // and the resulting /tmp evidence is readable over plain ssh.
+        NotificationCenter.default.post(name: .kumoneDebugCapture, object: nil)
+        #endif
         HeroProbe.shared.begin(heroID)
         // A target-owned entry is the landing view's frame under this id —
         // reading it immediately would start the flight at its landing
