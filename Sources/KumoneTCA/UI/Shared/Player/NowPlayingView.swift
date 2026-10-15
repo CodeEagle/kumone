@@ -434,11 +434,10 @@ struct NowPlayingView: View {
         // Everything below the artwork needs ~300pt; shrink the artwork on
         // short displays (iPhone landscape) instead of clipping it.
         let artworkSize = max(120, min(340, size.width * 0.32, size.height - 300))
-        // Cap the two-column band and centre it. Spreading each column to
-        // `.infinity` across an ultra-wide display (iPad landscape, ~1368pt)
-        // left the left column's content floating in an oversized half and a
-        // wide blank gutter on the right (#62).
-        let maxBandWidth: CGFloat = isLyricsColumnVisible ? 1040 : 560
+        // Cap only the two-column band at 1040pt to keep content from drifting
+        // on ultra-wide displays (#62). Without lyrics, let the row expand so
+        // the title can use nearly the full screen width.
+        let maxBandWidth: CGFloat = isLyricsColumnVisible ? 1040 : .infinity
         return HStack(spacing: 0) {
             leftColumn(artworkSize: artworkSize)
                 .frame(maxWidth: .infinity)
@@ -951,7 +950,10 @@ struct NowPlayingView: View {
 
     private var trackMetaView: some View {
         VStack(spacing: 5) {
-            CenteredPlayerTitleLayout(spacing: 8) {
+            CenteredPlayerTitleLayout(
+                spacing: 8,
+                badgePlacement: isLyricsColumnVisible ? .grouped : .trailing
+            ) {
                 Text(player.currentTrack?.name ?? "")
                     .font(.system(size: 21, weight: .bold))
                     .foregroundStyle(.white)

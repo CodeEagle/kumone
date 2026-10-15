@@ -61,11 +61,30 @@ struct NowPlayingLayoutTests {
                     let lyric = try frame(HeroID.nowPlayingLyricsTarget)
                     let title = try frame(HeroID.nowPlayingTitleTarget)
                     let vip = try frame(HeroID.nowPlayingVIPTarget)
-                    #expect(abs(title.midX - play.midX) < 1, "center the title independently of its badges")
+                    let quality = try frame(HeroID.nowPlayingQualityTarget)
+                    let trailing = fm ? try frame(HeroID.nowPlayingRoamingTarget) : quality
                     let artist = try frame(HeroID.nowPlayingArtistTarget)
-                    #expect(artist.height > 22, "long artist/album metadata wraps instead of truncating")
+                    // Without lyrics the row is wide: the title centers on its
+                    // own and the tags follow its trailing edge, so short
+                    // titles keep their tags close by. With the lyrics column
+                    // narrowing the row, the title and its tags center as one
+                    // group so the title stays as long as possible.
+                    if lyrics {
+                        #expect(abs((title.minX + trailing.maxX) / 2 - play.midX) < 1,
+                                "center the title and its tags as one group when the lyrics column narrows the row")
+                        #expect(vip.maxX < artist.maxX)
+                    } else {
+                        #expect(abs(title.midX - play.midX) < 1,
+                                "center the title on its own while the row is wide")
+                        #expect(abs(vip.minX - title.maxX - 8) < 1,
+                                "the tags follow the title's trailing edge instead of sitting far off at the row's end")
+                    }
+                    #expect(title.maxX < trailing.minX, "the title never overlaps its tags")
+                    if lyrics {
+                        #expect(artist.height > 22,
+                                "long artist/album metadata still wraps when the lyrics column narrows the row")
+                    }
                     #expect(vip.minX > title.maxX)
-                    #expect(vip.maxX < artist.maxX)
                     if !lyrics {
                         #expect(artist.width > 400, "metadata width follows the column with padding, without the old 400pt cap")
                     }
@@ -76,7 +95,6 @@ struct NowPlayingLayoutTests {
                     #expect(airplay.midX < lyric.midX && lyric.midX < play.midX && play.midX < like.midX)
                     #expect(like.size == CGSize(width: 36, height: 36))
                     if fm {
-                        let quality = try frame(HeroID.nowPlayingQualityTarget)
                         let roaming = try frame(HeroID.nowPlayingRoamingTarget)
                         #expect(roaming.minX >= quality.maxX)
                         #expect(abs(roaming.midY - quality.midY) < 1)
@@ -174,10 +192,72 @@ struct NowPlayingLayoutTests {
 #endif
 
 #if os(macOS)
-@Suite("Centered title reserves tag width")
+@Suite("Centered title leads its tag group")
 @MainActor
 struct CenteredPlayerTitleLayoutTests {
-    @Test func longTitleTruncatesWithoutMovingCenterOrOverlappingTags() async throws {
+    @Test func longTitleCentersItselfWithTagsFollowingItsTrailingEdge() async throws {
+        let window = NSWindow(contentRect: CGRect(x: 100, y: 100, width: 1296, height: 44),
+                              styleMask: [.borderless], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        defer { window.close() }
+        // The wide, lyric-less row: the title centers on its own and the tags
+        // follow immediately after it, so a truncating title pushes the tags
+        // to the row's right edge while a short one keeps them close by.
+        for width: CGFloat in [400, 1296] {
+            for tagWidth: CGFloat in [40, 105] {
+                let frames = TitleLayoutFrames()
+                let content = CenteredPlayerTitleLayout(spacing: 8, badgePlacement: .trailing) {
+                    Text("A very long title which must leave enough room for all playback status tags")
+                        .font(.system(size: 21, weight: .bold)).lineLimit(1)
+                        .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { frames.title = $0 }
+                    Color.clear.frame(width: tagWidth, height: 20)
+                        .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { frames.tags = $0 }
+                }
+                .frame(width: width, height: 44)
+                .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { frames.row = $0 }
+                window.setContentSize(NSSize(width: width, height: 44))
+                window.contentView = NSHostingView(rootView: content)
+                window.orderFront(nil)
+                try await Task.sleep(nanoseconds: 70_000_000)
+                let title = try #require(frames.title)
+                let tags = try #require(frames.tags)
+                let row = try #require(frames.row)
+                #expect(abs(title.midX - row.midX) < 1, "the title centers on its own")
+                #expect(abs(tags.minX - title.maxX - 8) < 1, "the tags follow the title's trailing edge")
+                #expect(tags.maxX <= row.maxX + 1, "the centered title's allowance keeps the tags inside the row")
+                #expect(title.width <= width - 2 * (tagWidth + 8) + 1,
+                        "the centered title reserves badge space on both sides")
+            }
+        }
+    }
+
+    @Test func shortTitleCentersItselfWithTrailingTags() async throws {
+        let window = NSWindow(contentRect: CGRect(x: 100, y: 100, width: 1296, height: 44),
+                              styleMask: [.borderless], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        defer { window.close() }
+        let frames = TitleLayoutFrames()
+        let content = CenteredPlayerTitleLayout(spacing: 8, badgePlacement: .trailing) {
+            Text("Short title")
+                .font(.system(size: 21, weight: .bold)).lineLimit(1)
+                .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { frames.title = $0 }
+            Color.clear.frame(width: 105, height: 20)
+                .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { frames.tags = $0 }
+        }
+        .frame(width: 1296, height: 44)
+        .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { frames.row = $0 }
+        window.contentView = NSHostingView(rootView: content)
+        window.orderFront(nil)
+        try await Task.sleep(nanoseconds: 70_000_000)
+        let title = try #require(frames.title)
+        let tags = try #require(frames.tags)
+        let row = try #require(frames.row)
+        #expect(abs(title.midX - row.midX) < 1, "a short title also centers on its own")
+        #expect(abs(tags.minX - title.maxX - 8) < 1, "the tags stay close behind the title")
+        #expect(tags.maxX < row.maxX, "a short title keeps the tags well inside the row")
+    }
+
+    @Test func longTitleFillsTheRowWhileTheGroupStaysCentered() async throws {
         let window = NSWindow(contentRect: CGRect(x: 100, y: 100, width: 400, height: 44),
                               styleMask: [.borderless], backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
@@ -201,12 +281,47 @@ struct CenteredPlayerTitleLayoutTests {
                 let title = try #require(frames.title)
                 let tags = try #require(frames.tags)
                 let row = try #require(frames.row)
-                #expect(abs(title.midX - row.midX) < 1)
+                // The title only yields the tags' width once, so a long title
+                // truncates as late as possible (SwiftUI rounds a truncated
+                // string down to glyph boundaries, hence the range check).
+                #expect(title.width <= width - tagWidth - 8 + 1,
+                        "the title never takes more than a single tag allowance")
+                #expect(title.width > width - 2 * (tagWidth + 8),
+                        "the title uses more room than the old double reservation")
                 #expect(abs(tags.minX - title.maxX - 8) < 1)
                 #expect(tags.maxX <= row.maxX + 1)
-                #expect(title.width <= width - 2 * (tagWidth + 8) + 1)
+                // The whole group — title plus tags — stays centred in the row,
+                // with the truncated title leading just left of the centre.
+                #expect(abs((title.minX + tags.maxX) / 2 - row.midX) < 1)
+                #expect(title.midX < row.midX)
             }
         }
+    }
+
+    @Test func shortTitleCentersTheTagGroupWithoutTruncating() async throws {
+        let window = NSWindow(contentRect: CGRect(x: 100, y: 100, width: 512, height: 44),
+                              styleMask: [.borderless], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        defer { window.close() }
+        let frames = TitleLayoutFrames()
+        let content = CenteredPlayerTitleLayout(spacing: 8) {
+            Text("Short title")
+                .font(.system(size: 21, weight: .bold)).lineLimit(1)
+                .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { frames.title = $0 }
+            Color.clear.frame(width: 105, height: 20)
+                .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { frames.tags = $0 }
+        }
+        .frame(width: 512, height: 44)
+        .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { frames.row = $0 }
+        window.contentView = NSHostingView(rootView: content)
+        window.orderFront(nil)
+        try await Task.sleep(nanoseconds: 70_000_000)
+        let title = try #require(frames.title)
+        let tags = try #require(frames.tags)
+        let row = try #require(frames.row)
+        #expect((title.minX + tags.maxX) / 2 == row.midX, "the group, not the title alone, is what centres")
+        #expect(abs(tags.minX - title.maxX - 8) < 1)
+        #expect(title.minX > row.minX, "a fitting title keeps its full width instead of being truncated")
     }
 }
 
